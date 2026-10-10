@@ -821,6 +821,101 @@
     activeKpiModal = null;
   }
 
+  // =========================================================================
+  // INTELLIGENTE DYNAMISCHE ACHSEN- & MONATSSPANNE-BERECHNUNG
+  // =========================================================================
+  function getSmartAxisBounds(values, metricType = 'general', isBarChart = false) {
+    const nums = (values || []).filter(v => typeof v === 'number' && !isNaN(v) && isFinite(v));
+    if (nums.length === 0) {
+      if (metricType === 'consumption') return { min: 10, max: 25 };
+      if (metricType === 'price') return { min: 0, max: 0.50 };
+      if (metricType === 'odometer') return { min: 0, max: 1000 };
+      return { min: 0, max: 10 };
+    }
+
+    const rawMin = Math.min(...nums);
+    const rawMax = Math.max(...nums);
+    const spread = Math.max(0.1, rawMax - rawMin);
+
+    if (metricType === 'consumption') {
+      // E-Auto Verbrauch (kWh/100km):
+      // Keine statische 30 kWh Decke, sondern intelligenter Headroom (~15-20%)
+      const pad = Math.max(1.5, spread * 0.25);
+      let min = Math.max(0, Math.floor((rawMin - pad) / 2) * 2);
+      if (min <= 4) min = 0;
+      let max = Math.ceil((rawMax + pad) / 2) * 2;
+      if (max - min < 6) max = min + 6;
+      return { min, max };
+    }
+
+    if (metricType === 'price') {
+      // Strompreise (€/kWh): min immer 0 für PV-Einordnung, max sauber auf 0.05 gerundet
+      const pad = Math.max(0.04, spread * 0.2);
+      const targetMax = rawMax + pad;
+      let max = Math.ceil(targetMax * 20) / 20;
+      if (max < 0.25) max = 0.25;
+      return { min: 0, max };
+    }
+
+    if (metricType === 'odometer') {
+      // Kilometerstand: min darf nie 0 sein, um flache Linien zu verhindern
+      const pad = Math.max(150, spread * 0.25);
+      let min = Math.max(0, Math.floor((rawMin - pad) / 100) * 100);
+      let max = Math.ceil((rawMax + pad) / 100) * 100;
+      if (max - min < 200) max = min + 200;
+      return { min, max };
+    }
+
+    // Mengen (Balken für kWh geladen, Kosten in €, gefahrene Distanzen in km)
+    let min = 0;
+    const targetMax = rawMax <= 0 ? 10 : rawMax * 1.15;
+    let max;
+    if (targetMax <= 10) {
+      max = Math.ceil(targetMax);
+    } else if (targetMax <= 50) {
+      max = Math.ceil(targetMax / 5) * 5;
+    } else if (targetMax <= 200) {
+      max = Math.ceil(targetMax / 10) * 10;
+    } else if (targetMax <= 1000) {
+      max = Math.ceil(targetMax / 50) * 50;
+    } else {
+      max = Math.ceil(targetMax / 100) * 100;
+    }
+    return { min, max };
+  }
+
+  function getSmartMonthRange(activeMonthIndices, curYear, curMonth) {
+    const monthShorts = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+
+    let start = 0;
+    let end = curMonth;
+
+    const validIndices = (activeMonthIndices || []).filter(idx => typeof idx === 'number' && idx >= 0 && idx <= 11);
+    if (validIndices.length > 0) {
+      const minActive = Math.min(...validIndices);
+      const maxActive = Math.max(...validIndices);
+      start = minActive;
+      end = Math.min(11, Math.max(maxActive, curMonth));
+    } else {
+      start = Math.max(0, curMonth - 1);
+      end = curMonth;
+    }
+
+    const indices = [];
+    for (let i = start; i <= end; i++) {
+      indices.push(i);
+    }
+
+    return {
+      startIdx: start,
+      endIdx: end,
+      indices,
+      labels: indices.map(i => monthShorts[i]),
+      fullNames: indices.map(i => monthNames[i])
+    };
+  }
+
   function renderKpiDetailView(kpiType, subRange) {
     if (!DOM.modalKpiDetail) return;
 
@@ -884,7 +979,7 @@
 
     if (kpiType === 'month-cost') {
       if (range === 'monthly') {
-        // MONATSVERGLEICH (Jan - Dez)
+        // MONATSVERGLEICH (Dynamische Monatsspanne)
         title = `Ladekosten • Monatsvergleich ${curYear}`;
         sub = `Monatliche Kosten & Energiemenge im Kalenderjahr`;
 
@@ -892,23 +987,32 @@
         stat2 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
         stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(mCost)} €` };
 
-        chartTitle = `Monatlicher Ladevergleich (Jan – Dez ${curYear})`;
+        chartTitle = `Monatlicher Ladevergleich ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh geladen</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
+
+        const activeMonthIndices = [];
+        ySessions.forEach(s => activeMonthIndices.push(new Date(s.date).getMonth()));
+        const rangeInfo = getSmartMonthRange(activeMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const kwhVals = rangeInfo.indices.map(m => monthlyKwh[m]);
+        const costVals = rangeInfo.indices.map(m => monthlyCost[m]);
+
+        const yLeftBounds = getSmartAxisBounds(kwhVals, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(costVals, 'quantity', false);
 
         chartConfig = {
           type: 'bar',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'bar', label: 'kWh geladen', data: monthlyKwh, yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kosten (€)', data: monthlyCost, yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'kWh geladen', data: kwhVals, yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals, yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'kWh', max: null },
-          yRight: { label: '€', max: null }
+          yLeft: { label: 'kWh', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: '€', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Monatsaufstellung ${curYear}`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           const isCur = idx === curMonth;
           return `
             <div class="kpi-history-row" style="${isCur ? 'border-color: rgba(192, 128, 81, 0.45); background: rgba(26, 20, 16, 0.7);' : ''}">
@@ -922,7 +1026,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Einzelladungen des aktuellen Monats)
@@ -944,15 +1048,18 @@
         const kwhVals = revSessions.map(s => Number(s.kwh) || 0);
         const costVals = revSessions.map(s => Number(s.totalCost) || 0);
 
+        const yLeftBounds = getSmartAxisBounds(kwhVals, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(costVals, 'quantity', false);
+
         chartConfig = {
           type: 'bar',
           labels: labels.length > 0 ? labels : ['Keine Ladungen'],
           datasets: [
-            { type: 'bar', label: 'kWh', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'kWh geladen', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'kWh', max: null },
-          yRight: { label: '€', max: null }
+          yLeft: { label: 'kWh', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: '€', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Ladevorgänge im ${monthNames[curMonth]}`;
@@ -981,7 +1088,7 @@
       if (range === 'monthly') {
         // MONATSVERGLEICH
         title = `Ladekosten • Gesamtjahr ${curYear}`;
-        sub = `Januar bis Dezember • Monatsvergleich`;
+        sub = `Monatsvergleich aller Ladevorgänge`;
 
         stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
         stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
@@ -990,20 +1097,29 @@
         chartTitle = `Monatlicher Ladeverlauf ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
 
+        const activeMonthIndices = [];
+        ySessions.forEach(s => activeMonthIndices.push(new Date(s.date).getMonth()));
+        const rangeInfo = getSmartMonthRange(activeMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const kwhVals = rangeInfo.indices.map(m => monthlyKwh[m]);
+        const costVals = rangeInfo.indices.map(m => monthlyCost[m]);
+
+        const yLeftBounds = getSmartAxisBounds(kwhVals, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(costVals, 'quantity', false);
+
         chartConfig = {
           type: 'bar',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'bar', label: 'kWh', data: monthlyKwh, yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kosten (€)', data: monthlyCost, yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'kWh', data: kwhVals, yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals, yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'kWh', max: null },
-          yRight: { label: '€', max: null }
+          yLeft: { label: 'kWh', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: '€', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Monatsaufstellung ${curYear}`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
@@ -1016,7 +1132,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Chronologisch alle Ladungen des Jahres)
@@ -1038,15 +1154,18 @@
         const kwhVals = revAll.map(s => Number(s.kwh) || 0);
         const costVals = revAll.map(s => Number(s.totalCost) || 0);
 
+        const yLeftBounds = getSmartAxisBounds(kwhVals, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(costVals, 'quantity', false);
+
         chartConfig = {
           type: 'bar',
           labels: labels.length > 0 ? labels : ['Keine Ladungen'],
           datasets: [
-            { type: 'bar', label: 'kWh', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'kWh', data: kwhVals, yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals, yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'kWh', max: null },
-          yRight: { label: '€', max: null }
+          yLeft: { label: 'kWh', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: '€', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Alle Ladevorgänge ${curYear}`;
@@ -1082,30 +1201,32 @@
         stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
         stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(distStats.monthKm)} km` };
 
-        chartTitle = `Monatliche Fahrstrecke (Jan – Dez ${curYear})`;
+        chartTitle = `Monatliche Fahrstrecke ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Fahrleistung (km)</span>`;
 
-        const monthlyDist = new Array(12).fill(0);
+        const distMonthIndices = [];
         distStats.segments.forEach(seg => {
           const d = new Date(seg.date);
-          if (d.getFullYear() === curYear) {
-            monthlyDist[d.getMonth()] += seg.deltaKm;
-          }
+          if (d.getFullYear() === curYear) distMonthIndices.push(d.getMonth());
         });
+        const rangeInfo = getSmartMonthRange(distMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const distVals = rangeInfo.indices.map(m => monthlyDist[m]);
+
+        const yLeftBounds = getSmartAxisBounds(distVals, 'quantity', true);
 
         chartConfig = {
           type: 'bar',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'bar', label: 'Fahrleistung (km)', data: monthlyDist, yAxisID: 'yKwh', color: 'bronze' }
+            { type: 'bar', label: 'Fahrleistung (km)', data: distVals, yAxisID: 'yLeft', color: 'bronze' }
           ],
-          yLeft: { label: 'km', max: null },
+          yLeft: { label: 'km', min: yLeftBounds.min, max: yLeftBounds.max },
           yRight: null
         };
 
         listTitle = `Fahrleistung nach Monaten ${curYear}`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyDist[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           const isCur = idx === curMonth;
           return `
             <div class="kpi-history-row" style="${isCur ? 'border-color: rgba(192, 128, 81, 0.45); background: rgba(26, 20, 16, 0.7);' : ''}">
@@ -1119,7 +1240,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Fahrabschnitte dieses Monats)
@@ -1141,15 +1262,18 @@
         let cum = 0;
         const cumKm = deltas.map(d => { cum += d; return cum; });
 
+        const yLeftBounds = getSmartAxisBounds(deltas, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(cumKm, 'quantity', false);
+
         chartConfig = {
           type: 'bar',
           labels: labels.length > 0 ? labels : ['Keine Fahrten'],
           datasets: [
-            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kumuliert (km)', data: cumKm.length > 0 ? cumKm : [0], yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kumuliert (km)', data: cumKm.length > 0 ? cumKm : [0], yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'km', max: null },
-          yRight: { label: 'km', max: null }
+          yLeft: { label: 'km', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: 'km', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Fahrabschnitte im ${monthNames[curMonth]}`;
@@ -1187,14 +1311,17 @@
         chartTitle = `Monatliche Fahrleistung & Kilometerstand`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Monatsdistanz (km)</span><span class="legend-indicator dot-cyan"></span><span>Kilometerstand</span>`;
 
+        const distMonthIndices = [];
         const monthlyDist = new Array(12).fill(0);
         let latestOdoPerMonth = new Array(12).fill(null);
 
         distStats.segments.forEach(seg => {
           const d = new Date(seg.date);
           if (d.getFullYear() === curYear) {
-            monthlyDist[d.getMonth()] += seg.deltaKm;
-            latestOdoPerMonth[d.getMonth()] = seg.toOdo;
+            const m = d.getMonth();
+            distMonthIndices.push(m);
+            monthlyDist[m] += seg.deltaKm;
+            latestOdoPerMonth[m] = seg.toOdo;
           }
         });
 
@@ -1204,20 +1331,27 @@
           else latestOdoPerMonth[m] = lastKnown;
         }
 
+        const rangeInfo = getSmartMonthRange(distMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const distVals = rangeInfo.indices.map(m => monthlyDist[m]);
+        const odoVals = rangeInfo.indices.map(m => latestOdoPerMonth[m]).filter(v => v !== null);
+
+        const yLeftBounds = getSmartAxisBounds(distVals, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(odoVals.length > 0 ? odoVals : [distStats.totalOdo], 'odometer', false);
+
         chartConfig = {
           type: 'bar',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'bar', label: 'Distanz (km)', data: monthlyDist, yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kilometerstand', data: latestOdoPerMonth, yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'Distanz (km)', data: distVals, yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kilometerstand', data: rangeInfo.indices.map(m => latestOdoPerMonth[m]), yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'km', max: null },
-          yRight: { label: 'km', max: null }
+          yLeft: { label: 'km', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: 'km', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Fahrleistung nach Monaten ${curYear}`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyDist[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
@@ -1230,7 +1364,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Chronologisch alle dokumentierten Abschnitte)
@@ -1252,15 +1386,18 @@
         const deltas = allSegs.map(s => s.deltaKm);
         const odos = allSegs.map(s => s.toOdo);
 
+        const yLeftBounds = getSmartAxisBounds(deltas, 'quantity', true);
+        const yRightBounds = getSmartAxisBounds(odos.length > 0 ? odos : [distStats.totalOdo], 'odometer', false);
+
         chartConfig = {
           type: 'bar',
           labels: labels.length > 0 ? labels : ['Keine Fahrten'],
           datasets: [
-            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yKwh', color: 'bronze' },
-            { type: 'line', label: 'Kilometerstand', data: odos.length > 0 ? odos : [distStats.totalOdo], yAxisID: 'yCost', color: 'cyan' }
+            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: 'Kilometerstand', data: odos.length > 0 ? odos : [distStats.totalOdo], yAxisID: 'yRight', color: 'cyan' }
           ],
-          yLeft: { label: 'km', max: null },
-          yRight: { label: 'km', max: null }
+          yLeft: { label: 'km', min: yLeftBounds.min, max: yLeftBounds.max },
+          yRight: { label: 'km', min: yRightBounds.min, max: yRightBounds.max }
         };
 
         listTitle = `Alle dokumentierten Fahrabschnitte`;
@@ -1304,25 +1441,34 @@
         chartTitle = `Monatlicher Ø Ladepreis (€/kWh)`;
         legendHtml = `<span class="legend-indicator dot-cyan"></span><span>Ø Preis (€/kWh)</span><span class="legend-indicator dot-bronze"></span><span>0.35 € Referenz</span>`;
 
-        const monthlyPrices = monthShorts.map((m, idx) => {
+        const activeMonthIndices = [];
+        sessions.forEach(s => {
+          const d = new Date(s.date);
+          if (d.getFullYear() === curYear) activeMonthIndices.push(d.getMonth());
+        });
+        const rangeInfo = getSmartMonthRange(activeMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const monthlyPrices = rangeInfo.indices.map(idx => {
           return monthlyKwh[idx] > 0 ? Number((monthlyCost[idx] / monthlyKwh[idx]).toFixed(2)) : null;
         });
-        const benchmarks = monthShorts.map(() => 0.35);
+        const benchmarks = rangeInfo.indices.map(() => 0.35);
+
+        const allPriceVals = [...monthlyPrices.filter(v => v !== null), 0.35];
+        const yBounds = getSmartAxisBounds(allPriceVals, 'price', false);
 
         chartConfig = {
           type: 'line',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'line', label: 'Preis (€/kWh)', data: monthlyPrices, yAxisID: 'yCost', color: 'cyan' },
-            { type: 'line', label: '0.35 € Referenz', data: benchmarks, yAxisID: 'yCost', color: 'bronze', borderDash: [4, 4] }
+            { type: 'line', label: 'Preis (€/kWh)', data: monthlyPrices, yAxisID: 'yLeft', color: 'cyan' },
+            { type: 'line', label: '0.35 € Referenz', data: benchmarks, yAxisID: 'yLeft', color: 'bronze', borderDash: [4, 4] }
           ],
-          yLeft: { label: '€/kWh', max: 0.8 },
+          yLeft: { label: '€/kWh', min: yBounds.min, max: yBounds.max },
           yRight: null
         };
 
         listTitle = `Preisentwicklung nach Monaten`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           const effP = monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]) : 0;
           const pvP = monthlyKwh[idx] > 0 ? Math.round((monthlyPvKwh[idx] / monthlyKwh[idx]) * 100) : 0;
           return `
@@ -1337,7 +1483,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Nach Standorten & Einzelladungen)
@@ -1358,14 +1504,17 @@
         const prices = sorted.map(s => Number(s.pricePerKwh) || 0);
         const benchmarks = sorted.map(() => 0.35);
 
+        const allPriceVals = [...prices, 0.35];
+        const yBounds = getSmartAxisBounds(allPriceVals, 'price', false);
+
         chartConfig = {
           type: 'line',
           labels: labels.length > 0 ? labels : ['Keine Ladungen'],
           datasets: [
-            { type: 'line', label: 'Preis (€/kWh)', data: prices.length > 0 ? prices : [0], yAxisID: 'yCost', color: 'cyan' },
-            { type: 'line', label: '0.35 € Referenz', data: benchmarks.length > 0 ? benchmarks : [0.35], yAxisID: 'yCost', color: 'bronze', borderDash: [4, 4] }
+            { type: 'line', label: 'Preis (€/kWh)', data: prices.length > 0 ? prices : [0], yAxisID: 'yLeft', color: 'cyan' },
+            { type: 'line', label: '0.35 € Referenz', data: benchmarks.length > 0 ? benchmarks : [0.35], yAxisID: 'yLeft', color: 'bronze', borderDash: [4, 4] }
           ],
-          yLeft: { label: '€/kWh', max: 0.8 },
+          yLeft: { label: '€/kWh', min: yBounds.min, max: yBounds.max },
           yRight: null
         };
 
@@ -1393,7 +1542,7 @@
       const validSegments = distStats.segments.filter(s => s.consumption > 0 && s.consumption < 50);
 
       if (range === 'monthly') {
-        // MONATSVERGLEICH DES VERBRAUCHS
+        // MONATSVERGLEICH DES VERBRAUCHS (Dynamische Monate & Intelligente Skala)
         title = `Ø Verbrauch • Monatsvergleich`;
         sub = `Monatlicher Durchschnittsverbrauch (kWh/100km)`;
 
@@ -1404,36 +1553,43 @@
         chartTitle = `Monatlicher Durchschnittsverbrauch`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
 
+        const segMonthIndices = [];
         const monthlyConsSum = new Array(12).fill(0);
         const monthlyConsCount = new Array(12).fill(0);
 
         validSegments.forEach(s => {
           const d = new Date(s.date);
           if (d.getFullYear() === curYear) {
-            monthlyConsSum[d.getMonth()] += s.consumption;
-            monthlyConsCount[d.getMonth()] += 1;
+            const m = d.getMonth();
+            segMonthIndices.push(m);
+            monthlyConsSum[m] += s.consumption;
+            monthlyConsCount[m] += 1;
           }
         });
 
-        const monthlyCons = monthShorts.map((m, idx) => {
+        const rangeInfo = getSmartMonthRange(segMonthIndices, curYear, curMonth);
+        const labels = rangeInfo.labels;
+        const monthlyCons = rangeInfo.indices.map(idx => {
           return monthlyConsCount[idx] > 0 ? Number((monthlyConsSum[idx] / monthlyConsCount[idx]).toFixed(1)) : null;
         });
-        const benchmarks = monthShorts.map(() => 15.0);
+        const benchmarks = rangeInfo.indices.map(() => 15.0);
+
+        const allConsVals = [...monthlyCons.filter(v => v !== null), 15.0];
+        const yBounds = getSmartAxisBounds(allConsVals, 'consumption', false);
 
         chartConfig = {
           type: 'line',
-          labels: monthShorts,
+          labels: labels,
           datasets: [
-            { type: 'line', label: 'Verbrauch (kWh/100km)', data: monthlyCons, yAxisID: 'yCost', color: 'bronze' },
-            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yCost', color: 'cyan', borderDash: [4, 4] }
+            { type: 'line', label: 'Verbrauch (kWh/100km)', data: monthlyCons, yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yLeft', color: 'cyan', borderDash: [4, 4] }
           ],
-          yLeft: { label: 'kWh/100km', max: 30 },
+          yLeft: { label: 'kWh/100km', min: yBounds.min, max: yBounds.max },
           yRight: null
         };
 
         listTitle = `Monatliche Verbrauchswerte ${curYear}`;
-        listHtml = monthShorts.map((m, idx) => {
-          if (idx > curMonth && monthlyConsCount[idx] === 0) return '';
+        listHtml = rangeInfo.indices.map(idx => {
           const avgC = monthlyConsCount[idx] > 0 ? (monthlyConsSum[idx] / monthlyConsCount[idx]) : 0;
           return `
             <div class="kpi-history-row">
@@ -1447,7 +1603,7 @@
               </div>
             </div>
           `;
-        }).filter(Boolean).reverse().join('');
+        }).reverse().join('');
 
       } else {
         // ALLE EINTRÄGE (Chronologische Abschnitte)
@@ -1468,14 +1624,17 @@
         const consVals = validSegments.map(s => Number(s.consumption.toFixed(1)));
         const benchmarks = validSegments.map(() => 15.0);
 
+        const allConsVals = [...consVals, 15.0];
+        const yBounds = getSmartAxisBounds(allConsVals, 'consumption', false);
+
         chartConfig = {
           type: 'line',
           labels: labels.length > 0 ? labels : ['Mind. 2 Ladungen nötig'],
           datasets: [
-            { type: 'line', label: 'Verbrauch (kWh/100km)', data: consVals.length > 0 ? consVals : [0], yAxisID: 'yCost', color: 'bronze' },
-            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yCost', color: 'cyan', borderDash: [4, 4] }
+            { type: 'line', label: 'Verbrauch (kWh/100km)', data: consVals.length > 0 ? consVals : [0], yAxisID: 'yLeft', color: 'bronze' },
+            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yLeft', color: 'cyan', borderDash: [4, 4] }
           ],
-          yLeft: { label: 'kWh/100km', max: 30 },
+          yLeft: { label: 'kWh/100km', min: yBounds.min, max: yBounds.max },
           yRight: null
         };
 
@@ -1596,12 +1755,13 @@
           color: '#c08051',
           font: { size: 9 },
           padding: 6,
-          callback: v => `${v} ${cfg.yLeft?.label || ''}`
+          callback: v => `${Number.isInteger(v) ? v : (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1))} ${cfg.yLeft?.label || ''}`
         }
       }
     };
-    if (cfg.yLeft && typeof cfg.yLeft.max === 'number') {
-      scales.yLeft.suggestedMax = cfg.yLeft.max;
+    if (cfg.yLeft) {
+      if (typeof cfg.yLeft.min === 'number') scales.yLeft.min = cfg.yLeft.min;
+      if (typeof cfg.yLeft.max === 'number') scales.yLeft.max = cfg.yLeft.max;
     }
 
     if (hasRightAxis) {
@@ -1612,11 +1772,12 @@
           color: '#38bdf8',
           font: { size: 9 },
           padding: 6,
-          callback: v => `${v} ${cfg.yRight?.label || ''}`
+          callback: v => `${Number.isInteger(v) ? v : (Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1))} ${cfg.yRight?.label || ''}`
         }
       };
-      if (cfg.yRight && typeof cfg.yRight.max === 'number') {
-        scales.yRight.suggestedMax = cfg.yRight.max;
+      if (cfg.yRight) {
+        if (typeof cfg.yRight.min === 'number') scales.yRight.min = cfg.yRight.min;
+        if (typeof cfg.yRight.max === 'number') scales.yRight.max = cfg.yRight.max;
       }
     }
 
@@ -1800,6 +1961,9 @@
     bronzeGrad.addColorStop(0, 'rgba(226, 142, 78, 0.9)');
     bronzeGrad.addColorStop(1, 'rgba(192, 128, 81, 0.2)');
 
+    const kwhBounds = getSmartAxisBounds(kwhVals, 'quantity', true);
+    const costBounds = getSmartAxisBounds(costVals, 'quantity', false);
+
     chartMain = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -1856,13 +2020,17 @@
           },
           yKwh: {
             position: 'left',
+            min: kwhBounds.min,
+            max: kwhBounds.max,
             grid: { color: 'rgba(255, 255, 255, 0.05)' },
-            ticks: { color: '#c08051', font: { size: 10 }, callback: v => `${v} kWh` }
+            ticks: { color: '#c08051', font: { size: 10 }, callback: v => `${Number.isInteger(v) ? v : v.toFixed(1)} kWh` }
           },
           yCost: {
             position: 'right',
+            min: costBounds.min,
+            max: costBounds.max,
             grid: { drawOnChartArea: false },
-            ticks: { color: '#38bdf8', font: { size: 10 }, callback: v => `${v} €` }
+            ticks: { color: '#38bdf8', font: { size: 10 }, callback: v => `${Number.isInteger(v) ? v : v.toFixed(2)} €` }
           }
         }
       }
@@ -1876,45 +2044,56 @@
 
     if (period === 'month') {
       const daysInMonth = new Date(cy, cm + 1, 0).getDate();
-      const labels = [];
       const kMap = {}, cMap = {};
-      for (let i = 1; i <= daysInMonth; i++) {
-        labels.push(`${i}.`);
-        kMap[i] = 0; cMap[i] = 0;
-      }
+      const daysWithData = [];
       appData.sessions.forEach(s => {
         const d = new Date(s.date);
         if (d.getFullYear() === cy && d.getMonth() === cm) {
           const day = d.getDate();
-          kMap[day] += s.kwh;
-          cMap[day] += s.totalCost;
+          daysWithData.push(day);
+          kMap[day] = (kMap[day] || 0) + s.kwh;
+          cMap[day] = (cMap[day] || 0) + s.totalCost;
         }
       });
+      const maxDay = Math.min(daysInMonth, Math.max(now.getDate(), ...daysWithData, 1));
+      const labels = [];
+      const kwhVals = [];
+      const costVals = [];
+      for (let i = 1; i <= maxDay; i++) {
+        labels.push(`${i}.`);
+        kwhVals.push(kMap[i] || 0);
+        costVals.push(cMap[i] || 0);
+      }
       return {
         labels,
-        kwhVals: Object.values(kMap),
-        costVals: Object.values(cMap),
-        sub: `Tagesverlauf ${now.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}`
+        kwhVals,
+        costVals,
+        sub: `Tagesverlauf 1. – ${maxDay}. ${now.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}`
       };
     }
 
     if (period === 'year') {
-      const labels = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
-      const kVals = Array(12).fill(0);
-      const cVals = Array(12).fill(0);
+      const activeIndices = [];
+      appData.sessions.forEach(s => {
+        const d = new Date(s.date);
+        if (d.getFullYear() === cy) activeIndices.push(d.getMonth());
+      });
+      const range = getSmartMonthRange(activeIndices, cy, cm);
+      const monthlyK = Array(12).fill(0);
+      const monthlyC = Array(12).fill(0);
       appData.sessions.forEach(s => {
         const d = new Date(s.date);
         if (d.getFullYear() === cy) {
           const m = d.getMonth();
-          kVals[m] += s.kwh;
-          cVals[m] += s.totalCost;
+          monthlyK[m] += s.kwh;
+          monthlyC[m] += s.totalCost;
         }
       });
       return {
-        labels,
-        kwhVals: kVals,
-        costVals: cVals,
-        sub: `Monate im Jahr ${cy}`
+        labels: range.labels,
+        kwhVals: range.indices.map(m => monthlyK[m]),
+        costVals: range.indices.map(m => monthlyC[m]),
+        sub: range.labels.length > 1 ? `${range.labels[0]} bis ${range.labels[range.labels.length - 1]} ${cy}` : `Monat ${range.labels[0]} ${cy}`
       };
     }
 
@@ -2724,8 +2903,10 @@
           },
           yRain: {
             position: 'right',
+            min: 0,
+            max: Math.max(2, Math.ceil(Math.max(...(rainData || [0])) * 1.3)),
             grid: { display: false },
-            ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${v} l` }
+            ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${Number.isInteger(v) ? v : v.toFixed(1)} l` }
           }
         }
       },
