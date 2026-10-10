@@ -1588,32 +1588,46 @@ input[type="number"] {
 
 .hourly-kpi-summary-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+
+@media (max-width: 380px) {
+  .hourly-kpi-summary-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .hourly-summary-pill {
   background: rgba(6, 10, 16, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
-  padding: 8px 6px;
+  padding: 6px 3px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  min-width: 0;
 }
 
 .hourly-sum-lbl {
-  font-size: 0.62rem;
+  font-size: 0.56rem;
   font-weight: 700;
   color: var(--text-muted);
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .hourly-sum-val {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 800;
   color: #ffffff;
+  white-space: nowrap;
+}
+
+.hourly-hour-card.sun-event-hour {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .hourly-decision-box {

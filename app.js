@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v4';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
   const CURRENT_SCHEMA = 3;
 
   const DEFAULT_LOCATIONS = [
@@ -203,12 +203,15 @@
     DOM.hourlyModalSub = document.getElementById('hourlyModalSub');
     DOM.btnCloseHourlyModal = document.getElementById('btnCloseHourlyModal');
     DOM.hourlyTotalSun = document.getElementById('hourlyTotalSun');
+    DOM.hourlySunrise = document.getElementById('hourlySunrise');
+    DOM.hourlySunset = document.getElementById('hourlySunset');
     DOM.hourlyTotalRain = document.getElementById('hourlyTotalRain');
     DOM.hourlyTempRange = document.getElementById('hourlyTempRange');
     DOM.hourlyDecisionIcon = document.getElementById('hourlyDecisionIcon');
     DOM.hourlyDecisionTitle = document.getElementById('hourlyDecisionTitle');
     DOM.hourlyDecisionDesc = document.getElementById('hourlyDecisionDesc');
     DOM.canvasHourlyChart = document.getElementById('canvasHourlyChart');
+    DOM.hourlyChartLegendBox = document.getElementById('hourlyChartLegendBox');
     DOM.hourlyHoursScroll = document.getElementById('hourlyHoursScroll');
 
     // KPI Detail Modal & Chart
@@ -2046,8 +2049,8 @@
     const loc = appData.settings.weatherGps || DEFAULT_DATA.settings.weatherGps;
     DOM.weatherDisplayLocation.textContent = `📍 ${loc.name}`;
 
-    // Abfrage mit daily (precipitation_sum in mm = l/m²) und hourly für Stundengraphen!
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum&hourly=temperature_2m,precipitation,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
+    // Abfrage mit daily (inkl. sunrise, sunset, precipitation_sum in mm = l/m²) und hourly für Stundengraphen!
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
 
     try {
       const resp = await fetch(url);
@@ -2074,6 +2077,26 @@
     updateDashboardPvDecisionWidget();
   }
 
+  function getFallbackSunTimes(dateObj) {
+    const d = dateObj instanceof Date ? dateObj : new Date();
+    const m = d.getMonth();
+    const table = [
+      { rise: '08:00', set: '16:50' },
+      { rise: '07:30', set: '17:35' },
+      { rise: '06:35', set: '18:25' },
+      { rise: '06:30', set: '20:10' },
+      { rise: '05:45', set: '20:55' },
+      { rise: '05:20', set: '21:25' },
+      { rise: '05:35', set: '21:15' },
+      { rise: '06:15', set: '20:30' },
+      { rise: '07:00', set: '19:30' },
+      { rise: '07:35', set: '18:35' },
+      { rise: '07:30', set: '16:45' },
+      { rise: '08:00', set: '16:25' }
+    ];
+    return table[m] || { rise: '07:30', set: '18:35' };
+  }
+
   function processWeatherForecast(daily, hourly) {
     const list = [];
     const threshold = appData.settings.pvThresholdSunshineHours || 4.5;
@@ -2086,6 +2109,14 @@
       const tMax = Math.round(daily.temperature_2m_max[i]);
       const tMin = Math.round(daily.temperature_2m_min[i]);
       const code = daily.weather_code[i];
+
+      let sunrise = (daily.sunrise && daily.sunrise[i]) ? daily.sunrise[i].slice(11, 16) : null;
+      let sunset = (daily.sunset && daily.sunset[i]) ? daily.sunset[i].slice(11, 16) : null;
+      if (!sunrise || !sunset) {
+        const fb = getFallbackSunTimes(d);
+        sunrise = sunrise || fb.rise;
+        sunset = sunset || fb.set;
+      }
 
       // Exaktes Wetter-Icon & Zustand abgestimmt auf Sonnenstunden UND Niederschlag!
       const wInfo = determineAccurateWeatherIcon(sunshineHours, rainMm, code);
@@ -2133,6 +2164,8 @@
         rainMm, // l/m²
         tMax,
         tMin,
+        sunrise,
+        sunset,
         icon,
         conditionText,
         decision,
@@ -2236,6 +2269,7 @@
         hintText = `Wenig Sonne (${sunshineHours}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
       }
 
+      const fb = getFallbackSunTimes(d);
       list.push({
         dateIndex: i,
         dateStr,
@@ -2245,6 +2279,8 @@
         rainMm,
         tMax: Math.round(18 + Math.sin(i) * 5),
         tMin: Math.round(9 + Math.sin(i) * 3),
+        sunrise: fb.rise,
+        sunset: fb.set,
         icon,
         conditionText,
         decision,
@@ -2382,6 +2418,7 @@
           <div class="day-stats-row">
             <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
             <span class="day-rain-stat">💧 ${item.rainMm} l/m²</span>
+            ${item.sunrise && item.sunset ? `<span class="day-sun-times" style="font-size:0.64rem; color:rgba(245,158,11,0.85); font-weight:700; margin-left:3px;">🌅 ${item.sunrise} | 🌇 ${item.sunset}</span>` : ''}
           </div>
         </div>
 
@@ -2440,6 +2477,17 @@
     DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
     DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
     DOM.hourlyTempRange.textContent = `${day.tMax}° / ${day.tMin}°`;
+    if (DOM.hourlySunrise) DOM.hourlySunrise.textContent = day.sunrise || '--:--';
+    if (DOM.hourlySunset) DOM.hourlySunset.textContent = day.sunset || '--:--';
+
+    if (DOM.hourlyChartLegendBox) {
+      DOM.hourlyChartLegendBox.innerHTML = `
+        <span class="legend-indicator dot-bronze" style="width: 12px; height: 3px; border-radius: 2px;"></span><span>Sonne (Kurve)</span>
+        <span class="legend-indicator dot-cyan"></span><span>Regen (l/m²)</span>
+        <span style="color:#f59e0b; font-weight:700; margin-left:5px;">🌅 ${day.sunrise}</span>
+        <span style="color:#f97316; font-weight:700; margin-left:4px;">🌇 ${day.sunset}</span>
+      `;
+    }
 
     if (day.decision === 'office') {
       DOM.hourlyDecisionIcon.textContent = '🏢';
@@ -2459,19 +2507,31 @@
     // Modal FIRST öffnen damit Canvas echte Pixelmaße hat
     DOM.modalHourlyWeather.classList.add('open');
 
-    // Stündlichen Chart.js Graph zeichnen
-    renderHourlyWeatherChart(day.hourlyData);
+    // Stündlichen Chart.js Graph zeichnen mit dynamischer Sonnenaufgang/untergang Markerlinie
+    renderHourlyWeatherChart(day.hourlyData, day.sunrise, day.sunset);
 
     // Stündliche Kapseln rendern
-    DOM.hourlyHoursScroll.innerHTML = day.hourlyData.map(h => `
-      <div class="hourly-hour-card">
-        <span class="hh-time">${h.time}</span>
-        <span class="hh-icon">${h.icon}</span>
-        <span class="hh-temp">${h.temp}°</span>
-        <span class="hh-solar">☀️ ${(h.sunHours * 60).toFixed(0)}m</span>
-        <span class="hh-rain">${h.rain > 0 ? `💧 ${h.rain}l` : '-'}</span>
-      </div>
-    `).join('');
+    const sunriseHour = day.sunrise ? parseInt(day.sunrise.split(':')[0], 10) : -1;
+    const sunsetHour = day.sunset ? parseInt(day.sunset.split(':')[0], 10) : -1;
+
+    DOM.hourlyHoursScroll.innerHTML = day.hourlyData.map(h => {
+      const isRise = (h.hour === sunriseHour);
+      const isSet = (h.hour === sunsetHour);
+      let sunEventBadge = '';
+      if (isRise) sunEventBadge = `<span style="font-size:0.58rem; color:#f59e0b; font-weight:800;">🌅 ${day.sunrise}</span>`;
+      else if (isSet) sunEventBadge = `<span style="font-size:0.58rem; color:#f97316; font-weight:800;">🌇 ${day.sunset}</span>`;
+
+      return `
+        <div class="hourly-hour-card ${isRise || isSet ? 'sun-event-hour' : ''}">
+          <span class="hh-time">${h.time}</span>
+          ${sunEventBadge}
+          <span class="hh-icon">${h.icon}</span>
+          <span class="hh-temp">${h.temp}°</span>
+          <span class="hh-solar">☀️ ${(h.sunHours * 60).toFixed(0)}m</span>
+          <span class="hh-rain">${h.rain > 0 ? `💧 ${h.rain}l` : '-'}</span>
+        </div>
+      `;
+    }).join('');
 
     requestAnimationFrame(() => {
       if (chartHourly) chartHourly.resize();
@@ -2490,7 +2550,7 @@
     DOM.modalHourlyWeather.classList.remove('open');
   }
 
-  function renderHourlyWeatherChart(hours) {
+  function renderHourlyWeatherChart(hours, sunriseTime, sunsetTime) {
     if (!DOM.canvasHourlyChart || typeof Chart === 'undefined') return;
     if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
 
@@ -2499,9 +2559,90 @@
     const rainData = hours.map(h => h.rain); // l/m²
 
     const ctx = DOM.canvasHourlyChart.getContext('2d');
-    const bronzeFill = ctx.createLinearGradient(0, 0, 0, 180);
-    bronzeFill.addColorStop(0, 'rgba(226, 142, 78, 0.85)');
-    bronzeFill.addColorStop(1, 'rgba(192, 128, 81, 0.1)');
+    const bronzeFill = ctx.createLinearGradient(0, 0, 0, 190);
+    bronzeFill.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
+    bronzeFill.addColorStop(0.5, 'rgba(226, 142, 78, 0.22)');
+    bronzeFill.addColorStop(1, 'rgba(192, 128, 81, 0.02)');
+
+    const sunTimesMarkerPlugin = {
+      id: 'sunTimesMarkerPlugin',
+      afterDraw(chart) {
+        const { ctx: c, chartArea, scales: { x } } = chart;
+        if (!chartArea || !x) return;
+        const { top, bottom, left, right } = chartArea;
+
+        const parseTimeToX = (timeStr) => {
+          if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return null;
+          const parts = timeStr.split(':');
+          const h = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (isNaN(h) || isNaN(m)) return null;
+          const frac = Math.max(0, Math.min(23, h + (m / 60)));
+          const fIdx = Math.floor(frac);
+          const cIdx = Math.min(23, Math.ceil(frac));
+          const pFloor = x.getPixelForValue(fIdx);
+          const pCeil = x.getPixelForValue(cIdx);
+          return pFloor + (pCeil - pFloor) * (frac - fIdx);
+        };
+
+        const xSunrise = parseTimeToX(sunriseTime);
+        const xSunset = parseTimeToX(sunsetTime);
+
+        const drawMarker = (xPos, label, color) => {
+          if (xPos === null || isNaN(xPos) || xPos < left || xPos > right) return;
+
+          c.save();
+
+          // 1. Vertikale gestrichelte Marker-Linie
+          c.beginPath();
+          c.setLineDash([4, 4]);
+          c.lineWidth = 1.5;
+          c.strokeStyle = color;
+          c.moveTo(xPos, top + 18);
+          c.lineTo(xPos, bottom);
+          c.stroke();
+
+          // 2. Kleiner leuchtender Punkt am Fuße der Linie
+          c.beginPath();
+          c.setLineDash([]);
+          c.arc(xPos, bottom, 3, 0, Math.PI * 2);
+          c.fillStyle = color;
+          c.fill();
+
+          // 3. Pill-Badge am oberen Ende der Linie
+          c.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          const text = label;
+          const textWidth = c.measureText(text).width;
+          const badgeW = textWidth + 10;
+          const badgeH = 17;
+          const badgeX = Math.max(left + 2, Math.min(right - badgeW - 2, xPos - (badgeW / 2)));
+          const badgeY = top + 1;
+
+          c.beginPath();
+          const r = 4;
+          if (c.roundRect) {
+            c.roundRect(badgeX, badgeY, badgeW, badgeH, r);
+          } else {
+            c.rect(badgeX, badgeY, badgeW, badgeH);
+          }
+          c.fillStyle = 'rgba(10, 15, 24, 0.94)';
+          c.fill();
+          c.lineWidth = 1;
+          c.strokeStyle = color;
+          c.stroke();
+
+          c.fillStyle = color;
+          c.textAlign = 'center';
+          c.textBaseline = 'middle';
+          c.fillText(text, badgeX + (badgeW / 2), badgeY + (badgeH / 2));
+
+          c.restore();
+        };
+
+        if (sunriseTime) drawMarker(xSunrise, `🌅 ${sunriseTime}`, '#f59e0b');
+        if (sunsetTime) drawMarker(xSunset, `🌇 ${sunsetTime}`, '#f97316');
+      }
+    };
 
     chartHourly = new Chart(ctx, {
       type: 'bar',
@@ -2509,13 +2650,21 @@
         labels,
         datasets: [
           {
-            type: 'bar',
+            type: 'line',
             label: 'Sonne (Minuten)',
             data: sunData,
+            borderColor: '#e28e4e',
             backgroundColor: bronzeFill,
-            borderColor: '#c08051',
-            borderWidth: 1,
-            borderRadius: 4,
+            borderWidth: 2.8,
+            pointBackgroundColor: '#e28e4e',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 1.5,
+            pointRadius: (ctxItem) => (ctxItem.raw && ctxItem.raw > 0) ? 3 : 0,
+            pointHoverRadius: 5.5,
+            pointHoverBackgroundColor: '#f59e0b',
+            pointHoverBorderColor: '#ffffff',
+            tension: 0.38,
+            fill: 'start',
             yAxisID: 'ySun',
             order: 1
           },
@@ -2523,10 +2672,12 @@
             type: 'bar',
             label: 'Regen (l/m²)',
             data: rainData,
-            backgroundColor: 'rgba(56, 189, 248, 0.7)',
+            backgroundColor: 'rgba(56, 189, 248, 0.75)',
             borderColor: '#38bdf8',
             borderWidth: 1,
             borderRadius: 4,
+            barPercentage: 0.45,
+            categoryPercentage: 0.8,
             yAxisID: 'yRain',
             order: 2
           }
@@ -2535,15 +2686,25 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: {
+            top: 22,
+            bottom: 4,
+            left: 4,
+            right: 4
+          }
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
             backgroundColor: 'rgba(6, 10, 16, 0.95)',
             cornerRadius: 8,
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+            borderWidth: 1,
             callbacks: {
               label: (c) => {
-                if (c.datasetIndex === 0) return ` Sonne: ${c.parsed.y} Min / Std`;
-                return ` Regen: ${c.parsed.y} l/m²`;
+                if (c.datasetIndex === 0) return ` ☀️ Sonne: ${c.parsed.y} Min / Std`;
+                return ` 💧 Regen: ${c.parsed.y} l/m²`;
               }
             }
           }
@@ -2556,6 +2717,7 @@
           ySun: {
             position: 'left',
             max: 60,
+            min: 0,
             grid: { color: 'rgba(255, 255, 255, 0.05)' },
             ticks: { color: '#c08051', font: { size: 9 }, callback: v => `${v}m` }
           },
@@ -2565,7 +2727,8 @@
             ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${v} l` }
           }
         }
-      }
+      },
+      plugins: [sunTimesMarkerPlugin]
     });
   }
 
