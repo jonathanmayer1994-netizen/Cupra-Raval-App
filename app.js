@@ -554,7 +554,18 @@
           DOM.kpiDetailSegmentPicker.querySelectorAll('.picker-seg').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           const range = btn.getAttribute('data-subrange');
-          if (activeKpiModal) renderKpiDetailView(activeKpiModal, range);
+          if (activeKpiModal) {
+            renderKpiDetailView(activeKpiModal, range);
+            requestAnimationFrame(() => {
+              if (chartKpiDetail) chartKpiDetail.resize();
+            });
+            setTimeout(() => {
+              if (chartKpiDetail) {
+                chartKpiDetail.resize();
+                chartKpiDetail.update('none');
+              }
+            }, 80);
+          }
           triggerHaptic();
         });
       });
@@ -771,11 +782,26 @@
       });
     }
 
-    renderKpiDetailView(kpiType, defaultSub);
     if (DOM.modalKpiDetail) {
       DOM.modalKpiDetail.classList.add('open');
       document.body.style.overflow = 'hidden';
     }
+
+    renderKpiDetailView(kpiType, defaultSub);
+
+    requestAnimationFrame(() => {
+      if (chartKpiDetail) {
+        chartKpiDetail.resize();
+      }
+    });
+
+    setTimeout(() => {
+      if (chartKpiDetail) {
+        chartKpiDetail.resize();
+        chartKpiDetail.update('none');
+      }
+    }, 120);
+
     triggerHaptic();
   }
 
@@ -1512,8 +1538,12 @@
     bronzeFill.addColorStop(0, 'rgba(226, 142, 78, 0.85)');
     bronzeFill.addColorStop(1, 'rgba(192, 128, 81, 0.1)');
 
-    const datasets = cfg.datasets.map(d => {
+    const hasRightAxis = !!cfg.yRight;
+
+    const datasets = (cfg.datasets || []).map(d => {
       const isBronze = d.color === 'bronze';
+      const targetAxis = (hasRightAxis && (d.yAxisID === 'yRight' || d.yAxisID === 'yCost')) ? 'yRight' : 'yLeft';
+
       if (d.type === 'bar') {
         return {
           type: 'bar',
@@ -1523,7 +1553,7 @@
           borderColor: isBronze ? '#c08051' : '#38bdf8',
           borderWidth: 1.5,
           borderRadius: 4,
-          yAxisID: d.yAxisID,
+          yAxisID: targetAxis,
           order: 2
         };
       } else {
@@ -1539,7 +1569,7 @@
           pointRadius: 3,
           tension: 0.3,
           borderDash: d.borderDash || [],
-          yAxisID: d.yAxisID,
+          yAxisID: targetAxis,
           order: 1
         };
       }
@@ -1554,30 +1584,40 @@
           padding: 8,
           maxTicksLimit: 12
         }
+      },
+      yLeft: {
+        position: 'left',
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: {
+          color: '#c08051',
+          font: { size: 9 },
+          padding: 6,
+          callback: v => `${v} ${cfg.yLeft?.label || ''}`
+        }
       }
     };
+    if (cfg.yLeft && typeof cfg.yLeft.max === 'number') {
+      scales.yLeft.suggestedMax = cfg.yLeft.max;
+    }
 
-    if (cfg.yRight) {
-      scales.yKwh = {
-        position: 'left',
-        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#c08051', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yLeft.label}` }
-      };
-      scales.yCost = {
+    if (hasRightAxis) {
+      scales.yRight = {
         position: 'right',
         grid: { drawOnChartArea: false },
-        ticks: { color: '#38bdf8', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yRight.label}` }
+        ticks: {
+          color: '#38bdf8',
+          font: { size: 9 },
+          padding: 6,
+          callback: v => `${v} ${cfg.yRight?.label || ''}`
+        }
       };
-    } else {
-      scales.yCost = {
-        position: 'left',
-        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#38bdf8', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yLeft.label}` }
-      };
-      if (cfg.yLeft.max) scales.yCost.suggestedMax = cfg.yLeft.max;
+      if (cfg.yRight && typeof cfg.yRight.max === 'number') {
+        scales.yRight.suggestedMax = cfg.yRight.max;
+      }
     }
 
     chartKpiDetail = new Chart(ctx, {
+      type: cfg.type || 'bar',
       data: {
         labels: cfg.labels,
         datasets: datasets
@@ -1757,6 +1797,7 @@
     bronzeGrad.addColorStop(1, 'rgba(192, 128, 81, 0.2)');
 
     chartMain = new Chart(ctx, {
+      type: 'bar',
       data: {
         labels,
         datasets: [
@@ -2415,6 +2456,9 @@
     }
     DOM.hourlyDecisionDesc.textContent = day.hintText;
 
+    // Modal FIRST öffnen damit Canvas echte Pixelmaße hat
+    DOM.modalHourlyWeather.classList.add('open');
+
     // Stündlichen Chart.js Graph zeichnen
     renderHourlyWeatherChart(day.hourlyData);
 
@@ -2429,7 +2473,16 @@
       </div>
     `).join('');
 
-    DOM.modalHourlyWeather.classList.add('open');
+    requestAnimationFrame(() => {
+      if (chartHourly) chartHourly.resize();
+    });
+    setTimeout(() => {
+      if (chartHourly) {
+        chartHourly.resize();
+        chartHourly.update('none');
+      }
+    }, 100);
+
     triggerHaptic();
   }
 
@@ -2451,6 +2504,7 @@
     bronzeFill.addColorStop(1, 'rgba(192, 128, 81, 0.1)');
 
     chartHourly = new Chart(ctx, {
+      type: 'bar',
       data: {
         labels,
         datasets: [

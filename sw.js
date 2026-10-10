@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raval-charge-v14';
+const CACHE_NAME = 'raval-charge-v15';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
