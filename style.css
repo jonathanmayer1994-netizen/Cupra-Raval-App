@@ -2228,7 +2228,15 @@ select option {
 }
 
 .kpi-chart-card {
-  padding: 12px 14px;
+  padding: 14px 14px 22px 14px;
+  overflow: visible;
+}
+
+.kpi-chart-card .chart-canvas-container {
+  height: 245px;
+  position: relative;
+  width: 100%;
+  margin-bottom: 6px;
 }
 
 .kpi-history-list-box {

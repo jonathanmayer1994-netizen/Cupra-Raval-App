@@ -762,15 +762,16 @@
 
   function openKpiDetailModal(kpiType) {
     activeKpiModal = kpiType;
-    activeKpiSubRange = 'auto';
+    const defaultSub = (kpiType === 'year-cost' || kpiType === 'year-distance') ? 'monthly' : 'timeline';
+    activeKpiSubRange = defaultSub;
 
     if (DOM.kpiDetailSegmentPicker) {
-      DOM.kpiDetailSegmentPicker.querySelectorAll('.picker-seg').forEach((b, idx) => {
-        b.classList.toggle('active', idx === 0);
+      DOM.kpiDetailSegmentPicker.querySelectorAll('.picker-seg').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-subrange') === defaultSub);
       });
     }
 
-    renderKpiDetailView(kpiType, 'auto');
+    renderKpiDetailView(kpiType, defaultSub);
     if (DOM.modalKpiDetail) {
       DOM.modalKpiDetail.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -793,6 +794,7 @@
   function renderKpiDetailView(kpiType, subRange) {
     if (!DOM.modalKpiDetail) return;
 
+    const range = (subRange === 'monthly' || subRange === 'timeline') ? subRange : 'monthly';
     const now = new Date();
     const curYear = now.getFullYear();
     const curMonth = now.getMonth();
@@ -805,6 +807,11 @@
     const consData = calcConsumption(sessions);
 
     let mCost = 0, mKwh = 0, yCost = 0, yKwh = 0, allCost = 0, allKwh = 0, allPvKwh = 0;
+    const monthlyKwh = new Array(12).fill(0);
+    const monthlyCost = new Array(12).fill(0);
+    const monthlySessionsCount = new Array(12).fill(0);
+    const monthlyPvKwh = new Array(12).fill(0);
+
     sessions.forEach(s => {
       const d = new Date(s.date);
       const k = Number(s.kwh) || 0;
@@ -812,10 +819,17 @@
       allCost += c;
       allKwh += k;
       if (s.pvSurplus) allPvKwh += k;
+
       if (d.getFullYear() === curYear) {
         yCost += c;
         yKwh += k;
-        if (d.getMonth() === curMonth) {
+        const m = d.getMonth();
+        monthlyKwh[m] += k;
+        monthlyCost[m] += c;
+        monthlySessionsCount[m] += 1;
+        if (s.pvSurplus) monthlyPvKwh[m] += k;
+
+        if (m === curMonth) {
           mCost += c;
           mKwh += k;
         }
@@ -829,45 +843,184 @@
     let chartTitle = "Verlauf", legendHtml = "", listTitle = "Historische Datenpunkte", listHtml = "";
     let chartConfig = null;
 
+    const mSessions = sessions.filter(s => {
+      const d = new Date(s.date);
+      return d.getFullYear() === curYear && d.getMonth() === curMonth;
+    });
+    const ySessions = sessions.filter(s => {
+      const d = new Date(s.date);
+      return d.getFullYear() === curYear;
+    });
+
     if (kpiType === 'month-cost') {
-      title = `Ladekosten • ${monthNames[curMonth]}`;
-      sub = `${curYear} • Monatsanalyse & Ladehistorie`;
-      const mSessions = sessions.filter(s => {
-        const d = new Date(s.date);
-        return d.getFullYear() === curYear && d.getMonth() === curMonth;
-      });
+      if (range === 'monthly') {
+        // MONATSVERGLEICH (Jan - Dez)
+        title = `Ladekosten • Monatsvergleich ${curYear}`;
+        sub = `Monatliche Kosten & Energiemenge im Kalenderjahr`;
 
-      stat1 = { lbl: "Monatskosten", val: `${formatDe(mCost)} €` };
-      stat2 = { lbl: "Geladen", val: `${mKwh.toFixed(1)} kWh` };
-      stat3 = { lbl: "Ladevorgänge", val: `${mSessions.length}` };
+        stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
+        stat2 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+        stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(mCost)} €` };
 
-      chartTitle = "Ladekosten & Energie im Monatsverlauf";
-      legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
+        chartTitle = `Monatlicher Ladevergleich (Jan – Dez ${curYear})`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh geladen</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
 
-      const revSessions = [...mSessions].reverse();
-      const labels = revSessions.map(s => {
-        const d = new Date(s.date);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
-      });
-      const kwhVals = revSessions.map(s => s.kwh);
-      const costVals = revSessions.map(s => s.totalCost);
+        chartConfig = {
+          type: 'bar',
+          labels: monthShorts,
+          datasets: [
+            { type: 'bar', label: 'kWh geladen', data: monthlyKwh, yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: monthlyCost, yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'kWh', max: null },
+          yRight: { label: '€', max: null }
+        };
 
-      chartConfig = {
-        type: 'bar',
-        labels: labels.length > 0 ? labels : ['Keine Ladungen'],
-        datasets: [
-          { type: 'bar', label: 'kWh', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yKwh', color: 'bronze' },
-          { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yCost', color: 'cyan' }
-        ],
-        yLeft: { label: 'kWh', max: null },
-        yRight: { label: '€', max: null }
-      };
+        listTitle = `Monatsaufstellung ${curYear}`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+          const isCur = idx === curMonth;
+          return `
+            <div class="kpi-history-row" style="${isCur ? 'border-color: rgba(192, 128, 81, 0.45); background: rgba(26, 20, 16, 0.7);' : ''}">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear} ${isCur ? '⭐ Aktuell' : ''}</span>
+                <span class="kpi-hr-sub">${monthlySessionsCount[idx]} Ladungen • ${monthlyKwh[idx].toFixed(1)} kWh geladen</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${formatDe(monthlyCost[idx])} €</span>
+                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2) : '0,00'} €/kWh</span>
+              </div>
+            </div>
+          `;
+        }).filter(Boolean).reverse().join('');
 
-      listTitle = `Ladevorgänge im ${monthNames[curMonth]}`;
-      if (mSessions.length === 0) {
-        listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">In diesem Monat noch keine Ladungen erfasst.</div></div>`;
       } else {
-        listHtml = mSessions.map(s => {
+        // ALLE EINTRÄGE (Einzelladungen des aktuellen Monats)
+        title = `Ladekosten • ${monthNames[curMonth]} ${curYear}`;
+        sub = `${mSessions.length} Ladevorgänge im laufenden Monat`;
+
+        stat1 = { lbl: "Monatskosten", val: `${formatDe(mCost)} €` };
+        stat2 = { lbl: "Geladen", val: `${mKwh.toFixed(1)} kWh` };
+        stat3 = { lbl: "Ladungen", val: `${mSessions.length}` };
+
+        chartTitle = `Ladevorgänge im ${monthNames[curMonth]}`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh geladen</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
+
+        const revSessions = [...mSessions].reverse();
+        const labels = revSessions.map(s => {
+          const d = new Date(s.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const kwhVals = revSessions.map(s => Number(s.kwh) || 0);
+        const costVals = revSessions.map(s => Number(s.totalCost) || 0);
+
+        chartConfig = {
+          type: 'bar',
+          labels: labels.length > 0 ? labels : ['Keine Ladungen'],
+          datasets: [
+            { type: 'bar', label: 'kWh', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'kWh', max: null },
+          yRight: { label: '€', max: null }
+        };
+
+        listTitle = `Ladevorgänge im ${monthNames[curMonth]}`;
+        if (mSessions.length === 0) {
+          listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">In diesem Monat noch keine Ladungen erfasst.</div></div>`;
+        } else {
+          listHtml = mSessions.map(s => {
+            const d = new Date(s.date);
+            return `
+              <div class="kpi-history-row">
+                <div class="kpi-hr-left">
+                  <span class="kpi-hr-title">${escapeHtml(s.location)} ${s.pvSurplus ? '☀️' : ''}</span>
+                  <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div class="kpi-hr-right">
+                  <span class="kpi-hr-value">${formatDe(s.totalCost)} €</span>
+                  <span class="kpi-hr-extra">${s.kwh.toFixed(1)} kWh @ ${s.pricePerKwh.toFixed(2)} €</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+    } else if (kpiType === 'year-cost') {
+      if (range === 'monthly') {
+        // MONATSVERGLEICH
+        title = `Ladekosten • Gesamtjahr ${curYear}`;
+        sub = `Januar bis Dezember • Monatsvergleich`;
+
+        stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
+        stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
+        stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+
+        chartTitle = `Monatlicher Ladeverlauf ${curYear}`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
+
+        chartConfig = {
+          type: 'bar',
+          labels: monthShorts,
+          datasets: [
+            { type: 'bar', label: 'kWh', data: monthlyKwh, yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: monthlyCost, yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'kWh', max: null },
+          yRight: { label: '€', max: null }
+        };
+
+        listTitle = `Monatsaufstellung ${curYear}`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+          return `
+            <div class="kpi-history-row">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
+                <span class="kpi-hr-sub">${monthlySessionsCount[idx]} Ladungen • ${monthlyKwh[idx].toFixed(1)} kWh geladen</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${formatDe(monthlyCost[idx])} €</span>
+                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2) : '0,00'} €/kWh</span>
+              </div>
+            </div>
+          `;
+        }).filter(Boolean).reverse().join('');
+
+      } else {
+        // ALLE EINTRÄGE (Chronologisch alle Ladungen des Jahres)
+        title = `Ladekosten • Alle Ladungen ${curYear}`;
+        sub = `${ySessions.length} erfasste Ladevorgänge im gesamten Jahr`;
+
+        stat1 = { lbl: "Ladungen", val: `${ySessions.length}` };
+        stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
+        stat3 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
+
+        chartTitle = `Chronologische Ladevorgänge ${curYear}`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
+
+        const revAll = [...ySessions].reverse();
+        const labels = revAll.map(s => {
+          const d = new Date(s.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const kwhVals = revAll.map(s => Number(s.kwh) || 0);
+        const costVals = revAll.map(s => Number(s.totalCost) || 0);
+
+        chartConfig = {
+          type: 'bar',
+          labels: labels.length > 0 ? labels : ['Keine Ladungen'],
+          datasets: [
+            { type: 'bar', label: 'kWh', data: kwhVals.length > 0 ? kwhVals : [0], yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kosten (€)', data: costVals.length > 0 ? costVals : [0], yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'kWh', max: null },
+          yRight: { label: '€', max: null }
+        };
+
+        listTitle = `Alle Ladevorgänge ${curYear}`;
+        listHtml = ySessions.map(s => {
           const d = new Date(s.date);
           return `
             <div class="kpi-history-row">
@@ -884,101 +1037,210 @@
         }).join('');
       }
 
-    } else if (kpiType === 'year-cost') {
-      title = `Ladekosten • Gesamtjahr ${curYear}`;
-      sub = `Januar bis Dezember • Jahresanalyse`;
-
-      stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
-      stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
-      stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
-
-      chartTitle = "Monatlicher Verlauf (Jan – Dez)";
-      legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
-
-      const monthlyKwh = new Array(12).fill(0);
-      const monthlyCost = new Array(12).fill(0);
-      sessions.forEach(s => {
-        const d = new Date(s.date);
-        if (d.getFullYear() === curYear) {
-          monthlyKwh[d.getMonth()] += Number(s.kwh) || 0;
-          monthlyCost[d.getMonth()] += Number(s.totalCost) || 0;
-        }
-      });
-
-      chartConfig = {
-        type: 'bar',
-        labels: monthShorts,
-        datasets: [
-          { type: 'bar', label: 'kWh', data: monthlyKwh, yAxisID: 'yKwh', color: 'bronze' },
-          { type: 'line', label: 'Kosten (€)', data: monthlyCost, yAxisID: 'yCost', color: 'cyan' }
-        ],
-        yLeft: { label: 'kWh', max: null },
-        yRight: { label: '€', max: null }
-      };
-
-      listTitle = `Monatsaufstellung ${curYear}`;
-      listHtml = monthShorts.map((m, idx) => {
-        if (idx > curMonth && monthlyKwh[idx] === 0) return '';
-        return `
-          <div class="kpi-history-row">
-            <div class="kpi-hr-left">
-              <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
-              <span class="kpi-hr-sub">${monthlyKwh[idx].toFixed(1)} kWh geladen</span>
-            </div>
-            <div class="kpi-hr-right">
-              <span class="kpi-hr-value">${formatDe(monthlyCost[idx])} €</span>
-              <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2) : '0,00'} €/kWh</span>
-            </div>
-          </div>
-        `;
-      }).filter(Boolean).reverse().join('');
-
     } else if (kpiType === 'month-distance') {
-      title = `Fahrleistung • ${monthNames[curMonth]}`;
-      sub = `${curYear} • Gefahrene Distanz & Tagesdurchschnitt`;
-
       const monthSegments = distStats.segments.filter(seg => {
         const d = new Date(seg.date);
         return d.getFullYear() === curYear && d.getMonth() === curMonth;
       });
 
-      stat1 = { lbl: "Monatsdistanz", val: `${formatDe(distStats.monthKm)} km` };
-      stat2 = { lbl: "Ø / Tag", val: `${distStats.avgKmPerDay.toFixed(1).replace('.', ',')} km` };
-      stat3 = { lbl: "Fahrabschnitte", val: `${monthSegments.length}` };
+      if (range === 'monthly') {
+        // MONATSVERGLEICH DER FAHRLEISTUNG
+        title = `Fahrleistung • Monatsvergleich ${curYear}`;
+        sub = `Gefahrene Kilometer je Monat im Kalenderjahr`;
 
-      chartTitle = "Gefahrene Kilometer im Monatsverlauf";
-      legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Strecke (km)</span><span class="legend-indicator dot-cyan"></span><span>Kumuliert (km)</span>`;
+        stat1 = { lbl: "Dieses Jahr", val: `${formatDe(distStats.yearKm)} km` };
+        stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
+        stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(distStats.monthKm)} km` };
 
-      const labels = monthSegments.map(seg => {
-        const d = new Date(seg.date);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
-      });
-      const deltas = monthSegments.map(s => s.deltaKm);
-      let cum = 0;
-      const cumKm = deltas.map(d => { cum += d; return cum; });
+        chartTitle = `Monatliche Fahrstrecke (Jan – Dez ${curYear})`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Fahrleistung (km)</span>`;
 
-      chartConfig = {
-        type: 'bar',
-        labels: labels.length > 0 ? labels : ['Keine Fahrten'],
-        datasets: [
-          { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yKwh', color: 'bronze' },
-          { type: 'line', label: 'Kumuliert (km)', data: cumKm.length > 0 ? cumKm : [0], yAxisID: 'yCost', color: 'cyan' }
-        ],
-        yLeft: { label: 'km', max: null },
-        yRight: { label: 'km', max: null }
-      };
+        const monthlyDist = new Array(12).fill(0);
+        distStats.segments.forEach(seg => {
+          const d = new Date(seg.date);
+          if (d.getFullYear() === curYear) {
+            monthlyDist[d.getMonth()] += seg.deltaKm;
+          }
+        });
 
-      listTitle = `Fahrabschnitte im ${monthNames[curMonth]}`;
-      if (monthSegments.length === 0) {
-        listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">In diesem Monat wurden noch keine Distanzen zwischen Ladevorgängen erfasst.</div></div>`;
+        chartConfig = {
+          type: 'bar',
+          labels: monthShorts,
+          datasets: [
+            { type: 'bar', label: 'Fahrleistung (km)', data: monthlyDist, yAxisID: 'yKwh', color: 'bronze' }
+          ],
+          yLeft: { label: 'km', max: null },
+          yRight: null
+        };
+
+        listTitle = `Fahrleistung nach Monaten ${curYear}`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyDist[idx] === 0) return '';
+          const isCur = idx === curMonth;
+          return `
+            <div class="kpi-history-row" style="${isCur ? 'border-color: rgba(192, 128, 81, 0.45); background: rgba(26, 20, 16, 0.7);' : ''}">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear} ${isCur ? '⭐ Aktuell' : ''}</span>
+                <span class="kpi-hr-sub">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / 30).toFixed(1) + ' km / Tag' : 'Keine Fahrten'}</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
+                <span class="kpi-hr-extra">${monthlyDist[idx]} km gesamt</span>
+              </div>
+            </div>
+          `;
+        }).filter(Boolean).reverse().join('');
+
       } else {
-        listHtml = monthSegments.map(seg => {
+        // ALLE EINTRÄGE (Fahrabschnitte dieses Monats)
+        title = `Fahrleistung • ${monthNames[curMonth]} ${curYear}`;
+        sub = `${monthSegments.length} erfasste Abschnitte im laufenden Monat`;
+
+        stat1 = { lbl: "Monatsdistanz", val: `${formatDe(distStats.monthKm)} km` };
+        stat2 = { lbl: "Ø / Tag", val: `${distStats.avgKmPerDay.toFixed(1).replace('.', ',')} km` };
+        stat3 = { lbl: "Fahrabschnitte", val: `${monthSegments.length}` };
+
+        chartTitle = `Gefahrene Kilometer im ${monthNames[curMonth]}`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Strecke (km)</span><span class="legend-indicator dot-cyan"></span><span>Kumuliert (km)</span>`;
+
+        const labels = monthSegments.map(seg => {
+          const d = new Date(seg.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const deltas = monthSegments.map(s => s.deltaKm);
+        let cum = 0;
+        const cumKm = deltas.map(d => { cum += d; return cum; });
+
+        chartConfig = {
+          type: 'bar',
+          labels: labels.length > 0 ? labels : ['Keine Fahrten'],
+          datasets: [
+            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kumuliert (km)', data: cumKm.length > 0 ? cumKm : [0], yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'km', max: null },
+          yRight: { label: 'km', max: null }
+        };
+
+        listTitle = `Fahrabschnitte im ${monthNames[curMonth]}`;
+        if (monthSegments.length === 0) {
+          listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">In diesem Monat wurden noch keine Distanzen zwischen Ladevorgängen erfasst.</div></div>`;
+        } else {
+          listHtml = monthSegments.map(seg => {
+            const d = new Date(seg.date);
+            return `
+              <div class="kpi-history-row">
+                <div class="kpi-hr-left">
+                  <span class="kpi-hr-title">+${seg.deltaKm.toLocaleString('de-DE')} km gefahren</span>
+                  <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • Von ${seg.fromOdo.toLocaleString('de-DE')} auf ${seg.toOdo.toLocaleString('de-DE')} km</span>
+                </div>
+                <div class="kpi-hr-right">
+                  <span class="kpi-hr-value">${seg.deltaKm} km</span>
+                  <span class="kpi-hr-extra">${seg.kwh > 0 ? ((seg.kwh / seg.deltaKm) * 100).toFixed(1) + ' kWh/100km' : ''}</span>
+                </div>
+              </div>
+            `;
+          }).reverse().join('');
+        }
+      }
+
+    } else if (kpiType === 'year-distance') {
+      if (range === 'monthly') {
+        // MONATSVERGLEICH
+        title = `Fahrleistung • Gesamtjahr & Kilometerstand`;
+        sub = `Jahresdistanz ${curYear} & Gesamtlaufleistung`;
+
+        stat1 = { lbl: "Dieses Jahr", val: `${formatDe(distStats.yearKm)} km` };
+        stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
+        stat3 = { lbl: "Kilometerstand", val: `${Number(distStats.totalOdo).toLocaleString('de-DE')} km` };
+
+        chartTitle = `Monatliche Fahrleistung & Kilometerstand`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Monatsdistanz (km)</span><span class="legend-indicator dot-cyan"></span><span>Kilometerstand</span>`;
+
+        const monthlyDist = new Array(12).fill(0);
+        let latestOdoPerMonth = new Array(12).fill(null);
+
+        distStats.segments.forEach(seg => {
+          const d = new Date(seg.date);
+          if (d.getFullYear() === curYear) {
+            monthlyDist[d.getMonth()] += seg.deltaKm;
+            latestOdoPerMonth[d.getMonth()] = seg.toOdo;
+          }
+        });
+
+        let lastKnown = null;
+        for (let m = 0; m <= curMonth; m++) {
+          if (latestOdoPerMonth[m] !== null) lastKnown = latestOdoPerMonth[m];
+          else latestOdoPerMonth[m] = lastKnown;
+        }
+
+        chartConfig = {
+          type: 'bar',
+          labels: monthShorts,
+          datasets: [
+            { type: 'bar', label: 'Distanz (km)', data: monthlyDist, yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kilometerstand', data: latestOdoPerMonth, yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'km', max: null },
+          yRight: { label: 'km', max: null }
+        };
+
+        listTitle = `Fahrleistung nach Monaten ${curYear}`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyDist[idx] === 0) return '';
+          return `
+            <div class="kpi-history-row">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
+                <span class="kpi-hr-sub">Stand: ${latestOdoPerMonth[idx] ? Number(latestOdoPerMonth[idx]).toLocaleString('de-DE') + ' km' : '--'}</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
+                <span class="kpi-hr-extra">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / 30).toFixed(1) + ' km/Tag' : ''}</span>
+              </div>
+            </div>
+          `;
+        }).filter(Boolean).reverse().join('');
+
+      } else {
+        // ALLE EINTRÄGE (Chronologisch alle dokumentierten Abschnitte)
+        title = `Fahrleistung • Alle Abschnitte`;
+        sub = `${distStats.segments.length} dokumentierte Ladezyklus-Fahrten`;
+
+        stat1 = { lbl: "Erfasst", val: `${formatDe(distStats.totalTrackedKm)} km` };
+        stat2 = { lbl: "Abschnitte", val: `${distStats.segments.length}` };
+        stat3 = { lbl: "Kilometerstand", val: `${Number(distStats.totalOdo).toLocaleString('de-DE')} km` };
+
+        chartTitle = `Chronologische Fahrabschnitte`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Strecke (km)</span><span class="legend-indicator dot-cyan"></span><span>Kilometerstand</span>`;
+
+        const allSegs = [...distStats.segments];
+        const labels = allSegs.map(s => {
+          const d = new Date(s.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const deltas = allSegs.map(s => s.deltaKm);
+        const odos = allSegs.map(s => s.toOdo);
+
+        chartConfig = {
+          type: 'bar',
+          labels: labels.length > 0 ? labels : ['Keine Fahrten'],
+          datasets: [
+            { type: 'bar', label: 'Strecke (km)', data: deltas.length > 0 ? deltas : [0], yAxisID: 'yKwh', color: 'bronze' },
+            { type: 'line', label: 'Kilometerstand', data: odos.length > 0 ? odos : [distStats.totalOdo], yAxisID: 'yCost', color: 'cyan' }
+          ],
+          yLeft: { label: 'km', max: null },
+          yRight: { label: 'km', max: null }
+        };
+
+        listTitle = `Alle dokumentierten Fahrabschnitte`;
+        listHtml = distStats.segments.map(seg => {
           const d = new Date(seg.date);
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
                 <span class="kpi-hr-title">+${seg.deltaKm.toLocaleString('de-DE')} km gefahren</span>
-                <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • Von ${seg.fromOdo.toLocaleString('de-DE')} auf ${seg.toOdo.toLocaleString('de-DE')} km</span>
+                <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • Stand: ${seg.toOdo.toLocaleString('de-DE')} km</span>
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${seg.deltaKm} km</span>
@@ -989,170 +1251,225 @@
         }).reverse().join('');
       }
 
-    } else if (kpiType === 'year-distance') {
-      title = `Fahrleistung • Gesamtjahr & Odometer`;
-      sub = `Jahresdistanz ${curYear} & Gesamtlaufleistung`;
-
-      stat1 = { lbl: "Dieses Jahr", val: `${formatDe(distStats.yearKm)} km` };
-      stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
-      stat3 = { lbl: "Kilometerstand", val: `${Number(distStats.totalOdo).toLocaleString('de-DE')} km` };
-
-      chartTitle = "Monatliche Fahrleistung & Kilometerstand";
-      legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Monatsdistanz (km)</span><span class="legend-indicator dot-cyan"></span><span>Kilometerstand</span>`;
-
-      const monthlyDist = new Array(12).fill(0);
-      let latestOdoPerMonth = new Array(12).fill(null);
-
-      distStats.segments.forEach(seg => {
-        const d = new Date(seg.date);
-        if (d.getFullYear() === curYear) {
-          monthlyDist[d.getMonth()] += seg.deltaKm;
-          latestOdoPerMonth[d.getMonth()] = seg.toOdo;
-        }
-      });
-
-      let lastKnown = null;
-      for (let m = 0; m <= curMonth; m++) {
-        if (latestOdoPerMonth[m] !== null) lastKnown = latestOdoPerMonth[m];
-        else latestOdoPerMonth[m] = lastKnown;
-      }
-
-      chartConfig = {
-        type: 'bar',
-        labels: monthShorts,
-        datasets: [
-          { type: 'bar', label: 'Distanz (km)', data: monthlyDist, yAxisID: 'yKwh', color: 'bronze' },
-          { type: 'line', label: 'Kilometerstand', data: latestOdoPerMonth, yAxisID: 'yCost', color: 'cyan' }
-        ],
-        yLeft: { label: 'km', max: null },
-        yRight: { label: 'km', max: null }
-      };
-
-      listTitle = `Fahrleistung nach Monaten`;
-      listHtml = monthShorts.map((m, idx) => {
-        if (idx > curMonth && monthlyDist[idx] === 0) return '';
-        return `
-          <div class="kpi-history-row">
-            <div class="kpi-hr-left">
-              <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
-              <span class="kpi-hr-sub">Stand: ${latestOdoPerMonth[idx] ? Number(latestOdoPerMonth[idx]).toLocaleString('de-DE') + ' km' : '--'}</span>
-            </div>
-            <div class="kpi-hr-right">
-              <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
-              <span class="kpi-hr-extra">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / 30).toFixed(1) + ' km/Tag' : ''}</span>
-            </div>
-          </div>
-        `;
-      }).filter(Boolean).reverse().join('');
-
     } else if (kpiType === 'avg-price') {
-      title = `Ø Strompreis & PV-Quote`;
-      sub = `Preis- und Solarquote-Entwicklung`;
-
-      stat1 = { lbl: "Ø Strompreis", val: `${avgPrice.toFixed(2).replace('.', ',')} €/kWh` };
-      stat2 = { lbl: "Solar-Anteil", val: `${pvPct}% PV` };
-      stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
-
-      chartTitle = "Effektiver Ladepreis je Ladevorgang";
-      legendHtml = `<span class="legend-indicator dot-cyan"></span><span>Ladepreis (€/kWh)</span><span class="legend-indicator dot-bronze"></span><span>Ø 0.35 € Referenz</span>`;
-
-      const labels = sorted.map(s => {
-        const d = new Date(s.date);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
-      });
-      const prices = sorted.map(s => Number(s.pricePerKwh) || 0);
-      const benchmarks = sorted.map(() => 0.35);
-
-      chartConfig = {
-        type: 'line',
-        labels: labels.length > 0 ? labels : ['Keine Ladungen'],
-        datasets: [
-          { type: 'line', label: 'Preis (€/kWh)', data: prices.length > 0 ? prices : [0], yAxisID: 'yCost', color: 'cyan' },
-          { type: 'line', label: '0.35 € Referenz', data: benchmarks.length > 0 ? benchmarks : [0.35], yAxisID: 'yCost', color: 'bronze', borderDash: [4, 4] }
-        ],
-        yLeft: { label: '€/kWh', max: 0.8 },
-        yRight: null
-      };
-
-      listTitle = "Aufschlüsselung nach Standorten";
       const locMap = {};
       sessions.forEach(s => {
         const loc = s.location || 'Sonstige';
-        if (!locMap[loc]) locMap[loc] = { kwh: 0, cost: 0, count: 0, pv: 0 };
+        if (!locMap[loc]) locMap[loc] = { count: 0, kwh: 0, cost: 0, pv: 0 };
         locMap[loc].kwh += Number(s.kwh) || 0;
         locMap[loc].cost += Number(s.totalCost) || 0;
         locMap[loc].count += 1;
         if (s.pvSurplus) locMap[loc].pv += Number(s.kwh) || 0;
       });
 
-      listHtml = Object.keys(locMap).map(loc => {
-        const item = locMap[loc];
-        const effPrice = item.kwh > 0 ? (item.cost / item.kwh) : 0;
-        const pvShare = item.kwh > 0 ? Math.round((item.pv / item.kwh) * 100) : 0;
-        return `
-          <div class="kpi-history-row">
-            <div class="kpi-hr-left">
-              <span class="kpi-hr-title">${escapeHtml(loc)}</span>
-              <span class="kpi-hr-sub">${item.count} Ladungen • ${item.kwh.toFixed(1)} kWh • ${pvShare}% PV</span>
-            </div>
-            <div class="kpi-hr-right">
-              <span class="kpi-hr-value">${effPrice.toFixed(2).replace('.', ',')} €/kWh</span>
-              <span class="kpi-hr-extra">${formatDe(item.cost)} € gesamt</span>
-            </div>
-          </div>
-        `;
-      }).join('');
+      if (range === 'monthly') {
+        // MONATSVERGLEICH DES STROMPREISES
+        title = `Ø Strompreis • Monatsvergleich`;
+        sub = `Monatlicher effektiver Ladepreis vs. 0,35 € Referenz`;
 
-    } else if (kpiType === 'avg-consumption') {
-      title = `Ø Verbrauch & Effizienz`;
-      sub = `Energieverbrauch auf 100 km & Fahrkosten`;
+        stat1 = { lbl: "Ø Strompreis", val: `${avgPrice.toFixed(2).replace('.', ',')} €/kWh` };
+        stat2 = { lbl: "Solar-Anteil", val: `${pvPct}% PV` };
+        stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
 
-      stat1 = { lbl: "Ø Verbrauch", val: `${consData.hasData ? consData.avgCons.toFixed(1).replace('.', ',') : '--'} kWh` };
-      stat2 = { lbl: "Kosten / 100km", val: `${consData.hasData ? consData.avgCost100.toFixed(2).replace('.', ',') : '--'} €` };
-      stat3 = { lbl: "Erfasst", val: `${distStats.totalTrackedKm} km` };
+        chartTitle = `Monatlicher Ø Ladepreis (€/kWh)`;
+        legendHtml = `<span class="legend-indicator dot-cyan"></span><span>Ø Preis (€/kWh)</span><span class="legend-indicator dot-bronze"></span><span>0.35 € Referenz</span>`;
 
-      chartTitle = "Verbrauchskurve je Fahrabschnitt (kWh/100km)";
-      legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
+        const monthlyPrices = monthShorts.map((m, idx) => {
+          return monthlyKwh[idx] > 0 ? Number((monthlyCost[idx] / monthlyKwh[idx]).toFixed(2)) : null;
+        });
+        const benchmarks = monthShorts.map(() => 0.35);
 
-      const validSegments = distStats.segments.filter(s => s.consumption > 0 && s.consumption < 50);
-      const labels = validSegments.map(s => {
-        const d = new Date(s.date);
-        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
-      });
-      const consVals = validSegments.map(s => Number(s.consumption.toFixed(1)));
-      const benchmarks = validSegments.map(() => 15.0);
+        chartConfig = {
+          type: 'line',
+          labels: monthShorts,
+          datasets: [
+            { type: 'line', label: 'Preis (€/kWh)', data: monthlyPrices, yAxisID: 'yCost', color: 'cyan' },
+            { type: 'line', label: '0.35 € Referenz', data: benchmarks, yAxisID: 'yCost', color: 'bronze', borderDash: [4, 4] }
+          ],
+          yLeft: { label: '€/kWh', max: 0.8 },
+          yRight: null
+        };
 
-      chartConfig = {
-        type: 'line',
-        labels: labels.length > 0 ? labels : ['Mind. 2 Ladungen nötig'],
-        datasets: [
-          { type: 'line', label: 'Verbrauch (kWh/100km)', data: consVals.length > 0 ? consVals : [0], yAxisID: 'yCost', color: 'bronze' },
-          { type: 'line', label: '15.0 Benchmark', data: benchmarks.length > 0 ? benchmarks : [15], yAxisID: 'yCost', color: 'cyan', borderDash: [4, 4] }
-        ],
-        yLeft: { label: 'kWh/100km', max: 30 },
-        yRight: null
-      };
-
-      listTitle = "Erfasste Verbrauchsabschnitte";
-      if (validSegments.length === 0) {
-        listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">Zur Verbrauchsberechnung werden mindestens zwei Ladungen mit erfasstem Kilometerstand benötigt.</div></div>`;
-      } else {
-        listHtml = validSegments.map(s => {
-          const d = new Date(s.date);
-          const cost100 = (s.cost / s.deltaKm) * 100;
+        listTitle = `Preisentwicklung nach Monaten`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyKwh[idx] === 0) return '';
+          const effP = monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]) : 0;
+          const pvP = monthlyKwh[idx] > 0 ? Math.round((monthlyPvKwh[idx] / monthlyKwh[idx]) * 100) : 0;
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
-                <span class="kpi-hr-title">${s.consumption.toFixed(1).replace('.', ',')} kWh / 100km</span>
-                <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • ${s.deltaKm} km gefahren mit ${s.kwh.toFixed(1)} kWh</span>
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
+                <span class="kpi-hr-sub">${monthlyKwh[idx].toFixed(1)} kWh • ${pvP}% Solar-Anteil</span>
               </div>
               <div class="kpi-hr-right">
-                <span class="kpi-hr-value">${cost100.toFixed(2).replace('.', ',')} €</span>
-                <span class="kpi-hr-extra">pro 100 km</span>
+                <span class="kpi-hr-value">${effP.toFixed(2).replace('.', ',')} €/kWh</span>
+                <span class="kpi-hr-extra">${formatDe(monthlyCost[idx])} € gesamt</span>
               </div>
             </div>
           `;
-        }).reverse().join('');
+        }).filter(Boolean).reverse().join('');
+
+      } else {
+        // ALLE EINTRÄGE (Nach Standorten & Einzelladungen)
+        title = `Ø Strompreis • Alle Ladevorgänge`;
+        sub = `Effektiver Ladepreis je Ladung & Standortübersicht`;
+
+        stat1 = { lbl: "Ø Strompreis", val: `${avgPrice.toFixed(2).replace('.', ',')} €/kWh` };
+        stat2 = { lbl: "Solar-Anteil", val: `${pvPct}% PV` };
+        stat3 = { lbl: "Standorte", val: `${Object.keys(locMap).length}` };
+
+        chartTitle = `Effektiver Ladepreis je Ladevorgang`;
+        legendHtml = `<span class="legend-indicator dot-cyan"></span><span>Ladepreis (€/kWh)</span><span class="legend-indicator dot-bronze"></span><span>Ø 0.35 € Referenz</span>`;
+
+        const labels = sorted.map(s => {
+          const d = new Date(s.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const prices = sorted.map(s => Number(s.pricePerKwh) || 0);
+        const benchmarks = sorted.map(() => 0.35);
+
+        chartConfig = {
+          type: 'line',
+          labels: labels.length > 0 ? labels : ['Keine Ladungen'],
+          datasets: [
+            { type: 'line', label: 'Preis (€/kWh)', data: prices.length > 0 ? prices : [0], yAxisID: 'yCost', color: 'cyan' },
+            { type: 'line', label: '0.35 € Referenz', data: benchmarks.length > 0 ? benchmarks : [0.35], yAxisID: 'yCost', color: 'bronze', borderDash: [4, 4] }
+          ],
+          yLeft: { label: '€/kWh', max: 0.8 },
+          yRight: null
+        };
+
+        listTitle = "Aufschlüsselung nach Ladestandorten";
+        listHtml = Object.keys(locMap).map(loc => {
+          const item = locMap[loc];
+          const effPrice = item.kwh > 0 ? (item.cost / item.kwh) : 0;
+          const pvShare = item.kwh > 0 ? Math.round((item.pv / item.kwh) * 100) : 0;
+          return `
+            <div class="kpi-history-row">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${escapeHtml(loc)}</span>
+                <span class="kpi-hr-sub">${item.count} Ladungen • ${item.kwh.toFixed(1)} kWh • ${pvShare}% PV</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${effPrice.toFixed(2).replace('.', ',')} €/kWh</span>
+                <span class="kpi-hr-extra">${formatDe(item.cost)} € gesamt</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+    } else if (kpiType === 'avg-consumption') {
+      const validSegments = distStats.segments.filter(s => s.consumption > 0 && s.consumption < 50);
+
+      if (range === 'monthly') {
+        // MONATSVERGLEICH DES VERBRAUCHS
+        title = `Ø Verbrauch • Monatsvergleich`;
+        sub = `Monatlicher Durchschnittsverbrauch (kWh/100km)`;
+
+        stat1 = { lbl: "Ø Verbrauch", val: `${consData.hasData ? consData.avgCons.toFixed(1).replace('.', ',') : '--'} kWh` };
+        stat2 = { lbl: "Kosten / 100km", val: `${consData.hasData ? consData.avgCost100.toFixed(2).replace('.', ',') : '--'} €` };
+        stat3 = { lbl: "Erfasst", val: `${distStats.totalTrackedKm} km` };
+
+        chartTitle = `Monatlicher Durchschnittsverbrauch`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
+
+        const monthlyConsSum = new Array(12).fill(0);
+        const monthlyConsCount = new Array(12).fill(0);
+
+        validSegments.forEach(s => {
+          const d = new Date(s.date);
+          if (d.getFullYear() === curYear) {
+            monthlyConsSum[d.getMonth()] += s.consumption;
+            monthlyConsCount[d.getMonth()] += 1;
+          }
+        });
+
+        const monthlyCons = monthShorts.map((m, idx) => {
+          return monthlyConsCount[idx] > 0 ? Number((monthlyConsSum[idx] / monthlyConsCount[idx]).toFixed(1)) : null;
+        });
+        const benchmarks = monthShorts.map(() => 15.0);
+
+        chartConfig = {
+          type: 'line',
+          labels: monthShorts,
+          datasets: [
+            { type: 'line', label: 'Verbrauch (kWh/100km)', data: monthlyCons, yAxisID: 'yCost', color: 'bronze' },
+            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yCost', color: 'cyan', borderDash: [4, 4] }
+          ],
+          yLeft: { label: 'kWh/100km', max: 30 },
+          yRight: null
+        };
+
+        listTitle = `Monatliche Verbrauchswerte ${curYear}`;
+        listHtml = monthShorts.map((m, idx) => {
+          if (idx > curMonth && monthlyConsCount[idx] === 0) return '';
+          const avgC = monthlyConsCount[idx] > 0 ? (monthlyConsSum[idx] / monthlyConsCount[idx]) : 0;
+          return `
+            <div class="kpi-history-row">
+              <div class="kpi-hr-left">
+                <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
+                <span class="kpi-hr-sub">${monthlyConsCount[idx]} Abschnitte erfasst</span>
+              </div>
+              <div class="kpi-hr-right">
+                <span class="kpi-hr-value">${avgC > 0 ? avgC.toFixed(1).replace('.', ',') + ' kWh' : '--'}</span>
+                <span class="kpi-hr-extra">je 100 km</span>
+              </div>
+            </div>
+          `;
+        }).filter(Boolean).reverse().join('');
+
+      } else {
+        // ALLE EINTRÄGE (Chronologische Abschnitte)
+        title = `Ø Verbrauch & Fahrabschnitte`;
+        sub = `Verbrauchskurve je Fahrt zwischen zwei Ladungen`;
+
+        stat1 = { lbl: "Ø Verbrauch", val: `${consData.hasData ? consData.avgCons.toFixed(1).replace('.', ',') : '--'} kWh` };
+        stat2 = { lbl: "Kosten / 100km", val: `${consData.hasData ? consData.avgCost100.toFixed(2).replace('.', ',') : '--'} €` };
+        stat3 = { lbl: "Abschnitte", val: `${validSegments.length}` };
+
+        chartTitle = `Verbrauchskurve je Fahrabschnitt (kWh/100km)`;
+        legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
+
+        const labels = validSegments.map(s => {
+          const d = new Date(s.date);
+          return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+        });
+        const consVals = validSegments.map(s => Number(s.consumption.toFixed(1)));
+        const benchmarks = validSegments.map(() => 15.0);
+
+        chartConfig = {
+          type: 'line',
+          labels: labels.length > 0 ? labels : ['Mind. 2 Ladungen nötig'],
+          datasets: [
+            { type: 'line', label: 'Verbrauch (kWh/100km)', data: consVals.length > 0 ? consVals : [0], yAxisID: 'yCost', color: 'bronze' },
+            { type: 'line', label: '15.0 Benchmark', data: benchmarks, yAxisID: 'yCost', color: 'cyan', borderDash: [4, 4] }
+          ],
+          yLeft: { label: 'kWh/100km', max: 30 },
+          yRight: null
+        };
+
+        listTitle = "Erfasste Verbrauchsabschnitte";
+        if (validSegments.length === 0) {
+          listHtml = `<div class="kpi-history-row"><div class="kpi-hr-title">Zur Verbrauchsberechnung werden mindestens zwei Ladungen mit erfasstem Kilometerstand benötigt.</div></div>`;
+        } else {
+          listHtml = validSegments.map(s => {
+            const d = new Date(s.date);
+            const cost100 = (s.cost / s.deltaKm) * 100;
+            return `
+              <div class="kpi-history-row">
+                <div class="kpi-hr-left">
+                  <span class="kpi-hr-title">${s.consumption.toFixed(1).replace('.', ',')} kWh / 100km</span>
+                  <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • ${s.deltaKm} km gefahren mit ${s.kwh.toFixed(1)} kWh</span>
+                </div>
+                <div class="kpi-hr-right">
+                  <span class="kpi-hr-value">${cost100.toFixed(2).replace('.', ',')} €</span>
+                  <span class="kpi-hr-extra">pro 100 km</span>
+                </div>
+              </div>
+            `;
+          }).reverse().join('');
+        }
       }
     }
 
@@ -1231,7 +1548,12 @@
     const scales = {
       x: {
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: 'rgba(226, 232, 240, 0.6)', font: { size: 9 }, maxTicksLimit: 12 }
+        ticks: {
+          color: 'rgba(226, 232, 240, 0.75)',
+          font: { size: 10, weight: '500' },
+          padding: 8,
+          maxTicksLimit: 12
+        }
       }
     };
 
@@ -1239,18 +1561,18 @@
       scales.yKwh = {
         position: 'left',
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#c08051', font: { size: 9 }, callback: v => `${v} ${cfg.yLeft.label}` }
+        ticks: { color: '#c08051', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yLeft.label}` }
       };
       scales.yCost = {
         position: 'right',
         grid: { drawOnChartArea: false },
-        ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${v} ${cfg.yRight.label}` }
+        ticks: { color: '#38bdf8', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yRight.label}` }
       };
     } else {
       scales.yCost = {
         position: 'left',
         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${v} ${cfg.yLeft.label}` }
+        ticks: { color: '#38bdf8', font: { size: 9 }, padding: 6, callback: v => `${v} ${cfg.yLeft.label}` }
       };
       if (cfg.yLeft.max) scales.yCost.suggestedMax = cfg.yLeft.max;
     }
@@ -1263,6 +1585,14 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+          padding: {
+            top: 8,
+            bottom: 24,
+            left: 6,
+            right: 6
+          }
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
