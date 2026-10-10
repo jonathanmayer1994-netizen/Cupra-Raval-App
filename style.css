@@ -331,6 +331,41 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Interaktive KPI-Zellen (Tippbar für Detailverlaufsgraph) */
+.clickable-kpi {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.22s var(--ease-swift), border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+.clickable-kpi:hover {
+  transform: translateY(-2px);
+  border-color: rgba(192, 128, 81, 0.4);
+  box-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.7), 0 0 16px rgba(192, 128, 81, 0.18);
+}
+
+.clickable-kpi:active {
+  transform: scale(0.97);
+  border-color: var(--cupra-bronze);
+  background: rgba(20, 28, 38, 0.88);
+}
+
+.clickable-kpi .kpi-cell-top::after {
+  content: "›";
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.55;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+
+.clickable-kpi:hover .kpi-cell-top::after {
+  opacity: 1;
+  color: var(--cupra-bronze-light);
+  transform: translateX(2px);
+}
+
 /* Wetter Card in Dashboard (Klickbar) */
 .dash-pv-reco-card {
   padding: 12px 14px;
@@ -2128,6 +2163,145 @@ select option {
 .sheet-actions-row { display: flex; gap: 10px; margin-top: 6px; }
 .sheet-actions-row .btn-swift-secondary { flex: 1; }
 .sheet-actions-row .btn-swift-primary-bronze { flex: 2; }
+
+/* ==========================================================================
+   MODAL: KPI DETAIL SHEET & VERLAUFSGRAPHEN
+   ========================================================================== */
+.kpi-detail-sheet {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(16px + var(--sab));
+}
+
+.kpi-detail-scroll-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 2px;
+}
+
+.kpi-detail-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.kpi-mini-stat-card {
+  background: rgba(12, 18, 26, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+
+.kpi-mini-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--cupra-bronze-light);
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.kpi-mini-value {
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.kpi-mini-value small {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.kpi-detail-seg-picker {
+  margin-bottom: 2px;
+}
+
+.kpi-chart-card {
+  padding: 12px 14px;
+}
+
+.kpi-history-list-box {
+  margin-top: 2px;
+}
+
+.kpi-history-header-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--cupra-bronze-light);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kpi-history-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kpi-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(10, 16, 22, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease;
+}
+
+.kpi-history-row:hover {
+  border-color: rgba(192, 128, 81, 0.3);
+}
+
+.kpi-hr-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kpi-hr-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.kpi-hr-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.kpi-hr-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.kpi-hr-value {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--cupra-bronze-bright);
+}
+
+.kpi-hr-extra {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
 
 /* Toast */
 .swift-glass-toast {
