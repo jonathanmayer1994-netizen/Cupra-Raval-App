@@ -1790,6 +1790,11 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+          axis: 'x'
+        },
         layout: {
           padding: {
             top: 8,
@@ -1801,12 +1806,32 @@
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(6, 10, 16, 0.95)',
+            enabled: true,
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(6, 10, 16, 0.96)',
             cornerRadius: 8,
             titleColor: '#ffffff',
             bodyColor: '#e2e8f0',
-            borderColor: 'rgba(255, 255, 255, 0.12)',
-            borderWidth: 1
+            borderColor: 'rgba(255, 255, 255, 0.15)',
+            borderWidth: 1,
+            padding: 8,
+            titleFont: { size: 11, weight: '700' },
+            bodyFont: { size: 10.5 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            usePointStyle: true,
+            callbacks: {
+              label: (c) => {
+                const ds = c.dataset;
+                const unit = ds.yAxisID === 'yRight' ? (cfg.yRight?.label || '') : (cfg.yLeft?.label || '');
+                const val = c.parsed.y;
+                if (val === undefined || val === null) return '';
+                const fmtVal = Number.isInteger(val) ? val : (Math.abs(val) < 1 ? val.toFixed(2) : val.toFixed(1));
+                return ` ${ds.label || ''}: ${fmtVal} ${unit}`.trim();
+              }
+            }
           }
         },
         scales: scales
@@ -1999,17 +2024,32 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+          axis: 'x'
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(6, 10, 16, 0.92)',
+            enabled: true,
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(6, 10, 16, 0.96)',
             titleColor: '#ffffff',
             bodyColor: '#e2e8f0',
-            borderColor: 'rgba(255, 255, 255, 0.12)',
+            borderColor: 'rgba(255, 255, 255, 0.15)',
             borderWidth: 1,
-            cornerRadius: 10,
+            cornerRadius: 8,
+            padding: 8,
+            titleFont: { size: 11, weight: '700' },
+            bodyFont: { size: 10.5 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            usePointStyle: true,
             callbacks: {
-              label: (c) => c.datasetIndex === 0 ? ` ${c.parsed.y.toFixed(1)} kWh` : ` ${c.parsed.y.toFixed(2)} €`
+              label: (c) => c.datasetIndex === 0 ? ` Strom: ${c.parsed.y.toFixed(1)} kWh` : ` Kosten: ${c.parsed.y.toFixed(2)} €`
             }
           }
         },
@@ -2143,7 +2183,24 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } }
+        interaction: {
+          mode: 'nearest',
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(6, 10, 16, 0.96)',
+            borderColor: 'rgba(255, 255, 255, 0.15)',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 8,
+            callbacks: {
+              label: (c) => ` ${c.label}: ${c.raw.toFixed(1)} kWh`
+            }
+          }
+        }
       }
     });
 
@@ -2184,7 +2241,24 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } }
+        interaction: {
+          mode: 'nearest',
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(6, 10, 16, 0.96)',
+            borderColor: 'rgba(255, 255, 255, 0.15)',
+            borderWidth: 1,
+            cornerRadius: 8,
+            padding: 8,
+            callbacks: {
+              label: (c) => ` ${c.label}: ${c.raw.toFixed(1)} kWh`
+            }
+          }
+        }
       }
     });
 
@@ -2662,10 +2736,14 @@
 
     if (DOM.hourlyChartLegendBox) {
       DOM.hourlyChartLegendBox.innerHTML = `
-        <span class="legend-indicator dot-bronze" style="width: 12px; height: 3px; border-radius: 2px;"></span><span>Sonne (Kurve)</span>
-        <span class="legend-indicator dot-cyan"></span><span>Regen (l/m²)</span>
-        <span style="color:#f59e0b; font-weight:700; margin-left:5px;">🌅 ${day.sunrise}</span>
-        <span style="color:#f97316; font-weight:700; margin-left:4px;">🌇 ${day.sunset}</span>
+        <span class="subtle-leg-item">
+          <span class="legend-indicator dot-bronze" style="width: 14px; height: 3px; border-radius: 2px;"></span>
+          <span>Sonnenschein</span>
+        </span>
+        <span class="subtle-leg-item">
+          <span class="legend-indicator dot-cyan" style="width: 7px; height: 7px; border-radius: 2px;"></span>
+          <span>Niederschlag</span>
+        </span>
       `;
     }
 
@@ -2746,7 +2824,7 @@
 
     const sunTimesMarkerPlugin = {
       id: 'sunTimesMarkerPlugin',
-      afterDraw(chart) {
+      afterDatasetsDraw(chart) {
         const { ctx: c, chartArea, scales: { x } } = chart;
         if (!chartArea || !x) return;
         const { top, bottom, left, right } = chartArea;
@@ -2789,14 +2867,14 @@
           c.fillStyle = color;
           c.fill();
 
-          // 3. Pill-Badge am oberen Ende der Linie
-          c.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          // 3. Pill-Badge am oberen Ende der Linie (vor Tooltip gezeichnet)
+          c.font = 'bold 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
           const text = label;
           const textWidth = c.measureText(text).width;
-          const badgeW = textWidth + 10;
-          const badgeH = 17;
+          const badgeW = textWidth + 8;
+          const badgeH = 15;
           const badgeX = Math.max(left + 2, Math.min(right - badgeW - 2, xPos - (badgeW / 2)));
-          const badgeY = top + 1;
+          const badgeY = top + 2;
 
           c.beginPath();
           const r = 4;
@@ -2866,9 +2944,14 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+          axis: 'x'
+        },
         layout: {
           padding: {
-            top: 22,
+            top: 24,
             bottom: 4,
             left: 4,
             right: 4
@@ -2877,14 +2960,27 @@
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(6, 10, 16, 0.95)',
+            enabled: true,
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(6, 10, 16, 0.96)',
             cornerRadius: 8,
-            borderColor: 'rgba(255, 255, 255, 0.12)',
+            titleColor: '#ffffff',
+            bodyColor: '#e2e8f0',
+            borderColor: 'rgba(255, 255, 255, 0.15)',
             borderWidth: 1,
+            padding: 8,
+            titleFont: { size: 11, weight: '700' },
+            bodyFont: { size: 10.5 },
+            displayColors: true,
+            boxWidth: 8,
+            boxHeight: 8,
+            usePointStyle: true,
             callbacks: {
+              title: (items) => `${items[0]?.label || ''} Uhr`,
               label: (c) => {
-                if (c.datasetIndex === 0) return ` ☀️ Sonne: ${c.parsed.y} Min / Std`;
-                return ` 💧 Regen: ${c.parsed.y} l/m²`;
+                if (c.datasetIndex === 0) return ` ☀️ Sonnenschein: ${c.parsed.y} Min / Std`;
+                return ` 💧 Niederschlag: ${c.parsed.y} l/m²`;
               }
             }
           }

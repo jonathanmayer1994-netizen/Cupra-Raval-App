@@ -765,15 +765,18 @@
 
         <!-- Chart.js 24-Stunden Verlaufsgraph -->
         <div class="swift-glass-card hourly-chart-card">
-          <div class="chart-header-row">
-            <span class="chart-title">24-Stunden Kurve (0 - 23 Uhr)</span>
-            <div class="chart-legend-box" id="hourlyChartLegendBox">
-              <span class="legend-indicator dot-bronze" style="width: 12px; height: 3px; border-radius: 2px;"></span><span>Sonne (Kurve)</span>
-              <span class="legend-indicator dot-cyan"></span><span>Regen (l/m²)</span>
-            </div>
-          </div>
           <div class="chart-canvas-container" style="height: 220px; min-height: 220px; position: relative; width: 100%;">
             <canvas id="canvasHourlyChart"></canvas>
+          </div>
+          <div class="hourly-subtle-legend" id="hourlyChartLegendBox">
+            <span class="subtle-leg-item">
+              <span class="legend-indicator dot-bronze" style="width: 14px; height: 3px; border-radius: 2px;"></span>
+              <span>Sonnenschein</span>
+            </span>
+            <span class="subtle-leg-item">
+              <span class="legend-indicator dot-cyan" style="width: 7px; height: 7px; border-radius: 2px;"></span>
+              <span>Niederschlag</span>
+            </span>
           </div>
         </div>
 
