@@ -81,7 +81,6 @@
   function cacheDom() {
     // Header
     DOM.appHeaderTitle = document.getElementById('appHeaderTitle');
-    DOM.headerSubtitle = document.getElementById('headerSubtitle');
 
     // Navigation Dock
     DOM.dockTabBtns = document.querySelectorAll('.dock-tab-btn');
@@ -670,7 +669,6 @@
     const modelName = v.model || 'Cupra Raval Endurance Edition Dynamic';
     DOM.cardCarModelName.textContent = modelName;
     if (DOM.appHeaderTitle) DOM.appHeaderTitle.textContent = modelName;
-    if (DOM.headerSubtitle) DOM.headerSubtitle.textContent = 'Ladeerfassung • Bayrhofs PV-Planer';
     DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
     DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
     DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;

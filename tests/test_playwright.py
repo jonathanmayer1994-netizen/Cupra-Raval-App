@@ -43,11 +43,17 @@ def run_tests():
             f"Erhalten: '{app_title}'"
         )
 
-        header_sub = page.locator("#headerSubtitle").inner_text()
+        header_sub_count = page.locator("#headerSubtitle").count()
+        badge_box = page.locator(".brand-badge-bronze").bounding_box()
+        title_box = page.locator("#appHeaderTitle").bounding_box()
+        badge_mid_y = badge_box["y"] + (badge_box["height"] / 2.0)
+        title_mid_y = title_box["y"] + (title_box["height"] / 2.0)
+        diff_y = abs(badge_mid_y - title_mid_y)
+        is_vertically_centered = diff_y <= 3.0
         log_test(
-            "1.2 Header Subtitel",
-            "LADEERFASSUNG" in header_sub or "PV" in header_sub,
-            f"Erhalten: '{header_sub}'"
+            "1.2 Header Subtitel entfernt & Titel mittig zum Bild",
+            header_sub_count == 0 and is_vertically_centered,
+            f"Subtitel count: {header_sub_count}, Delta Y-Zentrum: {diff_y:.2f}px"
         )
 
         app_icon_visible = page.locator(".brand-badge-app-icon").is_visible()
