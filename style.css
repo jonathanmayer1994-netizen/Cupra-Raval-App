@@ -1,0 +1,2164 @@
+/* ==========================================================================
+   CUPRA RAVAL CHARGE — SWIFTUI LIQUID GLASS DESIGN SYSTEM V3
+   Endurance Edition Dynamic | Dashboard Re-Order & Hourly Weather Insights
+   ========================================================================== */
+
+:root {
+  /* Cupra Bronze & Carbon Palette */
+  --cupra-bronze: #c08051;
+  --cupra-bronze-light: #e28e4e;
+  --cupra-bronze-bright: #ffd5b0;
+  --cupra-bronze-dark: #824722;
+  --cupra-bronze-glow: rgba(192, 128, 81, 0.38);
+
+  --carbon-bg: #05070a;
+  --carbon-surface: #0a0e15;
+  --carbon-card: rgba(14, 20, 28, 0.72);
+  --carbon-card-solid: #0d131c;
+  --carbon-border: rgba(255, 255, 255, 0.08);
+  --carbon-border-highlight: rgba(255, 255, 255, 0.16);
+
+  /* Status-Akzente */
+  --accent-solar: #f59e0b;
+  --accent-green: #10b981;
+  --accent-cyan: #38bdf8;
+  --accent-danger: #ef4444;
+
+  /* SwiftUI Liquid Glass */
+  --glass-bg: rgba(16, 23, 32, 0.68);
+  --glass-blur: blur(28px) saturate(190%);
+  --glass-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  /* Typografie & Radien */
+  --text-primary: #f8fafc;
+  --text-secondary: rgba(226, 232, 240, 0.75);
+  --text-muted: rgba(148, 163, 184, 0.6);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-full: 9999px;
+
+  /* Safe Area iOS */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+
+  --ease-swift: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ==========================================================================
+   RESET & GRUNDLAYOUT
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-size: 16px;
+  background-color: var(--carbon-bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  background: radial-gradient(circle at 50% 0%, #151f2b 0%, #080c12 45%, #040609 100%);
+  color: var(--text-primary);
+  display: flex;
+  justify-content: center;
+  overflow-x: hidden;
+}
+
+.ambient-glow {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  z-index: 0;
+}
+
+.glow-bronze-top {
+  width: 340px;
+  height: 340px;
+  top: -80px;
+  right: -60px;
+  background: radial-gradient(circle, var(--cupra-bronze) 0%, transparent 70%);
+  opacity: 0.28;
+}
+
+.glow-carbon-mid {
+  width: 320px;
+  height: 320px;
+  top: 40%;
+  left: -80px;
+  background: radial-gradient(circle, #0284c7 0%, transparent 70%);
+  opacity: 0.16;
+}
+
+.iphone-shell {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100vh;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(96px + var(--sab));
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  background: rgba(8, 12, 17, 0.35);
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   MINIMALISTISCHER HEADER
+   ========================================================================== */
+.swift-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding-top: max(var(--sat), 12px);
+  padding-bottom: 12px;
+  padding-left: 18px;
+  padding-right: 18px;
+  background: rgba(5, 8, 12, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-badge-bronze {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(192, 128, 81, 0.12);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 14px rgba(192, 128, 81, 0.22);
+  flex-shrink: 0;
+}
+
+.cupra-logo-svg {
+  width: 24px;
+  height: 24px;
+}
+
+.brand-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.app-subtitle {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--cupra-bronze-light);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   CONTENT VIEW CONTAINER
+   ========================================================================== */
+.swift-content {
+  flex: 1;
+  padding: 14px 14px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tab-view {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  animation: tabFadeIn 0.25s var(--ease-swift);
+  min-width: 0;
+}
+
+.tab-view.active {
+  display: flex;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.swift-glass-card {
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--carbon-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: transform 0.2s var(--ease-swift), border-color 0.2s ease;
+  min-width: 0;
+}
+
+.swift-glass-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), rgba(192, 128, 81, 0.4), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   TAB 1: DASHBOARD RE-ORDER (METRIKEN OBEN, WETTER MITTE, AUTO UNTEN)
+   ========================================================================== */
+/* Section Header */
+.swift-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.section-title-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+}
+
+.section-subtitle-tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--cupra-bronze-light);
+}
+
+/* KPI Grid */
+.swift-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.kpi-cell {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kpi-cell-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.kpi-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.kpi-icon { font-size: 0.85rem; }
+
+.kpi-cell-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.kpi-number {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.kpi-currency {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--cupra-bronze-light);
+}
+
+.kpi-cell-bottom {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Wetter Card in Dashboard (Klickbar) */
+.dash-pv-reco-card {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(16, 26, 36, 0.75) 0%, rgba(245, 158, 11, 0.12) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.clickable-card {
+  cursor: pointer;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.clickable-card:active {
+  transform: scale(0.98);
+  border-color: var(--cupra-bronze);
+  background: linear-gradient(135deg, rgba(20, 32, 46, 0.85) 0%, rgba(192, 128, 81, 0.2) 100%);
+}
+
+.dash-pv-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.solar-icon-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.dash-reco-text-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dash-reco-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-reco-title .rain-sub-stat {
+  font-size: 0.65rem;
+  color: var(--accent-cyan);
+  font-weight: 500;
+  margin-left: 5px;
+  vertical-align: baseline;
+}
+
+.dash-reco-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.dash-pv-card-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.reco-badge-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 5px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  white-space: nowrap;
+}
+
+.reco-badge-pill.office {
+  background: rgba(192, 128, 81, 0.25);
+  color: var(--cupra-bronze-bright);
+  border-color: rgba(192, 128, 81, 0.5);
+}
+
+.reco-badge-pill.home {
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.reco-arrow-hint {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   FLIESSENDE, RAHMENLOSE FAHRZEUGBÜHNE (CUPRA RAVAL HERO)
+   Nahtlos mit dem App-Hintergrund verschmolzen, ohne störende Umrandung
+   ========================================================================== */
+.hero-car-card,
+.compact-hero {
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.hero-car-card::before,
+.compact-hero::before {
+  display: none !important;
+}
+
+.car-photo-container,
+.compact-photo {
+  width: 100%;
+  height: auto;
+  min-height: 190px;
+  max-height: 250px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 0 !important;
+  border: none !important;
+  overflow: visible;
+  background: transparent !important;
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+.car-photo-img,
+.compact-img {
+  width: 100%;
+  height: auto;
+  max-height: 245px;
+  object-fit: contain;
+  display: block;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  filter: contrast(1.05) drop-shadow(0 14px 28px rgba(0, 0, 0, 0.9));
+  -webkit-mask-image: radial-gradient(ellipse 96% 92% at 50% 50%, black 72%, transparent 100%);
+  mask-image: radial-gradient(ellipse 96% 92% at 50% 50%, black 72%, transparent 100%);
+}
+
+.car-bronze-spotlight {
+  position: absolute;
+  bottom: 2px;
+  left: 8%;
+  right: 8%;
+  height: 34px;
+  background: radial-gradient(ellipse at center, rgba(192, 128, 81, 0.42) 0%, rgba(56, 189, 248, 0.12) 40%, transparent 75%);
+  filter: blur(14px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 2x2 Meta Grid */
+.car-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.meta-card-item {
+  background: rgba(10, 15, 22, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 7px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.meta-card-item.full-width-item {
+  grid-column: 1 / -1;
+  padding: 7px 12px;
+  align-items: flex-start;
+  text-align: left;
+  border-color: rgba(192, 128, 81, 0.28);
+  background: linear-gradient(90deg, rgba(192, 128, 81, 0.12) 0%, rgba(10, 15, 22, 0.65) 100%);
+}
+
+.capsule-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--cupra-bronze-light);
+  margin-bottom: 1px;
+}
+
+.capsule-value-model {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.capsule-value {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.capsule-value small {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.bronze-val { color: var(--cupra-bronze-bright) !important; }
+
+.hero-live-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(10, 15, 22, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.live-dot-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+  animation: pulseDot 2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.5; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* ==========================================================================
+   TAB 2: LADEN & HISTORIE
+   ========================================================================== */
+.swift-segmented-picker {
+  display: flex;
+  background: rgba(10, 16, 24, 0.65);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  gap: 4px;
+}
+
+.picker-seg {
+  flex: 1;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: calc(var(--radius-md) - 3px);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.picker-seg:active { transform: scale(0.97); }
+
+.picker-seg.active {
+  background: rgba(30, 44, 60, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  font-weight: 700;
+}
+
+.charging-sub-view {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.charging-sub-view.active { display: flex; }
+
+.history-filter-scroll-wrapper {
+  overflow-x: auto;
+  margin: 0 -14px;
+  padding: 2px 14px;
+  scrollbar-width: none;
+}
+
+.history-filter-scroll-wrapper::-webkit-scrollbar { display: none; }
+
+.filter-chips-rail {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.chip-filter {
+  min-height: 40px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(14, 22, 32, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.chip-filter:active { transform: scale(0.95); }
+
+.chip-filter.active {
+  background: var(--cupra-bronze);
+  color: #ffffff;
+  border-color: rgba(255, 213, 176, 0.4);
+  box-shadow: 0 4px 14px rgba(192, 128, 81, 0.4);
+}
+
+.chip-filter.chip-pv.active {
+  background: var(--accent-green);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.charges-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-swift-card {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-top-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.session-timestamp { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+.session-badges-wrap { display: flex; align-items: center; gap: 6px; }
+
+.loc-badge-item {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.18);
+  color: var(--cupra-bronze-bright);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+}
+
+.pv-badge-item {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.session-primary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.session-kwh-display { display: flex; align-items: baseline; gap: 4px; }
+.session-kwh-val { font-size: 1.45rem; font-weight: 800; color: #ffffff; }
+.session-kwh-unit { font-size: 0.8rem; font-weight: 700; color: var(--cupra-bronze-light); }
+.session-cost-val { font-size: 1.3rem; font-weight: 800; color: var(--accent-cyan); }
+
+.session-details-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 6px;
+}
+
+.session-note-text { font-size: 0.72rem; color: var(--text-muted); font-style: italic; }
+
+.session-actions-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-card-action {
+  min-height: 38px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-card-action:active { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.btn-card-action.danger { color: var(--accent-danger); }
+
+/* Period Pills & Charts */
+.period-pills-bar {
+  display: flex;
+  justify-content: center;
+  background: rgba(10, 16, 24, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  padding: 3px;
+  gap: 4px;
+}
+
+.period-pill {
+  min-height: 40px;
+  padding: 6px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.period-pill.active {
+  background: var(--cupra-bronze);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(192, 128, 81, 0.4);
+}
+
+.chart-card { padding: 14px; }
+
+.chart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.chart-title { font-size: 0.88rem; font-weight: 700; color: #ffffff; }
+.chart-sub { font-size: 0.68rem; color: var(--text-muted); }
+
+.chart-legend-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.legend-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-bronze { background: var(--cupra-bronze); }
+.dot-cyan { background: var(--accent-cyan); }
+
+.chart-canvas-container { position: relative; width: 100%; height: 230px; }
+
+.analytics-double-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.donut-card { padding: 12px; display: flex; flex-direction: column; }
+.donut-card-title { font-size: 0.8rem; font-weight: 700; color: #ffffff; margin-bottom: 4px; }
+.donut-canvas-container { position: relative; width: 100%; height: 135px; }
+
+.donut-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.66rem;
+  color: var(--text-secondary);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
+.donut-legend-item { display: flex; align-items: center; justify-content: space-between; }
+
+/* ==========================================================================
+   TAB 3: WETTER & PV-PLANER (NIEDERSCHLAG L/M² & 4-TAGE VORSCHAU)
+   ========================================================================== */
+.weather-header-card {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.weather-top-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weather-location-label { font-size: 0.92rem; font-weight: 800; color: #ffffff; }
+
+.weather-cluster-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.cluster-pill { font-size: 0.68rem; font-weight: 800; color: var(--cupra-bronze-bright); }
+.cluster-sub { font-size: 0.62rem; color: var(--text-muted); }
+
+.btn-swift-gps {
+  min-height: 42px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.2);
+  border: 1px solid rgba(192, 128, 81, 0.45);
+  color: var(--cupra-bronze-bright);
+  font-size: 0.76rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.btn-swift-gps:active { transform: scale(0.94); background: var(--cupra-bronze); color: #fff; }
+
+.pv-summary-banner {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(16, 26, 36, 0.7);
+  border-color: rgba(192, 128, 81, 0.3);
+}
+
+.pv-summary-icon { font-size: 1.4rem; flex-shrink: 0; }
+.pv-summary-text { font-size: 0.76rem; color: var(--text-secondary); line-height: 1.35; }
+.pv-summary-text strong { display: block; color: #ffffff; }
+
+.forecast-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.forecast-days-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cupra-bronze-bright);
+}
+
+.forecast-click-hint {
+  font-size: 0.7rem;
+  color: var(--cupra-bronze-light);
+  font-weight: 600;
+  margin-top: -6px;
+  margin-bottom: 2px;
+}
+
+.forecast-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.forecast-extended-container {
+  display: none;
+  animation: tabFadeIn 0.3s var(--ease-swift);
+}
+
+.forecast-extended-container.expanded { display: flex; }
+
+.btn-toggle-forecast {
+  min-height: 46px;
+  background: rgba(14, 22, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  color: var(--cupra-bronze-bright);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.btn-toggle-forecast:active {
+  transform: scale(0.97);
+  background: rgba(24, 36, 50, 0.85);
+}
+
+.toggle-arrow { font-size: 0.9rem; transition: transform 0.25s ease; }
+.btn-toggle-forecast.open .toggle-arrow { transform: rotate(180deg); }
+
+/* Day Card */
+/* Day Card — Einheitliches, umbruchfreies Grid-Layout */
+.day-forecast-card {
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 46px 28px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  height: 56px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-swift);
+  overflow: hidden;
+}
+
+.day-forecast-card:active {
+  transform: scale(0.98);
+  border-color: var(--cupra-bronze);
+}
+
+.day-forecast-card.highlight-office {
+  border-color: rgba(192, 128, 81, 0.45);
+  background: linear-gradient(90deg, rgba(16, 24, 34, 0.8) 0%, rgba(192, 128, 81, 0.14) 100%);
+}
+
+.day-forecast-card.highlight-weekend-charge {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: linear-gradient(90deg, rgba(16, 24, 34, 0.8) 0%, rgba(245, 158, 11, 0.12) 100%);
+}
+
+/* Spalte 1: Datum / Tag */
+.day-left-meta {
+  width: 46px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.day-name {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.day-date-sub {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+/* Spalte 2: Icon */
+.day-weather-icon-box {
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.day-weather-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+/* Spalte 3: Mitte (Wetterwerte) */
+.day-mid-weather {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.day-temp-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.day-temps {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.day-condition-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.day-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.day-sun-stat {
+  font-size: 0.67rem;
+  color: var(--accent-solar);
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.day-rain-stat {
+  font-size: 0.64rem;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Spalte 4: Badge */
+.day-right-badge {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.reco-tag-office {
+  font-size: 0.66rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.25);
+  color: var(--cupra-bronze-bright);
+  border: 1px solid rgba(192, 128, 81, 0.5);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.reco-tag-weekend-charge {
+  font-size: 0.66rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.reco-tag-home {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+/* ==========================================================================
+   TAB 4: STANDORTE MIT BEARBEITEN-MODUS (MINIMALER STIFT)
+   ========================================================================== */
+.settings-sub-pane {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-sub-pane.active { display: flex; }
+
+/* ==========================================================================
+   FAHRZEUG-SPEZIFIKATIONEN CARD (MODERN CUPRA DESIGN)
+   ========================================================================== */
+.vehicle-specs-card {
+  background: linear-gradient(165deg, rgba(20, 28, 38, 0.78) 0%, rgba(8, 14, 20, 0.88) 100%);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(192, 128, 81, 0.25);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
+.specs-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.specs-header-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: radial-gradient(circle at 30% 30%, rgba(192, 128, 81, 0.35) 0%, rgba(192, 128, 81, 0.1) 100%);
+  border: 1px solid rgba(192, 128, 81, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cupra-bronze-bright);
+  box-shadow: 0 4px 14px rgba(192, 128, 81, 0.25);
+  flex-shrink: 0;
+}
+
+.specs-cupra-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.specs-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.specs-card-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.specs-card-sub {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.specs-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.specs-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.specs-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.specs-label-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cupra-bronze-light);
+}
+
+.specs-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(6, 10, 16, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  transition: all 0.25s var(--ease-swift);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.specs-input-wrapper:focus-within {
+  border-color: var(--cupra-bronze);
+  box-shadow: 0 0 0 3px rgba(192, 128, 81, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  background: rgba(10, 16, 24, 0.95);
+}
+
+.specs-field-icon {
+  padding-left: 14px;
+  font-size: 1rem;
+  opacity: 0.9;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.specs-input-control {
+  width: 100%;
+  height: 48px;
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0 14px 0 10px;
+  outline: none !important;
+  box-shadow: none !important;
+  font-family: inherit;
+}
+
+.specs-input-control::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.specs-input-control.num-val {
+  color: var(--cupra-bronze-bright) !important;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.specs-grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.specs-unit-badge {
+  margin-right: 12px;
+  background: rgba(192, 128, 81, 0.18);
+  border: 1px solid rgba(192, 128, 81, 0.32);
+  color: var(--cupra-bronze-bright);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.specs-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.94rem;
+}
+
+.btn-save-icon {
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+/* Input Reset & Spin Buttons */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.inset-group-header {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.inset-group-desc {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.swift-inset-group {
+  background: rgba(12, 18, 26, 0.75);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.locations-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-edit-mode-toggle {
+  background: rgba(192, 128, 81, 0.16);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  border-radius: var(--radius-full);
+  padding: 4px 12px;
+  color: var(--cupra-bronze-bright);
+  font-size: 0.74rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-edit-mode-toggle:active {
+  transform: scale(0.95);
+  background: var(--cupra-bronze);
+  color: #fff;
+}
+
+.btn-edit-mode-toggle.active-done {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.locations-manage-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Standort Zeile */
+.loc-manage-row {
+  min-height: 54px;
+  padding: 8px 12px;
+  background: rgba(8, 12, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.loc-manage-row:active {
+  background: rgba(18, 28, 40, 0.9);
+}
+
+.loc-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.btn-del-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: var(--accent-danger);
+  font-size: 0.85rem;
+  font-weight: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.btn-del-circle:active { transform: scale(0.88); }
+
+.loc-manage-row.edit-mode .btn-del-circle {
+  display: flex;
+}
+
+.loc-icon-bubble {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.loc-info-texts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.loc-title-text {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loc-badges-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-powertype-pv { color: #34d399; font-weight: 700; }
+.badge-powertype-grid { color: #38bdf8; font-weight: 700; }
+
+/* Reorder Buttons im Bearbeitungsmodus */
+.loc-order-controls {
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.loc-manage-row.edit-mode .loc-order-controls {
+  display: flex;
+}
+
+.btn-order-arrow {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-order-arrow:active {
+  background: rgba(192, 128, 81, 0.35);
+  border-color: var(--cupra-bronze);
+  transform: scale(0.92);
+}
+
+.loc-chevron-edit {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+}
+
+.loc-manage-row.edit-mode .loc-chevron-edit {
+  display: none;
+}
+
+/* ==========================================================================
+   MODAL: STÜNDLICHER WETTERVERLAUF
+   ========================================================================== */
+.hourly-content-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hourly-kpi-summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.hourly-summary-pill {
+  background: rgba(6, 10, 16, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.hourly-sum-lbl {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.hourly-sum-val {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.hourly-decision-box {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(20, 32, 46, 0.75) 0%, rgba(192, 128, 81, 0.15) 100%);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  border-radius: var(--radius-md);
+}
+
+.hourly-dec-icon { font-size: 1.5rem; flex-shrink: 0; }
+.hourly-dec-title { font-size: 0.85rem; font-weight: 800; color: #ffffff; }
+.hourly-dec-desc { font-size: 0.7rem; color: var(--text-secondary); line-height: 1.3; }
+
+.hourly-chart-card { padding: 12px; }
+
+.hourly-hours-horizontal-scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none;
+}
+
+.hourly-hours-horizontal-scroll::-webkit-scrollbar { display: none; }
+
+.hourly-hour-card {
+  min-width: 58px;
+  background: rgba(8, 12, 18, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.hh-time { font-size: 0.64rem; font-weight: 700; color: var(--text-muted); }
+.hh-icon { font-size: 1.1rem; }
+.hh-temp { font-size: 0.74rem; font-weight: 800; color: #ffffff; }
+.hh-solar { font-size: 0.62rem; color: var(--accent-solar); font-weight: 600; }
+.hh-rain { font-size: 0.58rem; color: var(--accent-cyan); font-weight: 500; }
+
+/* ==========================================================================
+   TOUCH PICKER BUTTON & MODALS
+   ========================================================================== */
+.apple-touch-picker-button {
+  min-height: 52px;
+  padding: 10px 14px;
+  background: rgba(6, 10, 16, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.apple-touch-picker-button:active {
+  background: rgba(16, 26, 38, 0.9);
+  border-color: var(--cupra-bronze);
+}
+
+.picker-btn-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.picker-btn-icon { font-size: 1.4rem; flex-shrink: 0; }
+.picker-btn-texts { display: flex; flex-direction: column; min-width: 0; }
+.picker-btn-title { font-size: 0.94rem; font-weight: 800; color: #ffffff; }
+.picker-btn-sub { font-size: 0.72rem; color: var(--cupra-bronze-light); font-weight: 600; }
+.picker-chevron { font-size: 1.4rem; color: var(--text-muted); margin-left: 8px; }
+
+.apple-touch-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.touch-picker-item {
+  min-height: 54px;
+  padding: 12px 14px;
+  background: rgba(10, 16, 24, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.touch-picker-item:active { background: rgba(22, 34, 48, 0.95); }
+
+.touch-picker-item.selected {
+  border-color: var(--cupra-bronze);
+  background: rgba(192, 128, 81, 0.15);
+}
+
+.touch-picker-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.touch-item-icon { font-size: 1.4rem; flex-shrink: 0; }
+.touch-item-texts { display: flex; flex-direction: column; min-width: 0; }
+.touch-item-name { font-size: 0.92rem; font-weight: 800; color: #ffffff; }
+.touch-item-details { font-size: 0.72rem; color: var(--text-secondary); }
+.touch-item-check { font-size: 1.1rem; font-weight: 800; color: var(--cupra-bronze-bright); }
+
+/* Icon Picker Grid */
+.icon-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.icon-pick-btn {
+  height: 48px;
+  background: rgba(10, 16, 24, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  font-size: 1.4rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.icon-pick-btn:active { transform: scale(0.92); }
+
+.icon-pick-btn.active {
+  background: var(--cupra-bronze);
+  border-color: rgba(255, 213, 176, 0.5);
+  box-shadow: 0 0 12px var(--cupra-bronze-glow);
+}
+
+/* ==========================================================================
+   BUTTONS & BACKUP
+   ========================================================================== */
+.backup-buttons-stack { display: flex; flex-direction: column; gap: 10px; }
+
+.btn-swift-backup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  min-height: 52px;
+  background: rgba(16, 24, 34, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.btn-swift-backup-row:active { transform: scale(0.98); background: rgba(26, 38, 52, 0.85); }
+.backup-row-icon { font-size: 1.4rem; }
+.backup-row-text { display: flex; flex-direction: column; }
+.backup-row-main { font-size: 0.85rem; font-weight: 700; }
+.backup-row-sub { font-size: 0.68rem; color: var(--text-muted); }
+
+.btn-swift-primary-bronze {
+  min-height: 48px;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, var(--cupra-bronze-light) 0%, var(--cupra-bronze) 60%, var(--cupra-bronze-dark) 100%);
+  border: 1px solid rgba(255, 213, 176, 0.35);
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 20px -4px var(--cupra-bronze-glow);
+  transition: all 0.2s var(--ease-swift);
+}
+
+.btn-swift-primary-bronze:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 10px rgba(192, 128, 81, 0.4);
+}
+
+.btn-swift-secondary {
+  min-height: 48px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-swift-secondary:active { background: rgba(255, 255, 255, 0.18); color: #ffffff; }
+
+.btn-swift-danger {
+  min-height: 48px;
+  padding: 10px 16px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px dashed rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-md);
+  color: var(--accent-danger);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.full-width { width: 100%; }
+
+/* ==========================================================================
+   ECHTES SWIFTUI LIQUID GLASS BOTTOM DOCK
+   ========================================================================== */
+.swift-bottom-dock {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding-bottom: max(var(--sab), 8px);
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.dock-inner-glass {
+  width: 100%;
+  max-width: 410px;
+  height: 64px;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: rgba(8, 12, 18, 0.84);
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 0 8px;
+  position: relative;
+}
+
+.dock-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  min-width: 54px;
+  min-height: 52px;
+  transition: all 0.2s var(--ease-swift);
+}
+
+.dock-tab-btn:active { transform: scale(0.92); }
+.dock-tab-btn.active { color: var(--cupra-bronze-bright); }
+.dock-svg { width: 22px; height: 22px; }
+
+.dock-tab-btn.active .dock-svg {
+  stroke: var(--cupra-bronze-light);
+  filter: drop-shadow(0 0 6px var(--cupra-bronze));
+}
+
+.dock-tab-label { font-size: 0.65rem; font-weight: 700; }
+
+.dock-center-fab {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--cupra-bronze-bright) 0%, var(--cupra-bronze) 50%, var(--cupra-bronze-dark) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 8px 24px var(--cupra-bronze-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  cursor: pointer;
+  transform: translateY(-10px);
+  transition: all 0.2s var(--ease-swift);
+  flex-shrink: 0;
+}
+
+.dock-center-fab:active {
+  transform: translateY(-6px) scale(0.93);
+  box-shadow: 0 3px 12px rgba(192, 128, 81, 0.5);
+}
+
+.fab-plus-symbol { font-size: 1.8rem; font-weight: 300; line-height: 1; }
+
+/* ==========================================================================
+   MODAL BOTTOM SHEETS
+   ========================================================================== */
+.modal-backdrop-sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 10, 0.74);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.28s var(--ease-swift);
+}
+
+.modal-backdrop-sheet.open { display: flex; opacity: 1; }
+
+.swift-sheet-card {
+  width: 100%;
+  max-width: 430px;
+  max-height: 92vh;
+  overflow-y: auto;
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  background: linear-gradient(180deg, rgba(20, 28, 38, 0.96) 0%, rgba(8, 12, 18, 0.98) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 -16px 45px rgba(0, 0, 0, 0.75);
+  padding: 12px 18px calc(24px + var(--sab)) 18px;
+  transform: translateY(100%);
+  transition: transform 0.32s var(--ease-swift);
+}
+
+.modal-backdrop-sheet.open .swift-sheet-card { transform: translateY(0); }
+
+.sheet-grabber {
+  width: 38px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-full);
+  margin: 0 auto 12px auto;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sheet-title { font-size: 1.15rem; font-weight: 800; color: #ffffff; }
+.sheet-subtitle-tag { font-size: 0.72rem; color: var(--cupra-bronze-light); font-weight: 600; display: block; }
+
+.sheet-btn-close {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.sheet-form { display: flex; flex-direction: column; gap: 14px; }
+.form-two-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.form-touch-row { display: flex; flex-direction: column; gap: 6px; }
+
+/* Kapsel-Labels im Cupra Bronze Design */
+.form-touch-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cupra-bronze-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.delta-tag-live {
+  font-size: 0.68rem;
+  font-weight: 800;
+  background: rgba(192, 128, 81, 0.22);
+  color: var(--cupra-bronze-bright);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* ==========================================================================
+   GLOBAL FORM CONTROLS & INPUT SYSTEM (CUPRA LIQUID GLASS)
+   ========================================================================== */
+input,
+select,
+textarea,
+.form-touch-input {
+  width: 100%;
+  height: 50px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ffffff !important;
+  background: rgba(6, 10, 16, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  outline: none;
+  transition: all 0.25s var(--ease-swift);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.form-touch-input:focus {
+  border-color: var(--cupra-bronze) !important;
+  background: rgba(10, 16, 24, 0.96) !important;
+  box-shadow: 0 0 0 3px rgba(192, 128, 81, 0.28), inset 0 2px 4px rgba(0, 0, 0, 0.25) !important;
+}
+
+input::placeholder,
+textarea::placeholder,
+.form-touch-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+/* Number Inputs: Exakte Ziffern ohne Browser-Pfeile */
+input[type="number"],
+.form-touch-input[type="number"] {
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button,
+.form-touch-input[type="number"]::-webkit-inner-spin-button,
+.form-touch-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Datetime-Local & Date Inputs in modernem iOS Dark Look */
+input[type="datetime-local"],
+input[type="date"],
+.form-touch-input[type="datetime-local"],
+.form-touch-input[type="date"] {
+  color-scheme: dark;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8) sepia(100%) saturate(300%) hue-rotate(345deg) brightness(1.15);
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+  margin-right: 4px;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Dropdowns / Select-Felder mit Cupra Bronze Chevron */
+select,
+.form-touch-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 42px;
+  background: rgba(6, 10, 16, 0.88) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c08051' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 14px center !important;
+  background-size: 16px !important;
+  cursor: pointer;
+}
+
+select option {
+  background-color: #0b111a;
+  color: #ffffff;
+  padding: 10px;
+}
+
+/* Input Addon Box (z.B. kWh, km, €/kWh als edles Pill-Badge) */
+.input-addon-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-addon-box .form-touch-input {
+  width: 100%;
+  padding-right: 70px !important;
+}
+
+.addon-suffix {
+  position: absolute;
+  right: 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--cupra-bronze-bright);
+  background: rgba(192, 128, 81, 0.2);
+  border: 1px solid rgba(192, 128, 81, 0.38);
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* Bronze Highlight Input (z.B. Gesamtkosten) */
+.bronze-highlight-input {
+  color: var(--cupra-bronze-bright) !important;
+  font-size: 1.18rem !important;
+  font-weight: 800 !important;
+  border-color: rgba(192, 128, 81, 0.4) !important;
+  background: rgba(192, 128, 81, 0.08) !important;
+}
+
+.bronze-highlight-input:focus {
+  border-color: var(--cupra-bronze) !important;
+  box-shadow: 0 0 0 3px rgba(192, 128, 81, 0.3) !important;
+}
+
+.sheet-actions-row { display: flex; gap: 10px; margin-top: 6px; }
+.sheet-actions-row .btn-swift-secondary { flex: 1; }
+.sheet-actions-row .btn-swift-primary-bronze { flex: 2; }
+
+/* Toast */
+.swift-glass-toast {
+  position: fixed;
+  top: max(var(--sat), 20px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: rgba(14, 22, 32, 0.92);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-full);
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.3s var(--ease-swift);
+}
+
+.swift-glass-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+.toast-dot-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.toast-text { font-size: 0.84rem; font-weight: 700; color: #ffffff; }

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <title>CUPRA Raval Charge | Endurance Edition Dynamic</title>
+
+  <!-- Apple iOS PWA Standalone Modus -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Raval Charge">
+  <meta name="theme-color" content="#05070a">
+
+  <!-- Favicon & Touch Icons für iPhone Home-Bildschirm & PWA -->
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="./icon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="apple-touch-icon-precomposed" href="./apple-touch-icon-precomposed.png">
+  <link rel="manifest" href="./manifest.json">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <!-- Ambient Cupra Bronze & Deep Carbon Glows -->
+  <div class="ambient-glow glow-bronze-top"></div>
+  <div class="ambient-glow glow-carbon-mid"></div>
+
+  <!-- App Wrapper (Perfekt auf iPhone Portrait ausgelegt) -->
+  <div class="iphone-shell">
+
+    <!-- Minimalistischer iOS Header -->
+    <header class="swift-header">
+      <div class="header-brand">
+        <div class="brand-badge-bronze">
+          <svg viewBox="0 0 100 100" class="cupra-logo-svg" aria-label="Cupra Logo">
+            <path d="M 12 25 L 35 25 L 50 62 L 42 69 L 32 50 L 20 65 L 14 60 L 26 44 Z" fill="url(#bronzeGradH)" />
+            <path d="M 88 25 L 65 25 L 50 62 L 58 69 L 68 50 L 80 65 L 86 60 L 74 44 Z" fill="url(#bronzeGradH)" />
+            <path d="M 50 32 L 62 52 L 50 72 L 38 52 Z" fill="url(#bronzeGradH)" opacity="0.9" />
+            <defs>
+              <linearGradient id="bronzeGradH" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffd5b0"/>
+                <stop offset="50%" stop-color="#c08051"/>
+                <stop offset="100%" stop-color="#8a451e"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-titles">
+          <h1 class="app-title">CUPRA RAVAL</h1>
+          <span class="app-subtitle" id="headerSubtitle">ENDURANCE EDITION DYNAMIC</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hauptbereich mit den 4 Menüpunkten -->
+    <main class="swift-content">
+
+      <!-- ======================================================= -->
+      <!-- TAB 1: DASHBOARD                                        -->
+      <!-- 1. ÜBERSICHT & METRIKEN (OBERST)                        -->
+      <!-- 2. WETTERPROGNOSE (DAZWISCHEN, KLICKBAR ZUM WETTER-TAB) -->
+      <!-- 3. FAHRZEUG-CARD (KLEINERES BILD, ZUSAMMENGEFASST)     -->
+      <!-- ======================================================= -->
+      <section id="tab-dashboard" class="tab-view active">
+
+        <!-- 1. OBERST: Schnellübersicht KPIs (Monat, Jahr, Ø-Preis, Ø-Verbrauch) -->
+        <div class="swift-section-header">
+          <span class="section-title-label">Übersicht & Metriken</span>
+          <span class="section-subtitle-tag" id="currentMonthYearTag">Oktober 2026</span>
+        </div>
+
+        <div class="swift-kpi-grid">
+          <!-- KPI 1: Dieser Monat -->
+          <div class="swift-glass-card kpi-cell">
+            <div class="kpi-cell-top">
+              <span class="kpi-tag">DIESER MONAT</span>
+              <span class="kpi-icon">📅</span>
+            </div>
+            <div class="kpi-cell-value">
+              <span class="kpi-number" id="dashMonthCost">0,00</span>
+              <span class="kpi-currency">€</span>
+            </div>
+            <div class="kpi-cell-bottom" id="dashMonthKwh">
+              0,0 kWh geladen
+            </div>
+          </div>
+
+          <!-- KPI 2: Gesamtjahr -->
+          <div class="swift-glass-card kpi-cell">
+            <div class="kpi-cell-top">
+              <span class="kpi-tag">GESAMTJAHR</span>
+              <span class="kpi-icon">⚡️</span>
+            </div>
+            <div class="kpi-cell-value">
+              <span class="kpi-number" id="dashYearCost">0,00</span>
+              <span class="kpi-currency">€</span>
+            </div>
+            <div class="kpi-cell-bottom" id="dashYearKwh">
+              0,0 kWh geladen
+            </div>
+          </div>
+
+          <!-- KPI 3: Ø kWh-Preis -->
+          <div class="swift-glass-card kpi-cell">
+            <div class="kpi-cell-top">
+              <span class="kpi-tag">Ø KWH-PREIS</span>
+              <span class="kpi-icon">💶</span>
+            </div>
+            <div class="kpi-cell-value">
+              <span class="kpi-number" id="dashAvgPrice">0,35</span>
+              <span class="kpi-currency">€/kWh</span>
+            </div>
+            <div class="kpi-cell-bottom" id="dashPvShareSub">
+              0% PV-Überschuss
+            </div>
+          </div>
+
+          <!-- KPI 4: Ø Verbrauch -->
+          <div class="swift-glass-card kpi-cell">
+            <div class="kpi-cell-top">
+              <span class="kpi-tag">Ø VERBRAUCH</span>
+              <span class="kpi-icon">🏎️</span>
+            </div>
+            <div class="kpi-cell-value">
+              <span class="kpi-number" id="dashAvgCons">--</span>
+              <span class="kpi-currency">kWh/100km</span>
+            </div>
+            <div class="kpi-cell-bottom" id="dashAvgCost100">
+              -- € / 100 km
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. DAZWISCHEN: PV-Bayrhofs Lade-Entscheidung Widget (Tippen öffnet Wetter & PV Tab!) -->
+        <div class="swift-glass-card dash-pv-reco-card clickable-card" id="dashPvPreviewCard" role="button" tabindex="0" title="Tippe hier für Wetter & 14-Tage PV-Planer">
+          <div class="dash-pv-card-left">
+            <div class="solar-icon-circle" id="dashPvIconCircle">☀️</div>
+            <div class="dash-reco-text-wrap">
+              <div class="dash-reco-title" id="dashRecoHeadline">PV-Prognose für Bayrhofs</div>
+              <div class="dash-reco-desc" id="dashRecoSubline">Lade Wetterdaten...</div>
+            </div>
+          </div>
+          <div class="dash-pv-card-right">
+            <span class="reco-badge-pill" id="dashRecoBadge">Büro empfohlen</span>
+            <span class="reco-arrow-hint">›</span>
+          </div>
+        </div>
+
+        <!-- 3. DARUNTER: Fließende, rahmenlose Fahrzeug-Hero-Bühne (nahtlos mit dem App-Hintergrund verbunden) -->
+        <div class="hero-car-card compact-hero">
+          <div class="car-photo-container compact-photo">
+            <img src="./raval.png" alt="Cupra Raval Endurance Edition Dynamic" class="car-photo-img compact-img" id="dashboardCarImage">
+            <div class="car-bronze-spotlight"></div>
+          </div>
+
+          <div class="car-meta-grid compact-meta">
+            <div class="meta-card-item full-width-item">
+              <span class="capsule-label">MODELL</span>
+              <span class="capsule-value-model" id="cardCarModelName">Cupra Raval Endurance Edition Dynamic</span>
+            </div>
+            <div class="meta-card-item">
+              <span class="capsule-label">ODOMETER</span>
+              <span class="capsule-value bronze-val" id="cardCurrentOdo">12.450 <small>km</small></span>
+            </div>
+            <div class="meta-card-item">
+              <span class="capsule-label">BATTERIE</span>
+              <span class="capsule-value" id="cardBatteryKwh">52.0 <small>kWh</small></span>
+            </div>
+            <div class="meta-card-item">
+              <span class="capsule-label">LEISTUNG</span>
+              <span class="capsule-value" id="cardPowerPs">211 <small>PS</small></span>
+            </div>
+          </div>
+
+          <!-- Kompakte Letzte-Ladung Leiste direkt integriert -->
+          <div class="hero-live-status-row compact-status">
+            <div class="live-dot-pulse"></div>
+            <div class="live-status-text" id="dashboardLiveStatus">
+              Zuletzt: Vor 2 Tagen • 34.5 kWh @ Bayrhofs
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================= -->
+      <!-- TAB 2: LADEN (HISTORIE, STATISTIKEN & AUSWERTUNG)       -->
+      <!-- ======================================================= -->
+      <section id="tab-charging" class="tab-view">
+
+        <!-- SwiftUI Style Segmented Control: [Historie] | [Auswertung & Graphen] -->
+        <div class="swift-segmented-picker">
+          <button class="picker-seg active" data-sub="history">Ladehistorie</button>
+          <button class="picker-seg" data-sub="analytics">Auswertung & Graphen</button>
+        </div>
+
+        <!-- Unteransicht A: Ladehistorie -->
+        <div id="sub-history" class="charging-sub-view active">
+          <!-- Dynamische Filter-Pills nach Ladeorten & PV -->
+          <div class="history-filter-scroll-wrapper">
+            <div class="filter-chips-rail" id="chargingFilterRail">
+              <button class="chip-filter active" data-filter="all">Alle</button>
+              <button class="chip-filter chip-pv" data-filter="pv">☀️ Nur PV</button>
+            </div>
+          </div>
+
+          <!-- Ladeliste Stream -->
+          <div class="charges-stream" id="chargesStreamContainer">
+            <!-- Sessions werden per JS gerendert -->
+          </div>
+        </div>
+
+        <!-- Unteransicht B: Auswertung & Chart.js Graphen -->
+        <div id="sub-analytics" class="charging-sub-view">
+          <!-- Zeitintervall Tabs -->
+          <div class="period-pills-bar">
+            <button class="period-pill active" data-period="month">Tage im Monat</button>
+            <button class="period-pill" data-period="year">Monate im Jahr</button>
+            <button class="period-pill" data-period="all">Jahre</button>
+          </div>
+
+          <!-- Hauptdiagramm: kWh & Kosten -->
+          <div class="swift-glass-card chart-card">
+            <div class="chart-header-row">
+              <div>
+                <h3 class="chart-title">Geladene Energie & Kosten</h3>
+                <p class="chart-sub" id="analyticsSubtitle">Monatsverlauf</p>
+              </div>
+              <div class="chart-legend-box">
+                <span class="legend-indicator dot-bronze"></span><span>kWh</span>
+                <span class="legend-indicator dot-cyan"></span><span>€</span>
+              </div>
+            </div>
+            <div class="chart-canvas-container">
+              <canvas id="canvasChargingChart"></canvas>
+            </div>
+          </div>
+
+          <!-- 2 Donut Charts: Standorte & Energiequelle -->
+          <div class="analytics-double-grid">
+            <div class="swift-glass-card donut-card">
+              <div class="donut-card-title">Standorte</div>
+              <div class="donut-canvas-container">
+                <canvas id="canvasLocationDonut"></canvas>
+              </div>
+              <div class="donut-legend-list" id="locationDonutLegend"></div>
+            </div>
+
+            <div class="swift-glass-card donut-card">
+              <div class="donut-card-title">Stromquelle</div>
+              <div class="donut-canvas-container">
+                <canvas id="canvasSourceDonut"></canvas>
+              </div>
+              <div class="donut-legend-list" id="sourceDonutLegend"></div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ======================================================= -->
+      <!-- TAB 3: WETTER & PV-PLANER (BAYRHOFS BÜRO PROGNOSE)      -->
+      <!-- ======================================================= -->
+      <section id="tab-weather" class="tab-view">
+
+        <!-- Konsolidierte Wetter-Kopfzeile (Cluster aus 5 europäischen/deutschen Wettermodellen) -->
+        <div class="swift-glass-card weather-header-card">
+          <div class="weather-top-meta">
+            <div>
+              <div class="weather-location-label" id="weatherDisplayLocation">📍 GPS-Standort (Bayrhofs / Kempten)</div>
+              <div class="weather-cluster-label">
+                <span class="cluster-pill">🇪🇺 5-Modell Konsens</span>
+                <span class="cluster-sub">DWD ICON • DWD-EU • ECMWF • Météo-France • Ensemble</span>
+              </div>
+            </div>
+            <button class="btn-swift-gps" id="btnRefreshWeather" title="Standort via GPS aktualisieren">
+              <span class="gps-icon">⟳</span>
+              <span>GPS Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bayrhofs Büro & PV-Ladeentscheidung Banner -->
+        <div class="swift-glass-card pv-summary-banner">
+          <div class="pv-summary-icon">🏢</div>
+          <div class="pv-summary-text">
+            <strong>Büro Bayrhofs Lade-Empfehlung:</strong>
+            <span id="pvSummaryRecommendationText">Berechne PV-Überschuss bei Bayrhofs...</span>
+          </div>
+        </div>
+
+        <!-- 4-Tage Vorschau & 14-Tage Ausklappmenü -->
+        <div class="forecast-section-title">
+          <span>PV-Ladefenster & Wetterprognose</span>
+          <span class="forecast-days-badge" id="forecastDaysCountBadge">4 Tage Vorschau</span>
+        </div>
+
+        <!-- Hinweis: Tag antippen für Stundengraph -->
+        <div class="forecast-click-hint">
+          <span>👆 Tippe auf einen Tag für den stündlichen Wetterverlauf & PV-Ertrag</span>
+        </div>
+
+        <!-- Die ersten 4 Tage (Standardansicht) -->
+        <div class="forecast-stream" id="weatherPrimary4Container">
+          <!-- Wird per JS befüllt -->
+        </div>
+
+        <!-- Ausklappbarer Container für die weiteren 10 Tage -->
+        <div class="forecast-stream forecast-extended-container" id="weatherExtendedContainer">
+          <!-- Wird bei Klick eingeblendet -->
+        </div>
+
+        <!-- Elegantes iOS Disclosure-Element zum Aus-/Einklappen -->
+        <button type="button" class="btn-toggle-forecast" id="btnToggleExtendedForecast">
+          <span id="toggleForecastText">Weitere 10 Tage anzeigen (14-Tage Trend)</span>
+          <span class="toggle-arrow" id="toggleForecastArrow">▾</span>
+        </button>
+
+      </section>
+
+      <!-- ======================================================= -->
+      <!-- TAB 4: EINSTELLUNGEN (SUB-TABS, LADEORTE, BACKUP)       -->
+      <!-- ======================================================= -->
+      <section id="tab-settings" class="tab-view">
+
+        <!-- Einstellungen Sub-Navigation (SwiftUI Segmented Tabs) -->
+        <div class="swift-segmented-picker settings-sub-nav">
+          <button class="picker-seg active" data-settab="car">Fahrzeug</button>
+          <button class="picker-seg" data-settab="locations">Ladeorte</button>
+          <button class="picker-seg" data-settab="backup">Datensicherung</button>
+        </div>
+
+        <!-- Sub-Tab 1: Fahrzeugdaten (Modernes Cupra Design) -->
+        <div id="settab-car" class="settings-sub-pane active">
+          <div class="vehicle-specs-card">
+            
+            <!-- Card Header mit Cupra Bronze Akzent & Icon -->
+            <div class="specs-card-header">
+              <div class="specs-header-icon-wrap">
+                <svg viewBox="0 0 24 24" class="specs-cupra-icon" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9C2.1 11 2 11.2 2 11.5V16c0 .6.4 1 1 1h2m10 0H9m10 0a2 2 0 100 4 2 2 0 000-4zm-10 0a2 2 0 100 4 2 2 0 000-4z" />
+                </svg>
+              </div>
+              <div class="specs-header-text">
+                <h3 class="specs-card-title">Fahrzeug-Spezifikationen</h3>
+                <span class="specs-card-sub">Technische Daten & Modell-Konfiguration</span>
+              </div>
+            </div>
+
+            <!-- Formularfelder -->
+            <div class="specs-form-stack">
+
+              <!-- Feld 1: Fahrzeugname / Modell -->
+              <div class="specs-field-group">
+                <label class="specs-field-label" for="cfgModelName">
+                  <span class="specs-label-tag">MODELLBEZEICHNUNG</span>
+                </label>
+                <div class="specs-input-wrapper">
+                  <span class="specs-field-icon">🏎️</span>
+                  <input type="text" id="cfgModelName" class="specs-input-control" placeholder="z.B. Cupra Raval Endurance Edition Dynamic" value="Cupra Raval Endurance Edition Dynamic" autocomplete="off" spellcheck="false">
+                </div>
+              </div>
+
+              <!-- 2-Spalten Grid für Technische Daten: Batterie & Leistung -->
+              <div class="specs-grid-two">
+                
+                <!-- Feld 2: Batteriekapazität -->
+                <div class="specs-field-group">
+                  <label class="specs-field-label" for="cfgBatteryCap">
+                    <span class="specs-label-tag">BATTERIE</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">🔋</span>
+                    <input type="number" id="cfgBatteryCap" class="specs-input-control num-val" value="52.0" step="0.5" min="20" max="150">
+                    <span class="specs-unit-badge">kWh</span>
+                  </div>
+                </div>
+
+                <!-- Feld 3: Motorleistung -->
+                <div class="specs-field-group">
+                  <label class="specs-field-label" for="cfgPower">
+                    <span class="specs-label-tag">LEISTUNG</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">⚡</span>
+                    <input type="number" id="cfgPower" class="specs-input-control num-val" value="211" step="1" min="50" max="600">
+                    <span class="specs-unit-badge">PS</span>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            <!-- Speichern Action Button -->
+            <button class="btn-swift-primary-bronze full-width specs-save-btn" id="btnSaveVehicleSettings">
+              <span class="btn-save-icon">✓</span>
+              <span>Spezifikationen speichern</span>
+            </button>
+
+          </div>
+        </div>
+
+        <!-- Sub-Tab 2: Ladeorte Verwaltung mit Bearbeiten-Button (Minimaler Stift) & Sortierung -->
+        <div id="settab-locations" class="settings-sub-pane">
+          <div class="swift-inset-group">
+            <div class="locations-header-bar">
+              <div class="inset-group-header">Ladeorte, Stromart & Preise</div>
+              <button type="button" class="btn-edit-mode-toggle" id="btnToggleLocationEditMode" title="Bearbeitungsmodus umschalten">
+                <span class="pencil-icon" id="editModeIcon">✏️</span>
+                <span id="editModeText">Bearbeiten</span>
+              </button>
+            </div>
+            <p class="inset-group-desc" id="locationsModeHint">Tippe auf einen Standort zum Anpassen. Im Bearbeitungsmodus kannst du sortieren oder löschen.</p>
+
+            <div class="locations-manage-stack" id="locationsDragList">
+              <!-- Dynamische Liste -->
+            </div>
+
+            <!-- Neuer Standort hinzufügen Button -->
+            <button type="button" class="btn-swift-secondary full-width" id="btnOpenNewLocationModal">
+              ＋ Neuen Ladeort anlegen
+            </button>
+          </div>
+        </div>
+
+        <!-- Sub-Tab 3: Datensicherung & Backup -->
+        <div id="settab-backup" class="settings-sub-pane">
+          <div class="swift-inset-group">
+            <div class="inset-group-header">Datensicherheit & Export</div>
+
+            <div class="backup-buttons-stack">
+              <button type="button" class="btn-swift-backup-row" id="btnExportJson">
+                <span class="backup-row-icon">📤</span>
+                <div class="backup-row-text">
+                  <span class="backup-row-main">Daten exportieren</span>
+                  <span class="backup-row-sub">Vollständiges Backup als JSON herunterladen</span>
+                </div>
+              </button>
+
+              <label class="btn-swift-backup-row" for="importJsonInput">
+                <span class="backup-row-icon">📥</span>
+                <div class="backup-row-text">
+                  <span class="backup-row-main">Daten importieren</span>
+                  <span class="backup-row-sub">Backup-Datei wiederherstellen & validieren</span>
+                </div>
+                <input type="file" id="importJsonInput" accept=".json" style="display: none;">
+              </label>
+            </div>
+          </div>
+
+          <div class="swift-inset-group">
+            <div class="inset-group-header">Demo & Zurücksetzen</div>
+            <div class="backup-buttons-stack">
+              <button type="button" class="btn-swift-secondary full-width" id="btnLoadSampleData">
+                ✨ Realistische Beispieldaten laden
+              </button>
+              <button type="button" class="btn-swift-danger full-width" id="btnWipeAllData">
+                🗑️ Alle Daten unwiderruflich löschen
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- ======================================================= -->
+    <!-- ECHTE SWIFTUI / APPLE LIQUID GLASS DOCK TAB BAR         -->
+    <!-- 4 TABS + 1 ZENTRALER (+) FAB ZUM LADEN                   -->
+    <!-- ======================================================= -->
+    <nav class="swift-bottom-dock">
+      <div class="dock-inner-glass">
+
+        <!-- Tab 1: Dashboard -->
+        <button class="dock-tab-btn active" data-tab="dashboard">
+          <svg viewBox="0 0 24 24" class="dock-svg" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="9" rx="2"></rect>
+            <rect x="14" y="3" width="7" height="5" rx="2"></rect>
+            <rect x="14" y="12" width="7" height="9" rx="2"></rect>
+            <rect x="3" y="16" width="7" height="5" rx="2"></rect>
+          </svg>
+          <span class="dock-tab-label">Übersicht</span>
+        </button>
+
+        <!-- Tab 2: Laden -->
+        <button class="dock-tab-btn" data-tab="charging">
+          <svg viewBox="0 0 24 24" class="dock-svg" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span class="dock-tab-label">Laden</span>
+        </button>
+
+        <!-- ZENTRALER (+) BUTTON: DIE EINZIGE SCHNITTSTELLE FÜR NEUE LADUNGEN -->
+        <button class="dock-center-fab" id="fabAddCharge" aria-label="Ladevorgang hinzufügen" title="Neuen Ladevorgang erfassen">
+          <span class="fab-plus-symbol">＋</span>
+        </button>
+
+        <!-- Tab 3: Wetter & PV-Planer -->
+        <button class="dock-tab-btn" data-tab="weather">
+          <svg viewBox="0 0 24 24" class="dock-svg" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <span class="dock-tab-label">Wetter & PV</span>
+        </button>
+
+        <!-- Tab 4: Einstellungen -->
+        <button class="dock-tab-btn" data-tab="settings">
+          <svg viewBox="0 0 24 24" class="dock-svg" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span class="dock-tab-label">Setup</span>
+        </button>
+
+      </div>
+    </nav>
+
+  </div> <!-- /iphone-shell -->
+
+  <!-- ======================================================= -->
+  <!-- MODAL BOTTOM SHEET: LADEVORGANG ERFASSEN                -->
+  <!-- ======================================================= -->
+  <div class="modal-backdrop-sheet" id="modalAddCharge">
+    <div class="swift-sheet-card" role="dialog" aria-modal="true" aria-labelledby="modalChargeTitle">
+      <div class="sheet-grabber"></div>
+
+      <div class="sheet-header">
+        <h2 class="sheet-title" id="modalChargeTitle">Ladevorgang erfassen</h2>
+        <button type="button" class="sheet-btn-close" id="btnCloseModalCharge" aria-label="Schließen">✕</button>
+      </div>
+
+      <form id="formChargeEntry" class="sheet-form">
+        <input type="hidden" id="entryEditId" value="">
+
+        <!-- Datum & Uhrzeit -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="entryDateTime">Datum & Uhrzeit</label>
+          <input type="datetime-local" id="entryDateTime" class="form-touch-input" required>
+        </div>
+
+        <!-- Touch-optimierter Apple Action-Sheet Ladeort Selector -->
+        <div class="form-touch-row">
+          <label class="form-touch-label">Ladeort auswählen</label>
+          <div class="apple-touch-picker-button" id="btnOpenLocationPicker">
+            <div class="picker-btn-left">
+              <span class="picker-btn-icon" id="pickerSelectedIcon">🏢</span>
+              <div class="picker-btn-texts">
+                <span class="picker-btn-title" id="pickerSelectedTitle">Bayrhofs</span>
+                <span class="picker-btn-sub" id="pickerSelectedSub">☀️ PV-Strom • 0,15 €/kWh</span>
+              </div>
+            </div>
+            <span class="picker-chevron">›</span>
+          </div>
+          <input type="hidden" id="entryLocationId" value="">
+        </div>
+
+        <!-- Lademenge & Odometer -->
+        <div class="form-two-cols">
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryKwh">Geladen (kWh)</label>
+            <div class="input-addon-box">
+              <input type="number" id="entryKwh" class="form-touch-input" placeholder="38.5" step="0.1" min="0.1" max="100" required>
+              <span class="addon-suffix">kWh</span>
+            </div>
+          </div>
+
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryOdometer">
+              Aktueller km-Stand
+              <span class="delta-tag-live" id="entryDeltaKmTag">+0 km</span>
+            </label>
+            <div class="input-addon-box">
+              <input type="number" id="entryOdometer" class="form-touch-input" placeholder="12450" step="1" min="0" required>
+              <span class="addon-suffix">km</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preis & Gesamtkosten (Preis wird automatisch vom Ladeort geladen!) -->
+        <div class="form-two-cols">
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryPrice">Preis (€/kWh)</label>
+            <div class="input-addon-box">
+              <input type="number" id="entryPrice" class="form-touch-input" placeholder="0.35" step="0.01" min="0" required>
+              <span class="addon-suffix">€</span>
+            </div>
+          </div>
+
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryTotalCost">Gesamtpreis (€)</label>
+            <div class="input-addon-box">
+              <input type="number" id="entryTotalCost" class="form-touch-input bronze-highlight-input" placeholder="0.00" step="0.01" min="0" required>
+              <span class="addon-suffix">€</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notiz -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="entryNotes">Notiz (optional)</label>
+          <input type="text" id="entryNotes" class="form-touch-input" placeholder="z.B. PV-Peak genutzt, Autobahnraststätte...">
+        </div>
+
+        <!-- Buttons -->
+        <div class="sheet-actions-row">
+          <button type="button" class="btn-swift-secondary" id="btnCancelEntry">Abbrechen</button>
+          <button type="submit" class="btn-swift-primary-bronze" id="btnSaveEntry">Speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================= -->
+  <!-- MODAL: STANDORT-AUSWAHL ACTION SHEET                    -->
+  <!-- ======================================================= -->
+  <div class="modal-backdrop-sheet" id="modalLocationPickerSheet">
+    <div class="swift-sheet-card action-sheet-modal">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-header">
+        <h2 class="sheet-title">Ladeort wählen</h2>
+        <button type="button" class="sheet-btn-close" id="btnCloseLocationPickerSheet">✕</button>
+      </div>
+      <div class="apple-touch-picker-list" id="pickerLocationsList">
+        <!-- Wird dynamisch mit Touch-optimierten Zeilen befüllt -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================= -->
+  <!-- MODAL: STANDORT ANLEGEN / BEARBEITEN                     -->
+  <!-- ======================================================= -->
+  <div class="modal-backdrop-sheet" id="modalEditLocation">
+    <div class="swift-sheet-card" style="max-height: 85vh;">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-header">
+        <h2 class="sheet-title" id="modalEditLocationTitle">Ladeort anpassen</h2>
+        <button type="button" class="sheet-btn-close" id="btnCloseEditLocationModal">✕</button>
+      </div>
+
+      <form id="formLocationEditor" class="sheet-form">
+        <input type="hidden" id="locEditId" value="">
+
+        <!-- Name -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="locEditName">Standort-Name</label>
+          <input type="text" id="locEditName" class="form-touch-input" placeholder="z.B. Bayrhofs, Zuhause, Büro..." required>
+        </div>
+
+        <!-- Icon Picker Grid -->
+        <div class="form-touch-row">
+          <label class="form-touch-label">Icon auswählen</label>
+          <div class="icon-picker-grid" id="iconPickerGrid">
+            <!-- Icons zum Antippen: 🏢, 🏠, ⚡️, ☀️, 🔌, 💼, 🅿️, 🌲, 🚗, 🔋 -->
+          </div>
+          <input type="hidden" id="locEditIcon" value="🏢">
+        </div>
+
+        <!-- Stromart Segmented Toggle: [☀️ PV-Strom] vs [⚡️ Netzstrom] -->
+        <div class="form-touch-row">
+          <label class="form-touch-label">Stromart an diesem Standort</label>
+          <div class="swift-segmented-picker" id="locPowerTypePicker">
+            <button type="button" class="picker-seg active" data-powertype="pv">☀️ PV-Strom</button>
+            <button type="button" class="picker-seg" data-powertype="grid">⚡️ Netzstrom</button>
+          </div>
+          <input type="hidden" id="locEditPowerType" value="pv">
+        </div>
+
+        <!-- Standard kWh-Preis -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="locEditPrice">Standard kWh-Preis (€)</label>
+          <div class="input-addon-box">
+            <input type="number" id="locEditPrice" class="form-touch-input" placeholder="0.15" step="0.01" min="0" required>
+            <span class="addon-suffix">€/kWh</span>
+          </div>
+        </div>
+
+        <div class="sheet-actions-row">
+          <button type="button" class="btn-swift-secondary" id="btnCancelLocationEdit">Abbrechen</button>
+          <button type="submit" class="btn-swift-primary-bronze" id="btnSaveLocationEdit">Standort speichern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================= -->
+  <!-- MODAL: STÜNDLICHER WETTERVERLAUF & PV-GRAPH EINES TAGES -->
+  <!-- ======================================================= -->
+  <div class="modal-backdrop-sheet" id="modalHourlyWeather">
+    <div class="swift-sheet-card" style="max-height: 90vh;">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-header">
+        <div>
+          <h2 class="sheet-title" id="hourlyModalTitle">Stündlicher Verlauf</h2>
+          <span class="sheet-subtitle-tag" id="hourlyModalSub">Sonnenstunden & Niederschlag</span>
+        </div>
+        <button type="button" class="sheet-btn-close" id="btnCloseHourlyModal">✕</button>
+      </div>
+
+      <div class="hourly-content-wrap">
+        <!-- Kennzahlen-Zusammenfassung des Tages -->
+        <div class="hourly-kpi-summary-row">
+          <div class="hourly-summary-pill">
+            <span class="hourly-sum-lbl">Sonnenstunden</span>
+            <span class="hourly-sum-val bronze-text" id="hourlyTotalSun">-- h</span>
+          </div>
+          <div class="hourly-summary-pill">
+            <span class="hourly-sum-lbl">Regenmenge</span>
+            <span class="hourly-sum-val" id="hourlyTotalRain">-- l/m²</span>
+          </div>
+          <div class="hourly-summary-pill">
+            <span class="hourly-sum-lbl">Temperatur</span>
+            <span class="hourly-sum-val" id="hourlyTempRange">--°</span>
+          </div>
+        </div>
+
+        <!-- Bayrhofs Empfehlungsbox -->
+        <div class="hourly-decision-box" id="hourlyDecisionBox">
+          <span class="hourly-dec-icon" id="hourlyDecisionIcon">🏢</span>
+          <div class="hourly-dec-texts">
+            <div class="hourly-dec-title" id="hourlyDecisionTitle">Bayrhofs PV-Ertrag</div>
+            <div class="hourly-dec-desc" id="hourlyDecisionDesc">Lade Daten...</div>
+          </div>
+        </div>
+
+        <!-- Chart.js 24-Stunden Verlaufsgraph -->
+        <div class="swift-glass-card hourly-chart-card">
+          <div class="chart-header-row">
+            <span class="chart-title">24-Stunden Kurve (0 - 23 Uhr)</span>
+            <div class="chart-legend-box">
+              <span class="legend-indicator dot-bronze"></span><span>Sonne</span>
+              <span class="legend-indicator dot-cyan"></span><span>Regen (l/m²)</span>
+            </div>
+          </div>
+          <div class="chart-canvas-container" style="height: 200px;">
+            <canvas id="canvasHourlyChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Stündliche Tabelle (Scrollbar) -->
+        <div class="hourly-hours-horizontal-scroll" id="hourlyHoursScroll">
+          <!-- 24 Stündliche Kapseln -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- iOS Glass Toast -->
+  <div id="swiftToast" class="swift-glass-toast" role="status" aria-live="polite">
+    <span class="toast-dot-icon">✓</span>
+    <span class="toast-text" id="swiftToastMsg">Erfolgreich gespeichert</span>
+  </div>
+
+  <!-- App Script -->
+  <script src="./app.js"></script>
+</body>
+</html>

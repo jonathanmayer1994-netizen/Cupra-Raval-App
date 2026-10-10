@@ -1,0 +1,2128 @@
+/**
+ * CUPRA RAVAL CHARGE — SWIFTUI LIQUID GLASS ENGINE V3
+ * Modell: Cupra Raval Endurance Edition Dynamic
+ * 4 Tabs + 1 Center FAB | Bayrhofs PV-Logik | Stündlicher Wettergraph | Apple Edit Mode
+ */
+
+(() => {
+  'use strict';
+
+  // =========================================================================
+  // KONSTANTEN & DATENMODELL (SCHEMA V3)
+  // =========================================================================
+  const STORAGE_KEY = 'cupra_raval_data';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v4';
+  const CURRENT_SCHEMA = 3;
+
+  const DEFAULT_LOCATIONS = [
+    { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
+    { id: "loc_arbeit", name: "Arbeit", icon: "💼", powerType: "pv", kwhPrice: 0.20 },
+    { id: "loc_zuhause", name: "Zuhause", icon: "🏠", powerType: "grid", kwhPrice: 0.32 },
+    { id: "loc_oeffentlich", name: "Öffentlich", icon: "⚡️", powerType: "grid", kwhPrice: 0.59 }
+  ];
+
+  const DEFAULT_DATA = {
+    schemaVersion: CURRENT_SCHEMA,
+    lastUpdated: new Date().toISOString(),
+    vehicle: {
+      model: "Cupra Raval Endurance Edition Dynamic",
+      batteryKwh: 52.0,
+      powerPs: 211,
+      currentOdo: 12450
+    },
+    settings: {
+      currency: "€",
+      locations: JSON.parse(JSON.stringify(DEFAULT_LOCATIONS)),
+      weatherGps: {
+        name: "GPS: Bayrhofs / Kempten",
+        lat: 47.72,
+        lon: 10.31
+      },
+      pvThresholdSunshineHours: 4.5
+    },
+    sessions: []
+  };
+
+  const AVAILABLE_ICONS = ['🏢', '🏠', '⚡️', '☀️', '🔌', '💼', '🅿️', '🌲', '🚗', '🔋'];
+
+  // State
+  let appData = null;
+  let activeTab = 'dashboard';
+  let activeChargingSub = 'history';
+  let activeSettingsSub = 'car';
+  let activeChargingFilter = 'all';
+  let activeAnalyticsPeriod = 'month';
+
+  let weatherForecast14Days = null;
+  let isWeatherExpanded = false;
+  let isLocationsEditMode = false;
+
+  // Chart Instanzen
+  let chartMain = null;
+  let chartLocDonut = null;
+  let chartSrcDonut = null;
+  let chartHourly = null;
+
+  // DOM Cache
+  const DOM = {};
+
+  // =========================================================================
+  // INITIALISIERUNG
+  // =========================================================================
+  window.addEventListener('DOMContentLoaded', () => {
+    cacheDom();
+    initStorage();
+    initWeatherCache();
+    setupEvents();
+    renderAll();
+    autoRequestGpsAndFetchWeather();
+  });
+
+  function cacheDom() {
+    // Header
+    DOM.headerSubtitle = document.getElementById('headerSubtitle');
+
+    // Navigation Dock
+    DOM.dockTabBtns = document.querySelectorAll('.dock-tab-btn');
+    DOM.tabViews = document.querySelectorAll('.tab-view');
+    DOM.fabAddCharge = document.getElementById('fabAddCharge');
+
+    // Dashboard
+    DOM.currentMonthYearTag = document.getElementById('currentMonthYearTag');
+    DOM.dashMonthCost = document.getElementById('dashMonthCost');
+    DOM.dashMonthKwh = document.getElementById('dashMonthKwh');
+    DOM.dashYearCost = document.getElementById('dashYearCost');
+    DOM.dashYearKwh = document.getElementById('dashYearKwh');
+    DOM.dashAvgPrice = document.getElementById('dashAvgPrice');
+    DOM.dashPvShareSub = document.getElementById('dashPvShareSub');
+    DOM.dashAvgCons = document.getElementById('dashAvgCons');
+    DOM.dashAvgCost100 = document.getElementById('dashAvgCost100');
+
+    DOM.dashPvPreviewCard = document.getElementById('dashPvPreviewCard');
+    DOM.dashPvIconCircle = document.getElementById('dashPvIconCircle');
+    DOM.dashRecoHeadline = document.getElementById('dashRecoHeadline');
+    DOM.dashRecoSubline = document.getElementById('dashRecoSubline');
+    DOM.dashRecoBadge = document.getElementById('dashRecoBadge');
+
+    DOM.cardCarModelName = document.getElementById('cardCarModelName');
+    DOM.cardBatteryKwh = document.getElementById('cardBatteryKwh');
+    DOM.cardPowerPs = document.getElementById('cardPowerPs');
+    DOM.cardCurrentOdo = document.getElementById('cardCurrentOdo');
+    DOM.dashboardLiveStatus = document.getElementById('dashboardLiveStatus');
+
+    // Charging Tab
+    DOM.chargingSegPickers = document.querySelectorAll('.picker-seg[data-sub]');
+    DOM.chargingSubViews = document.querySelectorAll('.charging-sub-view');
+    DOM.chargingFilterRail = document.getElementById('chargingFilterRail');
+    DOM.chargesStreamContainer = document.getElementById('chargesStreamContainer');
+
+    // Analytics
+    DOM.periodPills = document.querySelectorAll('.period-pill');
+    DOM.analyticsSubtitle = document.getElementById('analyticsSubtitle');
+    DOM.canvasChargingChart = document.getElementById('canvasChargingChart');
+    DOM.canvasLocationDonut = document.getElementById('canvasLocationDonut');
+    DOM.canvasSourceDonut = document.getElementById('canvasSourceDonut');
+    DOM.locationDonutLegend = document.getElementById('locationDonutLegend');
+    DOM.sourceDonutLegend = document.getElementById('sourceDonutLegend');
+
+    // Weather Tab
+    DOM.weatherDisplayLocation = document.getElementById('weatherDisplayLocation');
+    DOM.btnRefreshWeather = document.getElementById('btnRefreshWeather');
+    DOM.pvSummaryRecommendationText = document.getElementById('pvSummaryRecommendationText');
+    DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
+    DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
+    DOM.btnToggleExtendedForecast = document.getElementById('btnToggleExtendedForecast');
+    DOM.toggleForecastText = document.getElementById('toggleForecastText');
+    DOM.toggleForecastArrow = document.getElementById('toggleForecastArrow');
+    DOM.forecastDaysCountBadge = document.getElementById('forecastDaysCountBadge');
+
+    // Settings Tab
+    DOM.settingsSubBtns = document.querySelectorAll('.settings-sub-nav .picker-seg');
+    DOM.settingsSubPanes = document.querySelectorAll('.settings-sub-pane');
+    DOM.cfgModelName = document.getElementById('cfgModelName');
+    DOM.cfgBatteryCap = document.getElementById('cfgBatteryCap');
+    DOM.cfgPower = document.getElementById('cfgPower');
+    DOM.btnSaveVehicleSettings = document.getElementById('btnSaveVehicleSettings');
+    DOM.btnToggleLocationEditMode = document.getElementById('btnToggleLocationEditMode');
+    DOM.editModeIcon = document.getElementById('editModeIcon');
+    DOM.editModeText = document.getElementById('editModeText');
+    DOM.locationsModeHint = document.getElementById('locationsModeHint');
+    DOM.locationsDragList = document.getElementById('locationsDragList');
+    DOM.btnOpenNewLocationModal = document.getElementById('btnOpenNewLocationModal');
+    DOM.btnExportJson = document.getElementById('btnExportJson');
+    DOM.importJsonInput = document.getElementById('importJsonInput');
+    DOM.btnLoadSampleData = document.getElementById('btnLoadSampleData');
+    DOM.btnWipeAllData = document.getElementById('btnWipeAllData');
+
+    // Charge Entry Modal
+    DOM.modalAddCharge = document.getElementById('modalAddCharge');
+    DOM.btnCloseModalCharge = document.getElementById('btnCloseModalCharge');
+    DOM.btnCancelEntry = document.getElementById('btnCancelEntry');
+    DOM.formChargeEntry = document.getElementById('formChargeEntry');
+    DOM.entryEditId = document.getElementById('entryEditId');
+    DOM.modalChargeTitle = document.getElementById('modalChargeTitle');
+    DOM.entryDateTime = document.getElementById('entryDateTime');
+    DOM.btnOpenLocationPicker = document.getElementById('btnOpenLocationPicker');
+    DOM.pickerSelectedIcon = document.getElementById('pickerSelectedIcon');
+    DOM.pickerSelectedTitle = document.getElementById('pickerSelectedTitle');
+    DOM.pickerSelectedSub = document.getElementById('pickerSelectedSub');
+    DOM.entryLocationId = document.getElementById('entryLocationId');
+    DOM.entryKwh = document.getElementById('entryKwh');
+    DOM.entryOdometer = document.getElementById('entryOdometer');
+    DOM.entryDeltaKmTag = document.getElementById('entryDeltaKmTag');
+    DOM.entryPrice = document.getElementById('entryPrice');
+    DOM.entryTotalCost = document.getElementById('entryTotalCost');
+    DOM.entryNotes = document.getElementById('entryNotes');
+
+    // Location Picker Sheet
+    DOM.modalLocationPickerSheet = document.getElementById('modalLocationPickerSheet');
+    DOM.btnCloseLocationPickerSheet = document.getElementById('btnCloseLocationPickerSheet');
+    DOM.pickerLocationsList = document.getElementById('pickerLocationsList');
+
+    // Location Editor Modal
+    DOM.modalEditLocation = document.getElementById('modalEditLocation');
+    DOM.modalEditLocationTitle = document.getElementById('modalEditLocationTitle');
+    DOM.btnCloseEditLocationModal = document.getElementById('btnCloseEditLocationModal');
+    DOM.btnCancelLocationEdit = document.getElementById('btnCancelLocationEdit');
+    DOM.formLocationEditor = document.getElementById('formLocationEditor');
+    DOM.locEditId = document.getElementById('locEditId');
+    DOM.locEditName = document.getElementById('locEditName');
+    DOM.iconPickerGrid = document.getElementById('iconPickerGrid');
+    DOM.locEditIcon = document.getElementById('locEditIcon');
+    DOM.locPowerTypePicker = document.getElementById('locPowerTypePicker');
+    DOM.locEditPowerType = document.getElementById('locEditPowerType');
+    DOM.locEditPrice = document.getElementById('locEditPrice');
+
+    // Hourly Weather Modal
+    DOM.modalHourlyWeather = document.getElementById('modalHourlyWeather');
+    DOM.hourlyModalTitle = document.getElementById('hourlyModalTitle');
+    DOM.hourlyModalSub = document.getElementById('hourlyModalSub');
+    DOM.btnCloseHourlyModal = document.getElementById('btnCloseHourlyModal');
+    DOM.hourlyTotalSun = document.getElementById('hourlyTotalSun');
+    DOM.hourlyTotalRain = document.getElementById('hourlyTotalRain');
+    DOM.hourlyTempRange = document.getElementById('hourlyTempRange');
+    DOM.hourlyDecisionIcon = document.getElementById('hourlyDecisionIcon');
+    DOM.hourlyDecisionTitle = document.getElementById('hourlyDecisionTitle');
+    DOM.hourlyDecisionDesc = document.getElementById('hourlyDecisionDesc');
+    DOM.canvasHourlyChart = document.getElementById('canvasHourlyChart');
+    DOM.hourlyHoursScroll = document.getElementById('hourlyHoursScroll');
+
+    // Toast
+    DOM.swiftToast = document.getElementById('swiftToast');
+    DOM.swiftToastMsg = document.getElementById('swiftToastMsg');
+  }
+
+  // =========================================================================
+  // LOCALSTORAGE & MIGRATION (SCHEMA V3)
+  // =========================================================================
+  function initStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+        saveData();
+      } else {
+        const parsed = JSON.parse(raw);
+        appData = sanitizeAndMigrate(parsed);
+        saveData();
+      }
+    } catch (e) {
+      appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      saveData();
+    }
+  }
+
+  function sanitizeAndMigrate(data) {
+    if (!data || typeof data !== 'object') {
+      return JSON.parse(JSON.stringify(DEFAULT_DATA));
+    }
+
+    const res = {
+      schemaVersion: CURRENT_SCHEMA,
+      lastUpdated: new Date().toISOString(),
+      vehicle: {
+        model: (data.vehicle && data.vehicle.model) || DEFAULT_DATA.vehicle.model,
+        batteryKwh: Number((data.vehicle && data.vehicle.batteryKwh) || DEFAULT_DATA.vehicle.batteryKwh),
+        powerPs: Number((data.vehicle && data.vehicle.powerPs) || DEFAULT_DATA.vehicle.powerPs),
+        currentOdo: Number((data.vehicle && data.vehicle.currentOdo) || DEFAULT_DATA.vehicle.currentOdo)
+      },
+      settings: {
+        currency: "€",
+        locations: [],
+        weatherGps: {
+          name: (data.settings && data.settings.weatherGps && data.settings.weatherGps.name) || DEFAULT_DATA.settings.weatherGps.name,
+          lat: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lat) ?? DEFAULT_DATA.settings.weatherGps.lat),
+          lon: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lon) ?? DEFAULT_DATA.settings.weatherGps.lon)
+        },
+        pvThresholdSunshineHours: Number((data.settings && data.settings.pvThresholdSunshineHours) ?? DEFAULT_DATA.settings.pvThresholdSunshineHours)
+      },
+      sessions: Array.isArray(data.sessions) ? data.sessions : []
+    };
+
+    // Locations Migration
+    if (data.settings && Array.isArray(data.settings.locations) && data.settings.locations.length > 0) {
+      res.settings.locations = data.settings.locations.map((item, idx) => {
+        if (typeof item === 'string') {
+          const isPv = (item.toLowerCase().includes('bayrhofs') || item.toLowerCase().includes('arbeit'));
+          const price = isPv ? 0.15 : (item.toLowerCase().includes('zuhause') ? 0.32 : 0.59);
+          const icon = item.toLowerCase().includes('bayrhofs') ? '🏢' : (item.toLowerCase().includes('arbeit') ? '💼' : (item.toLowerCase().includes('zuhause') ? '🏠' : '⚡️'));
+          return { id: `loc_${idx}_${Date.now()}`, name: item, icon, powerType: isPv ? 'pv' : 'grid', kwhPrice: price };
+        }
+        return {
+          id: item.id || `loc_${idx}_${Date.now()}`,
+          name: item.name || `Standort ${idx + 1}`,
+          icon: item.icon || '🏢',
+          powerType: item.powerType === 'pv' ? 'pv' : 'grid',
+          kwhPrice: Number(item.kwhPrice) || 0.30
+        };
+      });
+    } else {
+      res.settings.locations = JSON.parse(JSON.stringify(DEFAULT_LOCATIONS));
+    }
+
+    // Sessions Migration
+    res.sessions = res.sessions.map((s, idx) => {
+      const locName = typeof s.location === 'object' ? s.location.name : (s.location || 'Bayrhofs');
+      const matchingLoc = res.settings.locations.find(l => l.name === locName);
+      const isPv = s.pvSurplus !== undefined ? Boolean(s.pvSurplus) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+      const price = Number(s.pricePerKwh) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+
+      return {
+        id: s.id || `session_${Date.now()}_${idx}`,
+        date: s.date || new Date().toISOString(),
+        kwh: Number(s.kwh) || 0,
+        odometer: Number(s.odometer) || 0,
+        pricePerKwh: price,
+        totalCost: Number(s.totalCost) || Number(((Number(s.kwh) || 0) * price).toFixed(2)),
+        location: locName,
+        pvSurplus: isPv,
+        notes: s.notes || ""
+      };
+    });
+
+    res.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Höchsten km-Stand als aktuellen Odometer
+    const maxOdo = res.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), res.vehicle.currentOdo);
+    res.vehicle.currentOdo = maxOdo;
+
+    return res;
+  }
+
+  function saveData() {
+    try {
+      appData.lastUpdated = new Date().toISOString();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    } catch (e) {
+      showToast('⚠️ Speicherfehler');
+    }
+  }
+
+  function initWeatherCache() {
+    try {
+      const cached = localStorage.getItem(WEATHER_CACHE_KEY);
+      if (cached) weatherForecast14Days = JSON.parse(cached);
+    } catch (_) {}
+  }
+
+  function saveWeatherCache(data) {
+    try {
+      localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
+    } catch (_) {}
+  }
+
+  // =========================================================================
+  // NAVIGATION & TAB SWITCHING
+  // =========================================================================
+  function switchMainTab(tabId) {
+    activeTab = tabId;
+
+    DOM.dockTabBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
+    });
+
+    DOM.tabViews.forEach(v => {
+      v.classList.toggle('active', v.id === `tab-${tabId}`);
+    });
+
+    triggerHaptic();
+
+    if (tabId === 'charging') {
+      if (activeChargingSub === 'analytics') renderAnalyticsCharts();
+      else renderChargesStream();
+    } else if (tabId === 'weather') {
+      renderWeatherViews();
+    }
+  }
+
+  function switchChargingSub(subId) {
+    activeChargingSub = subId;
+
+    DOM.chargingSegPickers.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-sub') === subId);
+    });
+
+    DOM.chargingSubViews.forEach(v => {
+      v.classList.toggle('active', v.id === `sub-${subId}`);
+    });
+
+    triggerHaptic();
+
+    if (subId === 'analytics') {
+      setTimeout(() => renderAnalyticsCharts(), 50);
+    } else {
+      renderChargesStream();
+    }
+  }
+
+  function switchSettingsSub(subId) {
+    activeSettingsSub = subId;
+
+    DOM.settingsSubBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-settab') === subId);
+    });
+
+    DOM.settingsSubPanes.forEach(pane => {
+      pane.classList.toggle('active', pane.id === `settab-${subId}`);
+    });
+
+    triggerHaptic();
+  }
+
+  function triggerHaptic() {
+    if (navigator.vibrate) {
+      try { navigator.vibrate(10); } catch (_) {}
+    }
+  }
+
+  // =========================================================================
+  // EVENT LISTENERS SETUP
+  // =========================================================================
+  function setupEvents() {
+    DOM.dockTabBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchMainTab(btn.getAttribute('data-tab')));
+    });
+
+    // ZENTRALER (+) BUTTON
+    DOM.fabAddCharge.addEventListener('click', () => openModalCharge());
+
+    // Charging Sub-Tabs
+    DOM.chargingSegPickers.forEach(btn => {
+      btn.addEventListener('click', () => switchChargingSub(btn.getAttribute('data-sub')));
+    });
+
+    // Settings Sub-Tabs
+    DOM.settingsSubBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchSettingsSub(btn.getAttribute('data-settab')));
+    });
+
+    // Period Pills
+    DOM.periodPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        DOM.periodPills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        activeAnalyticsPeriod = pill.getAttribute('data-period');
+        renderAnalyticsCharts();
+        triggerHaptic();
+      });
+    });
+
+    // Dashboard Wetter-Widget: Klick öffnet Wetter & PV Tab!
+    DOM.dashPvPreviewCard.addEventListener('click', () => {
+      switchMainTab('weather');
+    });
+
+    // Wetter Refresh Button
+    DOM.btnRefreshWeather.addEventListener('click', () => {
+      autoRequestGpsAndFetchWeather(true);
+      triggerHaptic();
+    });
+
+    // 14-Tage Toggle
+    DOM.btnToggleExtendedForecast.addEventListener('click', () => {
+      isWeatherExpanded = !isWeatherExpanded;
+      DOM.weatherExtendedContainer.classList.toggle('expanded', isWeatherExpanded);
+      DOM.btnToggleExtendedForecast.classList.toggle('open', isWeatherExpanded);
+      DOM.toggleForecastText.textContent = isWeatherExpanded 
+        ? 'Weniger anzeigen (4 Tage)' 
+        : 'Weitere 10 Tage anzeigen (14-Tage Trend)';
+      DOM.forecastDaysCountBadge.textContent = isWeatherExpanded ? '14 Tage Trend' : '4 Tage Vorschau';
+      triggerHaptic();
+    });
+
+    // Standorte Bearbeiten-Modus Umschalter (Minimaler Stift)
+    DOM.btnToggleLocationEditMode.addEventListener('click', () => {
+      isLocationsEditMode = !isLocationsEditMode;
+      DOM.btnToggleLocationEditMode.classList.toggle('active-done', isLocationsEditMode);
+      DOM.editModeIcon.textContent = isLocationsEditMode ? '✓' : '✏️';
+      DOM.editModeText.textContent = isLocationsEditMode ? 'Fertig' : 'Bearbeiten';
+      DOM.locationsModeHint.textContent = isLocationsEditMode 
+        ? 'Nutze ▲ und ▼ zum Sortieren oder ⛔ zum Löschen.' 
+        : 'Tippe auf einen Standort zum Anpassen. Im Bearbeitungsmodus kannst du sortieren oder löschen.';
+      renderLocationsManageList();
+      triggerHaptic();
+    });
+
+    // Charge Modal Events
+    DOM.btnCloseModalCharge.addEventListener('click', () => closeModalCharge());
+    DOM.btnCancelEntry.addEventListener('click', () => closeModalCharge());
+    DOM.modalAddCharge.addEventListener('click', (e) => {
+      if (e.target === DOM.modalAddCharge) closeModalCharge();
+    });
+
+    DOM.entryKwh.addEventListener('input', calculateModalCost);
+    DOM.entryPrice.addEventListener('input', calculateModalCost);
+    DOM.entryOdometer.addEventListener('input', calculateModalOdoDelta);
+    DOM.formChargeEntry.addEventListener('submit', handleSaveChargeEntry);
+
+    // Location Picker Sheet Events
+    DOM.btnOpenLocationPicker.addEventListener('click', () => openLocationPickerSheet());
+    DOM.btnCloseLocationPickerSheet.addEventListener('click', () => closeLocationPickerSheet());
+    DOM.modalLocationPickerSheet.addEventListener('click', (e) => {
+      if (e.target === DOM.modalLocationPickerSheet) closeLocationPickerSheet();
+    });
+
+    // Location Editor Events
+    DOM.btnOpenNewLocationModal.addEventListener('click', () => openLocationEditorModal(null));
+    DOM.btnCloseEditLocationModal.addEventListener('click', () => closeLocationEditorModal());
+    DOM.btnCancelLocationEdit.addEventListener('click', () => closeLocationEditorModal());
+    DOM.modalEditLocation.addEventListener('click', (e) => {
+      if (e.target === DOM.modalEditLocation) closeLocationEditorModal();
+    });
+
+    DOM.locPowerTypePicker.querySelectorAll('.picker-seg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        DOM.locPowerTypePicker.querySelectorAll('.picker-seg').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        DOM.locEditPowerType.value = btn.getAttribute('data-powertype');
+        triggerHaptic();
+      });
+    });
+
+    DOM.formLocationEditor.addEventListener('submit', handleSaveLocationEditor);
+
+    // Stündliches Wetter Modal Close
+    DOM.btnCloseHourlyModal.addEventListener('click', () => closeHourlyModal());
+    DOM.modalHourlyWeather.addEventListener('click', (e) => {
+      if (e.target === DOM.modalHourlyWeather) closeHourlyModal();
+    });
+
+    // Fahrzeug-Settings
+    DOM.btnSaveVehicleSettings.addEventListener('click', handleSaveVehicleSettings);
+
+    // Backup & Restore
+    DOM.btnExportJson.addEventListener('click', handleExportJson);
+    DOM.importJsonInput.addEventListener('change', handleImportJson);
+    DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
+    DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
+  }
+
+  // =========================================================================
+  // GANZHEITLICHES RENDERING
+  // =========================================================================
+  function renderAll() {
+    renderDashboard();
+    renderLocationFilterRail();
+    renderChargesStream();
+    renderSettingsForms();
+    renderLocationsManageList();
+  }
+
+  // =========================================================================
+  // TAB 1: DASHBOARD (METRIKEN OBEN, WETTER MITTE, AUTO UNTEN)
+  // =========================================================================
+  function renderDashboard() {
+    // Datum
+    const now = new Date();
+    const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+    DOM.currentMonthYearTag.textContent = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+
+    // Aggregation
+    const curMonth = now.getMonth();
+    const curYear = now.getFullYear();
+
+    let mCost = 0, mKwh = 0, yCost = 0, yKwh = 0, allCost = 0, allKwh = 0, allPvKwh = 0;
+
+    appData.sessions.forEach(s => {
+      const d = new Date(s.date);
+      const k = Number(s.kwh) || 0;
+      const c = Number(s.totalCost) || 0;
+
+      allCost += c;
+      allKwh += k;
+      if (s.pvSurplus) allPvKwh += k;
+
+      if (d.getFullYear() === curYear) {
+        yCost += c;
+        yKwh += k;
+        if (d.getMonth() === curMonth) {
+          mCost += c;
+          mKwh += k;
+        }
+      }
+    });
+
+    DOM.dashMonthCost.textContent = formatDe(mCost);
+    DOM.dashMonthKwh.textContent = `${mKwh.toFixed(1)} kWh geladen`;
+
+    DOM.dashYearCost.textContent = formatDe(yCost);
+    DOM.dashYearKwh.textContent = `${yKwh.toFixed(1)} kWh geladen`;
+
+    const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
+    DOM.dashAvgPrice.textContent = avgPrice.toFixed(2).replace('.', ',');
+    const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
+    DOM.dashPvShareSub.textContent = `${pvPct}% via PV-Solar`;
+
+    // Verbrauch
+    const consData = calcConsumption(appData.sessions);
+    if (consData.hasData) {
+      DOM.dashAvgCons.textContent = consData.avgCons.toFixed(1).replace('.', ',');
+      DOM.dashAvgCost100.textContent = `${consData.avgCost100.toFixed(2).replace('.', ',')} € / 100 km`;
+    } else {
+      DOM.dashAvgCons.textContent = '--';
+      DOM.dashAvgCost100.textContent = '-- € / 100 km';
+    }
+
+    // Kompakte Autokarte unten
+    const v = appData.vehicle;
+    DOM.cardCarModelName.textContent = v.model;
+    DOM.headerSubtitle.textContent = v.model.toUpperCase();
+    DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
+    DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
+    DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;
+
+    if (appData.sessions.length > 0) {
+      const latest = appData.sessions[0];
+      const dObj = new Date(latest.date);
+      DOM.dashboardLiveStatus.textContent = `Zuletzt: ${dObj.toLocaleDateString('de-DE')} • ${latest.kwh.toFixed(1)} kWh @ ${latest.location}`;
+    } else {
+      DOM.dashboardLiveStatus.textContent = `Bereit für die erste Ladung`;
+    }
+
+    updateDashboardPvDecisionWidget();
+  }
+
+  function calcConsumption(sessions) {
+    if (!sessions || sessions.length < 2) return { hasData: false };
+    const sorted = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let dist = 0, energy = 0, cost = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      const delta = curr.odometer - prev.odometer;
+      if (delta > 0 && delta < 3000) {
+        dist += delta;
+        energy += curr.kwh;
+        cost += curr.totalCost;
+      }
+    }
+
+    if (dist > 0) {
+      return {
+        hasData: true,
+        avgCons: (energy / dist) * 100,
+        avgCost100: (cost / dist) * 100
+      };
+    }
+    return { hasData: false };
+  }
+
+  // =========================================================================
+  // TAB 2: LADEN & HISTORIE
+  // =========================================================================
+  function renderLocationFilterRail() {
+    if (!DOM.chargingFilterRail) return;
+
+    const locs = appData.settings.locations || [];
+    let html = `<button class="chip-filter ${activeChargingFilter === 'all' ? 'active' : ''}" data-filter="all">Alle</button>`;
+
+    locs.forEach(loc => {
+      const isAct = activeChargingFilter === loc.name;
+      html += `<button class="chip-filter ${isAct ? 'active' : ''}" data-filter="${escapeHtml(loc.name)}">${loc.icon || '📍'} ${escapeHtml(loc.name)}</button>`;
+    });
+
+    html += `<button class="chip-filter chip-pv ${activeChargingFilter === 'pv' ? 'active' : ''}" data-filter="pv">☀️ Nur PV</button>`;
+    DOM.chargingFilterRail.innerHTML = html;
+
+    DOM.chargingFilterRail.querySelectorAll('.chip-filter').forEach(chip => {
+      chip.addEventListener('click', () => {
+        activeChargingFilter = chip.getAttribute('data-filter');
+        renderLocationFilterRail();
+        renderChargesStream();
+        triggerHaptic();
+      });
+    });
+  }
+
+  function renderChargesStream() {
+    if (!DOM.chargesStreamContainer) return;
+
+    let list = [...appData.sessions];
+    if (activeChargingFilter !== 'all') {
+      if (activeChargingFilter === 'pv') list = list.filter(s => s.pvSurplus);
+      else list = list.filter(s => s.location === activeChargingFilter);
+    }
+
+    if (list.length === 0) {
+      DOM.chargesStreamContainer.innerHTML = `
+        <div class="swift-glass-card" style="text-align:center; padding: 32px 16px; color: var(--text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">⚡️</div>
+          <div style="font-weight: 700; color: #fff;">Keine Ladevorgänge gefunden</div>
+          <div style="font-size: 0.76rem; margin-top: 4px;">Tippe unten auf das ＋, um einen Ladevorgang einzutragen.</div>
+        </div>
+      `;
+      return;
+    }
+
+    DOM.chargesStreamContainer.innerHTML = list.map(s => {
+      const d = new Date(s.date);
+      const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      const deltaInfo = getSessionDelta(s);
+      const locObj = appData.settings.locations.find(l => l.name === s.location);
+      const locIcon = locObj ? locObj.icon : '📍';
+
+      return `
+        <div class="swift-glass-card session-swift-card" data-id="${s.id}">
+          <div class="session-top-meta">
+            <span class="session-timestamp">${dStr} • ${tStr}</span>
+            <div class="session-badges-wrap">
+              <span class="loc-badge-item">${locIcon} ${escapeHtml(s.location)}</span>
+              ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+            </div>
+          </div>
+
+          <div class="session-primary-row">
+            <div class="session-kwh-display">
+              <span class="session-kwh-val">${s.kwh.toFixed(1)}</span>
+              <span class="session-kwh-unit">kWh</span>
+            </div>
+            <div class="session-cost-val">${formatDe(s.totalCost)} €</div>
+          </div>
+
+          <div class="session-details-row">
+            <div>
+              <span>📍 ${s.odometer ? s.odometer.toLocaleString('de-DE') + ' km' : 'km nicht notiert'}</span>
+              ${deltaInfo.deltaKm > 0 ? `<span class="delta-tag-live" style="margin-left: 6px;">+${deltaInfo.deltaKm} km</span>` : ''}
+            </div>
+            <div>
+              <span>${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</span>
+              ${deltaInfo.consumption ? `<span style="margin-left: 4px; color: var(--cupra-bronze-light);">(${deltaInfo.consumption.toFixed(1)} kWh/100)</span>` : ''}
+            </div>
+          </div>
+
+          ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
+
+          <div class="session-actions-bar">
+            <button class="btn-card-action btn-edit-charge" data-id="${s.id}">✏️ Bearbeiten</button>
+            <button class="btn-card-action danger btn-del-charge" data-id="${s.id}">🗑️ Löschen</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    DOM.chargesStreamContainer.querySelectorAll('.btn-edit-charge').forEach(btn => {
+      btn.addEventListener('click', () => openModalCharge(btn.getAttribute('data-id')));
+    });
+
+    DOM.chargesStreamContainer.querySelectorAll('.btn-del-charge').forEach(btn => {
+      btn.addEventListener('click', () => handleDeleteCharge(btn.getAttribute('data-id')));
+    });
+  }
+
+  function getSessionDelta(curr) {
+    const sorted = [...appData.sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const idx = sorted.findIndex(s => s.id === curr.id);
+    if (idx > 0 && curr.odometer) {
+      const prev = sorted[idx - 1];
+      if (prev.odometer && curr.odometer > prev.odometer) {
+        const delta = curr.odometer - prev.odometer;
+        const cons = (curr.kwh / delta) * 100;
+        return { deltaKm: delta, consumption: cons };
+      }
+    }
+    return { deltaKm: 0, consumption: null };
+  }
+
+  function handleDeleteCharge(id) {
+    if (!confirm('Diesen Ladevorgang wirklich löschen?')) return;
+    appData.sessions = appData.sessions.filter(s => s.id !== id);
+    saveData();
+    renderAll();
+    triggerHaptic();
+    showToast('Ladevorgang gelöscht');
+  }
+
+  // =========================================================================
+  // TAB 2: AUSWERTUNGEN & CHART.JS
+  // =========================================================================
+  function renderAnalyticsCharts() {
+    if (typeof Chart === 'undefined') return;
+    renderMainBarLineChart();
+    renderDonutCharts();
+  }
+
+  function renderMainBarLineChart() {
+    if (!DOM.canvasChargingChart) return;
+    if (chartMain) { chartMain.destroy(); chartMain = null; }
+
+    const { labels, kwhVals, costVals, sub } = getAggregatedChartData(activeAnalyticsPeriod);
+    DOM.analyticsSubtitle.textContent = sub;
+
+    const ctx = DOM.canvasChargingChart.getContext('2d');
+    const bronzeGrad = ctx.createLinearGradient(0, 0, 0, 240);
+    bronzeGrad.addColorStop(0, 'rgba(226, 142, 78, 0.9)');
+    bronzeGrad.addColorStop(1, 'rgba(192, 128, 81, 0.2)');
+
+    chartMain = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'kWh',
+            data: kwhVals,
+            backgroundColor: bronzeGrad,
+            borderColor: '#c08051',
+            borderWidth: 1.5,
+            borderRadius: 6,
+            yAxisID: 'yKwh',
+            order: 2
+          },
+          {
+            type: 'line',
+            label: 'Kosten (€)',
+            data: costVals,
+            borderColor: '#38bdf8',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointBackgroundColor: '#38bdf8',
+            pointBorderColor: '#ffffff',
+            pointRadius: 3.5,
+            tension: 0.35,
+            yAxisID: 'yCost',
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(6, 10, 16, 0.92)',
+            titleColor: '#ffffff',
+            bodyColor: '#e2e8f0',
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+            borderWidth: 1,
+            cornerRadius: 10,
+            callbacks: {
+              label: (c) => c.datasetIndex === 0 ? ` ${c.parsed.y.toFixed(1)} kWh` : ` ${c.parsed.y.toFixed(2)} €`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: 'rgba(226, 232, 240, 0.6)', font: { size: 10 } }
+          },
+          yKwh: {
+            position: 'left',
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#c08051', font: { size: 10 }, callback: v => `${v} kWh` }
+          },
+          yCost: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { color: '#38bdf8', font: { size: 10 }, callback: v => `${v} €` }
+          }
+        }
+      }
+    });
+  }
+
+  function getAggregatedChartData(period) {
+    const now = new Date();
+    const cy = now.getFullYear();
+    const cm = now.getMonth();
+
+    if (period === 'month') {
+      const daysInMonth = new Date(cy, cm + 1, 0).getDate();
+      const labels = [];
+      const kMap = {}, cMap = {};
+      for (let i = 1; i <= daysInMonth; i++) {
+        labels.push(`${i}.`);
+        kMap[i] = 0; cMap[i] = 0;
+      }
+      appData.sessions.forEach(s => {
+        const d = new Date(s.date);
+        if (d.getFullYear() === cy && d.getMonth() === cm) {
+          const day = d.getDate();
+          kMap[day] += s.kwh;
+          cMap[day] += s.totalCost;
+        }
+      });
+      return {
+        labels,
+        kwhVals: Object.values(kMap),
+        costVals: Object.values(cMap),
+        sub: `Tagesverlauf ${now.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}`
+      };
+    }
+
+    if (period === 'year') {
+      const labels = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+      const kVals = Array(12).fill(0);
+      const cVals = Array(12).fill(0);
+      appData.sessions.forEach(s => {
+        const d = new Date(s.date);
+        if (d.getFullYear() === cy) {
+          const m = d.getMonth();
+          kVals[m] += s.kwh;
+          cVals[m] += s.totalCost;
+        }
+      });
+      return {
+        labels,
+        kwhVals: kVals,
+        costVals: cVals,
+        sub: `Monate im Jahr ${cy}`
+      };
+    }
+
+    const yMap = {};
+    appData.sessions.forEach(s => {
+      const y = new Date(s.date).getFullYear();
+      if (!yMap[y]) yMap[y] = { kwh: 0, cost: 0 };
+      yMap[y].kwh += s.kwh;
+      yMap[y].cost += s.totalCost;
+    });
+    const years = Object.keys(yMap).sort();
+    if (years.length === 0) years.push(cy.toString());
+
+    return {
+      labels: years,
+      kwhVals: years.map(y => yMap[y] ? yMap[y].kwh : 0),
+      costVals: years.map(y => yMap[y] ? yMap[y].cost : 0),
+      sub: 'Jahresvergleich aller Ladungen'
+    };
+  }
+
+  function renderDonutCharts() {
+    if (chartLocDonut) { chartLocDonut.destroy(); chartLocDonut = null; }
+    const locMap = {};
+    appData.settings.locations.forEach(l => locMap[l.name] = 0);
+    appData.sessions.forEach(s => {
+      const l = s.location || 'Bayrhofs';
+      locMap[l] = (locMap[l] || 0) + s.kwh;
+    });
+
+    const locLabels = Object.keys(locMap);
+    const locVals = Object.values(locMap);
+    const locPalette = ['#c08051', '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+
+    const ctxLoc = DOM.canvasLocationDonut.getContext('2d');
+    chartLocDonut = new Chart(ctxLoc, {
+      type: 'doughnut',
+      data: {
+        labels: locLabels,
+        datasets: [{
+          data: locVals.every(v => v === 0) ? [1] : locVals,
+          backgroundColor: locVals.every(v => v === 0) ? ['#334155'] : locPalette.slice(0, locLabels.length),
+          borderWidth: 0,
+          cutout: '74%'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    const sumLoc = locVals.reduce((a, b) => a + b, 0);
+    DOM.locationDonutLegend.innerHTML = locLabels.map((l, i) => {
+      const val = locMap[l];
+      const pct = sumLoc > 0 ? Math.round((val / sumLoc) * 100) : 0;
+      return `
+        <div class="donut-legend-item">
+          <span style="display:flex; align-items:center; gap: 4px;">
+            <span style="width:7px; height:7px; border-radius:50%; background:${locPalette[i % locPalette.length]}"></span>
+            ${escapeHtml(l)}
+          </span>
+          <span><strong>${val.toFixed(1)}k</strong> (${pct}%)</span>
+        </div>
+      `;
+    }).join('');
+
+    if (chartSrcDonut) { chartSrcDonut.destroy(); chartSrcDonut = null; }
+    let pvK = 0, gridK = 0;
+    appData.sessions.forEach(s => {
+      if (s.pvSurplus) pvK += s.kwh;
+      else gridK += s.kwh;
+    });
+
+    const ctxSrc = DOM.canvasSourceDonut.getContext('2d');
+    chartSrcDonut = new Chart(ctxSrc, {
+      type: 'doughnut',
+      data: {
+        labels: ['PV-Solar', 'Netz'],
+        datasets: [{
+          data: (pvK === 0 && gridK === 0) ? [1] : [pvK, gridK],
+          backgroundColor: (pvK === 0 && gridK === 0) ? ['#334155'] : ['#10b981', '#0284c7'],
+          borderWidth: 0,
+          cutout: '74%'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    const sumSrc = pvK + gridK;
+    const pvP = sumSrc > 0 ? Math.round((pvK / sumSrc) * 100) : 0;
+    DOM.sourceDonutLegend.innerHTML = `
+      <div class="donut-legend-item">
+        <span style="color:#10b981;">● PV-Solar</span>
+        <span><strong>${pvK.toFixed(1)} kWh</strong> (${pvP}%)</span>
+      </div>
+      <div class="donut-legend-item">
+        <span style="color:#0284c7;">● Netzstrom</span>
+        <span><strong>${gridK.toFixed(1)} kWh</strong> (${100 - pvP}%)</span>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // TAB 3: WETTER & BAYRHOFS BÜRO PROGNOSE (EXAKTE ICONS & L/M² EINHEIT)
+  // =========================================================================
+  function autoRequestGpsAndFetchWeather(forceNotification = false) {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          appData.settings.weatherGps.lat = Number(pos.coords.latitude.toFixed(4));
+          appData.settings.weatherGps.lon = Number(pos.coords.longitude.toFixed(4));
+          appData.settings.weatherGps.name = "GPS: Bayrhofs Umgebung";
+          saveData();
+          fetchWeatherCluster(forceNotification);
+        },
+        () => {
+          fetchWeatherCluster(forceNotification);
+        },
+        { timeout: 5000 }
+      );
+    } else {
+      fetchWeatherCluster(forceNotification);
+    }
+  }
+
+  async function fetchWeatherCluster(showFeedback = false) {
+    const loc = appData.settings.weatherGps || DEFAULT_DATA.settings.weatherGps;
+    DOM.weatherDisplayLocation.textContent = `📍 ${loc.name}`;
+
+    // Abfrage mit daily (precipitation_sum in mm = l/m²) und hourly für Stundengraphen!
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum&hourly=temperature_2m,precipitation,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
+
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+
+      if (json && json.daily && json.daily.time) {
+        weatherForecast14Days = processWeatherForecast(json.daily, json.hourly);
+        saveWeatherCache(weatherForecast14Days);
+        renderWeatherViews();
+        updateDashboardPvDecisionWidget();
+        if (showFeedback) showToast('Wetterdaten aktualisiert ☀️');
+        return;
+      }
+    } catch (err) {
+      console.warn('Wetterabfrage fehlgeschlagen, nutze Cache oder Simulation:', err);
+    }
+
+    if (!weatherForecast14Days) {
+      weatherForecast14Days = generateSynthetic14Days();
+      saveWeatherCache(weatherForecast14Days);
+    }
+    renderWeatherViews();
+    updateDashboardPvDecisionWidget();
+  }
+
+  function processWeatherForecast(daily, hourly) {
+    const list = [];
+    const threshold = appData.settings.pvThresholdSunshineHours || 4.5;
+
+    for (let i = 0; i < daily.time.length; i++) {
+      const dateStr = daily.time[i];
+      const d = new Date(dateStr);
+      const sunshineHours = Number(((daily.sunshine_duration[i] || 0) / 3600).toFixed(1));
+      const rainMm = Number((daily.precipitation_sum ? daily.precipitation_sum[i] : 0).toFixed(1)); // mm = l/m²
+      const tMax = Math.round(daily.temperature_2m_max[i]);
+      const tMin = Math.round(daily.temperature_2m_min[i]);
+      const code = daily.weather_code[i];
+
+      // Exaktes Wetter-Icon & Zustand abgestimmt auf Sonnenstunden UND Niederschlag!
+      const wInfo = determineAccurateWeatherIcon(sunshineHours, rainMm, code);
+      const icon = wInfo.icon;
+      const conditionText = wInfo.conditionText;
+
+      // Bayrhofs PV-Logik (Laden immer möglich, ideal kombiniert mit Büro)
+      const dayOfWeek = d.getDay();
+      const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
+      const hasPvSurplus = sunshineHours >= threshold;
+
+      let decision = 'home';
+      let badgeLabel = '🏠 Homeoffice';
+      let hintText = `Wenig Sonne (${sunshineHours}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
+
+      if (!isWorkday) {
+        if (hasPvSurplus) {
+          decision = 'weekend_charge';
+          badgeLabel = '⚡️ Bayrhofs PV';
+          hintText = `Hoher Solarertrag (${sunshineHours}h Sonne). Ladung bei Bayrhofs auch am Wochenende möglich!`;
+        } else {
+          decision = 'weekend';
+          badgeLabel = '🛋️ Wochenende';
+          hintText = `Wochenende mit wenig Sonne (${sunshineHours}h). Kaum PV-Überschuss bei Bayrhofs.`;
+        }
+      } else if (hasPvSurplus) {
+        decision = 'office';
+        badgeLabel = '🏢 Büro & Laden';
+        hintText = `Hoher PV-Überschuss (${sunshineHours}h Sonne). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
+      } else {
+        decision = 'home';
+        badgeLabel = '🏠 Homeoffice';
+        hintText = `Wenig Sonne (${sunshineHours}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
+      }
+
+      // Stündliche Daten für diesen Tag extrahieren
+      const hourlyData = extractHourlyDataForDay(hourly, dateStr);
+
+      list.push({
+        dateIndex: i,
+        dateStr,
+        dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
+        dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
+        sunshineHours,
+        rainMm, // l/m²
+        tMax,
+        tMin,
+        icon,
+        conditionText,
+        decision,
+        badgeLabel,
+        hintText,
+        hasPvSurplus,
+        hourlyData
+      });
+    }
+    return list;
+  }
+
+  function extractHourlyDataForDay(hourly, dateStr) {
+    if (!hourly || !hourly.time) return generateSyntheticHourly(dateStr);
+
+    const hours = [];
+    for (let j = 0; j < hourly.time.length; j++) {
+      if (hourly.time[j].startsWith(dateStr)) {
+        const timePart = hourly.time[j].slice(11, 16);
+        const sunSec = hourly.sunshine_duration ? (hourly.sunshine_duration[j] || 0) : 0;
+        const sunHours = Number((sunSec / 3600).toFixed(2));
+        const rain = Number((hourly.precipitation ? (hourly.precipitation[j] || 0) : 0).toFixed(1));
+        const temp = Math.round(hourly.temperature_2m ? hourly.temperature_2m[j] : 15);
+        const code = hourly.weather_code ? hourly.weather_code[j] : 0;
+        const hInfo = determineAccurateWeatherIcon(sunHours > 0.5 ? 6 : 1, rain, code);
+
+        hours.push({
+          time: timePart,
+          hour: parseInt(timePart.slice(0, 2), 10),
+          sunHours,
+          rain,
+          temp,
+          icon: hInfo.icon
+        });
+      }
+    }
+
+    return hours.length === 24 ? hours : generateSyntheticHourly(dateStr);
+  }
+
+  function generateSyntheticHourly(dateStr) {
+    const hours = [];
+    for (let h = 0; h < 24; h++) {
+      const isDay = (h >= 7 && h <= 19);
+      const sunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9).toFixed(2)) : 0;
+      const rain = (h >= 14 && h <= 16) ? 0.3 : 0.0;
+      const temp = Math.round(8 + (isDay ? Math.sin(((h - 7) / 12) * Math.PI) * 9 : 0));
+      const hInfo = determineAccurateWeatherIcon(sunHours * 8, rain, rain > 0 ? 80 : 0);
+
+      hours.push({
+        time: `${String(h).padStart(2, '0')}:00`,
+        hour: h,
+        sunHours,
+        rain,
+        temp,
+        icon: hInfo.icon
+      });
+    }
+    return hours;
+  }
+
+  function generateSynthetic14Days() {
+    const list = [];
+    const now = new Date();
+    const threshold = appData.settings.pvThresholdSunshineHours || 4.5;
+
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const dayOfWeek = d.getDay();
+      const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
+
+      const sunshineHours = Number((Math.sin(i * 0.9) * 4 + 5.5).toFixed(1));
+      const rainMm = Number(((Math.cos(i * 1.3) + 1) * 0.8).toFixed(1));
+      const hasPvSurplus = sunshineHours >= threshold;
+      const wInfo = determineAccurateWeatherIcon(sunshineHours, rainMm, hasPvSurplus ? 0 : 3);
+      const icon = wInfo.icon;
+      const conditionText = wInfo.conditionText;
+
+      let decision = 'home';
+      let badgeLabel = '🏠 Homeoffice';
+      let hintText = `Wenig Sonne (${sunshineHours}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
+
+      if (!isWorkday) {
+        if (hasPvSurplus) {
+          decision = 'weekend_charge';
+          badgeLabel = '⚡️ Bayrhofs PV';
+          hintText = `Hoher Solarertrag (${sunshineHours}h Sonne). Ladung bei Bayrhofs auch am Wochenende möglich!`;
+        } else {
+          decision = 'weekend';
+          badgeLabel = '🛋️ Wochenende';
+          hintText = `Wochenende mit wenig Sonne (${sunshineHours}h). Kaum PV-Überschuss bei Bayrhofs.`;
+        }
+      } else if (hasPvSurplus) {
+        decision = 'office';
+        badgeLabel = '🏢 Büro & Laden';
+        hintText = `Hoher PV-Überschuss (${sunshineHours}h Sonne). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
+      } else {
+        decision = 'home';
+        badgeLabel = '🏠 Homeoffice';
+        hintText = `Wenig Sonne (${sunshineHours}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
+      }
+
+      list.push({
+        dateIndex: i,
+        dateStr,
+        dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
+        dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
+        sunshineHours,
+        rainMm,
+        tMax: Math.round(18 + Math.sin(i) * 5),
+        tMin: Math.round(9 + Math.sin(i) * 3),
+        icon,
+        conditionText,
+        decision,
+        badgeLabel,
+        hintText,
+        hasPvSurplus,
+        hourlyData: generateSyntheticHourly(dateStr)
+      });
+    }
+    return list;
+  }
+
+  /**
+   * Präzise Icon- & Zustands-Bestimmung abgestimmt auf Sonnenstunden UND Niederschlag
+   * Tage mit 6h+ Sonne zeigen NIEMALS ein reines Regen- oder Wolken-Icon!
+   */
+  function determineAccurateWeatherIcon(sunshineHours, rainMm, code) {
+    if (code >= 95) {
+      return {
+        icon: '⛈️',
+        conditionText: sunshineHours >= 4.0 ? 'Sonne & Gewitter' : 'Gewitter'
+      };
+    }
+    if (code >= 71 && code <= 77) {
+      return { icon: '🌨️', conditionText: 'Schneefall' };
+    }
+    if (code >= 45 && code <= 48) {
+      return { icon: '🌫️', conditionText: 'Nebel' };
+    }
+
+    // Hohe Sonnenscheindauer (>= 6 Stunden) -> IMMER primär sonnig!
+    if (sunshineHours >= 6.0) {
+      if (rainMm >= 2.0) {
+        return { icon: '🌦️', conditionText: 'Sonnig, Schauer' };
+      }
+      if (rainMm >= 0.5) {
+        return { icon: '🌤️', conditionText: 'Heiter, kurze Schauer' };
+      }
+      if (sunshineHours >= 8.5) {
+        return { icon: '☀️', conditionText: 'Strahlend sonnig' };
+      }
+      return { icon: '☀️', conditionText: 'Sonnig' };
+    }
+
+    // Mäßige Sonnenscheindauer (4.0 bis 5.9 Stunden)
+    if (sunshineHours >= 4.0) {
+      if (rainMm >= 2.5) {
+        return { icon: '🌦️', conditionText: 'Regenschauer' };
+      }
+      if (rainMm >= 0.6) {
+        return { icon: '⛅', conditionText: 'Wechselhaft' };
+      }
+      return { icon: '🌤️', conditionText: 'Überwiegend heiter' };
+    }
+
+    // Teils Sonne (2.0 bis 3.9 Stunden)
+    if (sunshineHours >= 2.0) {
+      if (rainMm >= 1.5) {
+        return { icon: '🌧️', conditionText: 'Regen' };
+      }
+      if (rainMm >= 0.4) {
+        return { icon: '🌦️', conditionText: 'Leichte Schauer' };
+      }
+      return { icon: '⛅', conditionText: 'Teils sonnig' };
+    }
+
+    // Sehr wenig Sonne (< 2 Stunden)
+    if (rainMm >= 2.0) {
+      return { icon: '🌧️', conditionText: 'Starker Regen' };
+    }
+    if (rainMm >= 0.5) {
+      return { icon: '🌧️', conditionText: 'Regnerisch' };
+    }
+    if (code === 3) {
+      return { icon: '☁️', conditionText: 'Dicht bewölkt' };
+    }
+    return { icon: '☁️', conditionText: 'Bedeckt' };
+  }
+
+  function renderWeatherViews() {
+    if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
+
+    const pvDays = weatherForecast14Days.filter(d => d.hasPvSurplus);
+    const officeDays = weatherForecast14Days.filter(d => d.decision === 'office');
+    const weekendDays = weatherForecast14Days.filter(d => d.decision === 'weekend_charge');
+    
+    let summaryText = `In den kommenden 14 Tagen gibt es an <strong>${pvDays.length} Tagen PV-Überschuss</strong> bei Bayrhofs`;
+    if (officeDays.length > 0) {
+      summaryText += ` (${officeDays.length}x ideal mit Büro kombinierbar`;
+      if (weekendDays.length > 0) {
+        summaryText += `, ${weekendDays.length}x am Wochenende`;
+      }
+      summaryText += `).`;
+    } else if (weekendDays.length > 0) {
+      summaryText += ` (${weekendDays.length}x am Wochenende nutzbar).`;
+    } else {
+      summaryText += `.`;
+    }
+    DOM.pvSummaryRecommendationText.innerHTML = summaryText;
+
+    // 4 Tage Default
+    const primary4 = weatherForecast14Days.slice(0, 4);
+    DOM.weatherPrimary4Container.innerHTML = primary4.map((item, idx) => createDayCardHtml(item, idx === 0)).join('');
+
+    // Weitere 10 Tage
+    const extended10 = weatherForecast14Days.slice(4);
+    DOM.weatherExtendedContainer.innerHTML = extended10.map(item => createDayCardHtml(item, false)).join('');
+
+    // Klick Event für alle Tage: Stündlichen Wettergraphen öffnen!
+    bindDayCardClickEvents();
+  }
+
+  function createDayCardHtml(item, isToday) {
+    const isOffice = item.decision === 'office';
+    const isWeekendCharge = item.decision === 'weekend_charge';
+    const highlightClass = isOffice ? 'highlight-office' : (isWeekendCharge ? 'highlight-weekend-charge' : '');
+    const badgeClass = isOffice ? 'reco-tag-office' : (isWeekendCharge ? 'reco-tag-weekend-charge' : 'reco-tag-home');
+
+    return `
+      <div class="swift-glass-card day-forecast-card ${highlightClass}" data-dayindex="${item.dateIndex}">
+        <div class="day-left-meta">
+          <span class="day-name">${isToday ? 'Heute' : item.dayName}</span>
+          <span class="day-date-sub">${item.dateDisplay}</span>
+        </div>
+
+        <div class="day-weather-icon-box">
+          <span class="day-weather-icon">${item.icon}</span>
+        </div>
+
+        <div class="day-mid-weather">
+          <div class="day-temp-row">
+            <span class="day-temps">${item.tMax}° / ${item.tMin}°</span>
+            <span class="day-condition-label">• ${item.conditionText || 'Sonnig'}</span>
+          </div>
+          <div class="day-stats-row">
+            <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
+            <span class="day-rain-stat">💧 ${item.rainMm} l/m²</span>
+          </div>
+        </div>
+
+        <div class="day-right-badge">
+          <span class="${badgeClass}">${item.badgeLabel}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindDayCardClickEvents() {
+    document.querySelectorAll('.day-forecast-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.getAttribute('data-dayindex'), 10);
+        openHourlyWeatherModal(idx);
+      });
+    });
+  }
+
+  function updateDashboardPvDecisionWidget() {
+    if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
+    const today = weatherForecast14Days[0];
+
+    DOM.dashPvIconCircle.textContent = today.icon;
+    DOM.dashRecoHeadline.innerHTML = `Heute: <strong>${today.sunshineHours}h Sonne</strong> <span class="rain-sub-stat">💧 ${today.rainMm} l/m²</span>`;
+
+    if (today.decision === 'office') {
+      DOM.dashRecoSubline.textContent = `PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`;
+      DOM.dashRecoBadge.textContent = '🏢 Büro & Laden';
+      DOM.dashRecoBadge.className = 'reco-badge-pill office';
+    } else if (today.decision === 'weekend_charge') {
+      DOM.dashRecoSubline.textContent = `PV-Überschuss am Wochenende! Fahrt zu Bayrhofs zum Laden lohnt sich.`;
+      DOM.dashRecoBadge.textContent = '⚡️ Bayrhofs PV';
+      DOM.dashRecoBadge.className = 'reco-badge-pill office';
+    } else if (today.decision === 'weekend') {
+      DOM.dashRecoSubline.textContent = `Wochenende mit wenig Sonne. Kaum PV-Ertrag bei Bayrhofs.`;
+      DOM.dashRecoBadge.textContent = '🛋️ Wochenende';
+      DOM.dashRecoBadge.className = 'reco-badge-pill';
+    } else {
+      DOM.dashRecoSubline.textContent = `Wenig/Kein PV-Überschuss. Heute lohnt sich Büro-Laden nicht (Homeoffice).`;
+      DOM.dashRecoBadge.textContent = '🏠 Homeoffice';
+      DOM.dashRecoBadge.className = 'reco-badge-pill home';
+    }
+  }
+
+  // =========================================================================
+  // MODAL: STÜNDLICHER WETTERVERLAUF EINES TAGES
+  // =========================================================================
+  function openHourlyWeatherModal(dayIndex) {
+    const day = weatherForecast14Days && weatherForecast14Days[dayIndex];
+    if (!day) return;
+
+    DOM.hourlyModalTitle.textContent = `${day.dayName}, ${day.dateDisplay}`;
+    DOM.hourlyModalSub.textContent = `${day.conditionText || 'Prognose'} • 24-Stunden Verlauf für Bayrhofs`;
+
+    DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
+    DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
+    DOM.hourlyTempRange.textContent = `${day.tMax}° / ${day.tMin}°`;
+
+    if (day.decision === 'office') {
+      DOM.hourlyDecisionIcon.textContent = '🏢';
+      DOM.hourlyDecisionTitle.textContent = 'Büro & PV-Laden bei Bayrhofs!';
+    } else if (day.decision === 'weekend_charge') {
+      DOM.hourlyDecisionIcon.textContent = '⚡️';
+      DOM.hourlyDecisionTitle.textContent = 'Wochenend-Ladung bei Bayrhofs!';
+    } else if (day.decision === 'weekend') {
+      DOM.hourlyDecisionIcon.textContent = '🛋️';
+      DOM.hourlyDecisionTitle.textContent = 'Wochenende (Geringe Solarausbeute)';
+    } else {
+      DOM.hourlyDecisionIcon.textContent = '🏠';
+      DOM.hourlyDecisionTitle.textContent = 'Homeoffice empfohlen';
+    }
+    DOM.hourlyDecisionDesc.textContent = day.hintText;
+
+    // Stündlichen Chart.js Graph zeichnen
+    renderHourlyWeatherChart(day.hourlyData);
+
+    // Stündliche Kapseln rendern
+    DOM.hourlyHoursScroll.innerHTML = day.hourlyData.map(h => `
+      <div class="hourly-hour-card">
+        <span class="hh-time">${h.time}</span>
+        <span class="hh-icon">${h.icon}</span>
+        <span class="hh-temp">${h.temp}°</span>
+        <span class="hh-solar">☀️ ${(h.sunHours * 60).toFixed(0)}m</span>
+        <span class="hh-rain">${h.rain > 0 ? `💧 ${h.rain}l` : '-'}</span>
+      </div>
+    `).join('');
+
+    DOM.modalHourlyWeather.classList.add('open');
+    triggerHaptic();
+  }
+
+  function closeHourlyModal() {
+    DOM.modalHourlyWeather.classList.remove('open');
+  }
+
+  function renderHourlyWeatherChart(hours) {
+    if (!DOM.canvasHourlyChart || typeof Chart === 'undefined') return;
+    if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
+
+    const labels = hours.map(h => h.time);
+    const sunData = hours.map(h => Number((h.sunHours * 60).toFixed(0))); // Minuten Sonne
+    const rainData = hours.map(h => h.rain); // l/m²
+    const tempData = hours.map(h => h.temp); // °C
+
+    const ctx = DOM.canvasHourlyChart.getContext('2d');
+    const bronzeFill = ctx.createLinearGradient(0, 0, 0, 180);
+    bronzeFill.addColorStop(0, 'rgba(226, 142, 78, 0.85)');
+    bronzeFill.addColorStop(1, 'rgba(192, 128, 81, 0.1)');
+
+    chartHourly = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Sonne (Minuten)',
+            data: sunData,
+            backgroundColor: bronzeFill,
+            borderColor: '#c08051',
+            borderWidth: 1,
+            borderRadius: 4,
+            yAxisID: 'ySun',
+            order: 2
+          },
+          {
+            type: 'bar',
+            label: 'Regen (l/m²)',
+            data: rainData,
+            backgroundColor: 'rgba(56, 189, 248, 0.7)',
+            borderRadius: 4,
+            yAxisID: 'yRain',
+            order: 3
+          },
+          {
+            type: 'line',
+            label: 'Temperatur (°C)',
+            data: tempData,
+            borderColor: '#ffffff',
+            borderWidth: 2,
+            pointRadius: 2,
+            tension: 0.35,
+            yAxisID: 'yTemp',
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(6, 10, 16, 0.95)',
+            cornerRadius: 8,
+            callbacks: {
+              label: (c) => {
+                if (c.datasetIndex === 0) return ` Sonne: ${c.parsed.y} Min / Std`;
+                if (c.datasetIndex === 1) return ` Regen: ${c.parsed.y} l/m²`;
+                return ` Temperatur: ${c.parsed.y} °C`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: 'rgba(226, 232, 240, 0.6)', font: { size: 9 }, maxTicksLimit: 12 }
+          },
+          ySun: {
+            position: 'left',
+            max: 60,
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#c08051', font: { size: 9 }, callback: v => `${v}m` }
+          },
+          yRain: {
+            display: false,
+            position: 'right'
+          },
+          yTemp: {
+            position: 'right',
+            grid: { display: false },
+            ticks: { color: '#ffffff', font: { size: 9 }, callback: v => `${v}°` }
+          }
+        }
+      }
+    });
+  }
+
+  // =========================================================================
+  // TAB 4: STANDORTE IM APPLE EDIT MODE (MINIMALER STIFT)
+  // =========================================================================
+  function renderLocationsManageList() {
+    if (!DOM.locationsDragList) return;
+
+    const locs = appData.settings.locations || [];
+    DOM.locationsDragList.innerHTML = locs.map((loc, idx) => `
+      <div class="loc-manage-row ${isLocationsEditMode ? 'edit-mode' : ''}" data-id="${loc.id}" data-index="${idx}">
+        <div class="loc-row-left">
+          <button type="button" class="btn-del-circle" data-id="${loc.id}" title="Löschen">⛔</button>
+          <span class="loc-icon-bubble">${loc.icon || '🏢'}</span>
+          <div class="loc-info-texts">
+            <span class="loc-title-text">${escapeHtml(loc.name)}</span>
+            <span class="loc-badges-sub">
+              <span class="${loc.powerType === 'pv' ? 'badge-powertype-pv' : 'badge-powertype-grid'}">
+                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'}
+              </span>
+              <span>•</span>
+              <span>${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh</span>
+            </span>
+          </div>
+        </div>
+
+        ${isLocationsEditMode ? `
+          <div class="loc-order-controls">
+            <button type="button" class="btn-order-arrow btn-up" data-index="${idx}" ${idx === 0 ? 'disabled style="opacity:0.2"' : ''}>▲</button>
+            <button type="button" class="btn-order-arrow btn-down" data-index="${idx}" ${idx === locs.length - 1 ? 'disabled style="opacity:0.2"' : ''}>▼</button>
+          </div>
+        ` : `
+          <span class="loc-chevron-edit">›</span>
+        `}
+      </div>
+    `).join('');
+
+    bindLocationManageEvents();
+  }
+
+  function bindLocationManageEvents() {
+    // Normaler Modus: Klick auf Zeile öffnet Editor
+    DOM.locationsDragList.querySelectorAll('.loc-manage-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (isLocationsEditMode) return;
+        const id = row.getAttribute('data-id');
+        openLocationEditorModal(id);
+      });
+    });
+
+    // Löschen Button im Bearbeitungsmodus
+    DOM.locationsDragList.querySelectorAll('.btn-del-circle').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        handleDeleteLocation(id);
+      });
+    });
+
+    // Sortieren mit Pfeilen ▲ und ▼
+    DOM.locationsDragList.querySelectorAll('.btn-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = parseInt(btn.getAttribute('data-index'), 10);
+        if (i > 0) {
+          const item = appData.settings.locations.splice(i, 1)[0];
+          appData.settings.locations.splice(i - 1, 0, item);
+          saveData();
+          renderLocationsManageList();
+          renderLocationFilterRail();
+          triggerHaptic();
+        }
+      });
+    });
+
+    DOM.locationsDragList.querySelectorAll('.btn-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = parseInt(btn.getAttribute('data-index'), 10);
+        if (i < appData.settings.locations.length - 1) {
+          const item = appData.settings.locations.splice(i, 1)[0];
+          appData.settings.locations.splice(i + 1, 0, item);
+          saveData();
+          renderLocationsManageList();
+          renderLocationFilterRail();
+          triggerHaptic();
+        }
+      });
+    });
+  }
+
+  function handleDeleteLocation(id) {
+    if (appData.settings.locations.length <= 1) {
+      showToast('Mindestens ein Standort muss erhalten bleiben');
+      return;
+    }
+    const loc = appData.settings.locations.find(l => l.id === id);
+    if (!confirm(`Standort "${loc?.name}" wirklich löschen?`)) return;
+
+    appData.settings.locations = appData.settings.locations.filter(l => l.id !== id);
+    saveData();
+    renderLocationsManageList();
+    renderLocationFilterRail();
+    triggerHaptic();
+    showToast('Standort gelöscht');
+  }
+
+  // =========================================================================
+  // LOCATION EDITOR MODAL
+  // =========================================================================
+  function openLocationEditorModal(editId = null) {
+    renderIconPickerGrid();
+
+    if (editId) {
+      const loc = appData.settings.locations.find(l => l.id === editId);
+      if (loc) {
+        DOM.locEditId.value = loc.id;
+        DOM.modalEditLocationTitle.textContent = "Standort anpassen";
+        DOM.locEditName.value = loc.name;
+        DOM.locEditIcon.value = loc.icon || '🏢';
+        DOM.locEditPowerType.value = loc.powerType || 'pv';
+        DOM.locEditPrice.value = loc.kwhPrice;
+
+        highlightSelectedIcon(loc.icon || '🏢');
+        highlightPowerType(loc.powerType || 'pv');
+      }
+    } else {
+      DOM.locEditId.value = '';
+      DOM.modalEditLocationTitle.textContent = "Neuen Ladeort anlegen";
+      DOM.locEditName.value = '';
+      DOM.locEditIcon.value = '🏢';
+      DOM.locEditPowerType.value = 'pv';
+      DOM.locEditPrice.value = '0.15';
+
+      highlightSelectedIcon('🏢');
+      highlightPowerType('pv');
+    }
+
+    DOM.modalEditLocation.classList.add('open');
+    triggerHaptic();
+  }
+
+  function closeLocationEditorModal() {
+    DOM.modalEditLocation.classList.remove('open');
+  }
+
+  function renderIconPickerGrid() {
+    DOM.iconPickerGrid.innerHTML = AVAILABLE_ICONS.map(ic => `
+      <button type="button" class="icon-pick-btn" data-icon="${ic}">${ic}</button>
+    `).join('');
+
+    DOM.iconPickerGrid.querySelectorAll('.icon-pick-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const icon = btn.getAttribute('data-icon');
+        DOM.locEditIcon.value = icon;
+        highlightSelectedIcon(icon);
+        triggerHaptic();
+      });
+    });
+  }
+
+  function highlightSelectedIcon(icon) {
+    DOM.iconPickerGrid.querySelectorAll('.icon-pick-btn').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-icon') === icon);
+    });
+  }
+
+  function highlightPowerType(type) {
+    DOM.locPowerTypePicker.querySelectorAll('.picker-seg').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-powertype') === type);
+    });
+    DOM.locEditPowerType.value = type;
+  }
+
+  function handleSaveLocationEditor(e) {
+    e.preventDefault();
+
+    const id = DOM.locEditId.value;
+    const name = DOM.locEditName.value.trim();
+    const icon = DOM.locEditIcon.value || '🏢';
+    const powerType = DOM.locEditPowerType.value || 'pv';
+    const price = parseFloat(DOM.locEditPrice.value) || 0.15;
+
+    if (!name) return;
+
+    if (id) {
+      const idx = appData.settings.locations.findIndex(l => l.id === id);
+      if (idx !== -1) {
+        appData.settings.locations[idx] = { id, name, icon, powerType, kwhPrice: price };
+      }
+    } else {
+      appData.settings.locations.push({
+        id: `loc_${Date.now()}`,
+        name,
+        icon,
+        powerType,
+        kwhPrice: price
+      });
+    }
+
+    saveData();
+    closeLocationEditorModal();
+    renderLocationsManageList();
+    renderLocationFilterRail();
+    triggerHaptic();
+    showToast(`Standort "${name}" gespeichert ✓`);
+  }
+
+  // =========================================================================
+  // TOUCH ACTION SHEET LOCATION PICKER FÜR LADE-MODAL
+  // =========================================================================
+  function openLocationPickerSheet() {
+    const locs = appData.settings.locations || [];
+    const currentId = DOM.entryLocationId.value || locs[0]?.id;
+
+    DOM.pickerLocationsList.innerHTML = locs.map(loc => {
+      const isSel = loc.id === currentId;
+      return `
+        <div class="touch-picker-item ${isSel ? 'selected' : ''}" data-id="${loc.id}">
+          <div class="touch-picker-item-left">
+            <span class="touch-item-icon">${loc.icon || '🏢'}</span>
+            <div class="touch-item-texts">
+              <span class="touch-item-name">${escapeHtml(loc.name)}</span>
+              <span class="touch-item-details">
+                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh
+              </span>
+            </div>
+          </div>
+          ${isSel ? '<span class="touch-item-check">✓</span>' : ''}
+        </div>
+      `;
+    }).join('');
+
+    DOM.pickerLocationsList.querySelectorAll('.touch-picker-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const id = item.getAttribute('data-id');
+        selectLocationForEntry(id);
+        closeLocationPickerSheet();
+        triggerHaptic();
+      });
+    });
+
+    DOM.modalLocationPickerSheet.classList.add('open');
+    triggerHaptic();
+  }
+
+  function closeLocationPickerSheet() {
+    DOM.modalLocationPickerSheet.classList.remove('open');
+  }
+
+  function selectLocationForEntry(locId) {
+    const loc = appData.settings.locations.find(l => l.id === locId) || appData.settings.locations[0];
+    if (!loc) return;
+
+    DOM.entryLocationId.value = loc.id;
+    DOM.pickerSelectedIcon.textContent = loc.icon || '🏢';
+    DOM.pickerSelectedTitle.textContent = loc.name;
+    DOM.pickerSelectedSub = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh`;
+
+    DOM.entryPrice.value = loc.kwhPrice.toFixed(2);
+    calculateModalCost();
+  }
+
+  // =========================================================================
+  // MODAL BOTTOM SHEET: LADEVORGANG ERFASSEN
+  // =========================================================================
+  function openModalCharge(editId = null) {
+    DOM.formChargeEntry.reset();
+    DOM.entryEditId.value = '';
+
+    const latestOdo = getLatestOdometer();
+    const defaultLoc = appData.settings.locations[0] || DEFAULT_LOCATIONS[0];
+
+    if (editId) {
+      const s = appData.sessions.find(x => x.id === editId);
+      if (s) {
+        DOM.entryEditId.value = s.id;
+        DOM.modalChargeTitle.textContent = "Ladung bearbeiten";
+        DOM.entryDateTime.value = formatDateTimeLocal(new Date(s.date));
+        DOM.entryKwh.value = s.kwh;
+        DOM.entryOdometer.value = s.odometer || '';
+        DOM.entryPrice.value = s.pricePerKwh;
+        DOM.entryTotalCost.value = s.totalCost.toFixed(2);
+        DOM.entryNotes.value = s.notes || '';
+
+        const matchingLoc = appData.settings.locations.find(l => l.name === s.location) || defaultLoc;
+        selectLocationForEntry(matchingLoc.id);
+      }
+    } else {
+      DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
+      DOM.entryDateTime.value = formatDateTimeLocal(new Date());
+      DOM.entryOdometer.value = latestOdo || '';
+
+      selectLocationForEntry(defaultLoc.id);
+    }
+
+    calculateModalOdoDelta();
+    calculateModalCost();
+
+    DOM.modalAddCharge.classList.add('open');
+    triggerHaptic();
+  }
+
+  function closeModalCharge() {
+    DOM.modalAddCharge.classList.remove('open');
+  }
+
+  function calculateModalCost() {
+    const k = parseFloat(DOM.entryKwh.value) || 0;
+    const p = parseFloat(DOM.entryPrice.value) || 0;
+    DOM.entryTotalCost.value = (k * p).toFixed(2);
+  }
+
+  function calculateModalOdoDelta() {
+    const curOdo = parseInt(DOM.entryOdometer.value, 10);
+    const editId = DOM.entryEditId.value;
+
+    let base = 0;
+    const sorted = [...appData.sessions].filter(s => s.id !== editId).sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (sorted.length > 0 && sorted[0].odometer) base = sorted[0].odometer;
+    else base = appData.vehicle.currentOdo || 0;
+
+    if (!isNaN(curOdo) && curOdo > base && base > 0) {
+      DOM.entryDeltaKmTag.textContent = `+${curOdo - base} km`;
+    } else {
+      DOM.entryDeltaKmTag.textContent = '+0 km';
+    }
+  }
+
+  function getLatestOdometer() {
+    if (appData.sessions.length > 0) {
+      const withO = appData.sessions.filter(s => s.odometer > 0);
+      if (withO.length > 0) return withO[0].odometer;
+    }
+    return appData.vehicle.currentOdo || 0;
+  }
+
+  function handleSaveChargeEntry(e) {
+    e.preventDefault();
+
+    const editId = DOM.entryEditId.value;
+    const dt = DOM.entryDateTime.value || new Date().toISOString();
+    const kwh = parseFloat(DOM.entryKwh.value) || 0;
+    const odo = parseInt(DOM.entryOdometer.value, 10) || 0;
+    const price = parseFloat(DOM.entryPrice.value) || 0.35;
+    const total = parseFloat(DOM.entryTotalCost.value) || (kwh * price);
+    const notes = DOM.entryNotes.value.trim();
+
+    const locId = DOM.entryLocationId.value;
+    const locObj = appData.settings.locations.find(l => l.id === locId) || appData.settings.locations[0];
+    const locName = locObj ? locObj.name : 'Bayrhofs';
+    const isPv = locObj ? locObj.powerType === 'pv' : false;
+
+    if (kwh <= 0) {
+      showToast('⚠️ Bitte Lademenge in kWh eingeben');
+      return;
+    }
+
+    if (editId) {
+      const idx = appData.sessions.findIndex(s => s.id === editId);
+      if (idx !== -1) {
+        appData.sessions[idx] = {
+          id: editId,
+          date: new Date(dt).toISOString(),
+          kwh,
+          odometer: odo,
+          pricePerKwh: price,
+          totalCost: total,
+          location: locName,
+          pvSurplus: isPv,
+          notes
+        };
+      }
+    } else {
+      appData.sessions.push({
+        id: `session_${Date.now()}`,
+        date: new Date(dt).toISOString(),
+        kwh,
+        odometer: odo,
+        pricePerKwh: price,
+        totalCost: total,
+        location: locName,
+        pvSurplus: isPv,
+        notes
+      });
+    }
+
+    // Kilometerstand automatisch addieren / fortschreiben
+    if (odo > (appData.vehicle.currentOdo || 0)) {
+      appData.vehicle.currentOdo = odo;
+    }
+
+    appData.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+    saveData();
+    closeModalCharge();
+    renderAll();
+    triggerHaptic();
+    showToast(editId ? 'Ladung aktualisiert ✓' : 'Ladevorgang gespeichert ⚡️');
+  }
+
+  // =========================================================================
+  // FAHRZEUG-EINSTELLUNGEN
+  // =========================================================================
+  function renderSettingsForms() {
+    const v = appData.vehicle;
+    DOM.cfgModelName.value = v.model;
+    DOM.cfgBatteryCap.value = v.batteryKwh;
+    DOM.cfgPower.value = v.powerPs;
+  }
+
+  function handleSaveVehicleSettings() {
+    appData.vehicle.model = DOM.cfgModelName.value.trim() || DEFAULT_DATA.vehicle.model;
+    appData.vehicle.batteryKwh = parseFloat(DOM.cfgBatteryCap.value) || 52.0;
+    appData.vehicle.powerPs = parseInt(DOM.cfgPower.value, 10) || 211;
+
+    saveData();
+    renderDashboard();
+    triggerHaptic();
+    showToast('Fahrzeugdaten aktualisiert ✓');
+  }
+
+  // =========================================================================
+  // BACKUP & RESTORE
+  // =========================================================================
+  function handleExportJson() {
+    const jsonStr = JSON.stringify(appData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cupra_raval_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    triggerHaptic();
+    showToast('Backup exportiert 📤');
+  }
+
+  function handleImportJson(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target.result);
+        appData = sanitizeAndMigrate(imported);
+        saveData();
+        renderAll();
+        triggerHaptic();
+        showToast('Backup erfolgreich importiert! 📥');
+      } catch (err) {
+        showToast('❌ Ungültige Backup-Datei');
+      }
+      DOM.importJsonInput.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  function handleLoadSampleData() {
+    if (!confirm('Beispieldaten für den Cupra Raval laden?')) return;
+
+    const now = new Date();
+    const demo = [
+      {
+        id: `demo_${Date.now()}_1`,
+        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 14, 20).toISOString(),
+        kwh: 34.5,
+        odometer: 12450,
+        pricePerKwh: 0.15,
+        totalCost: 5.18,
+        location: "Bayrhofs",
+        pvSurplus: true,
+        notes: "100% PV-Überschuss bei Bayrhofs"
+      },
+      {
+        id: `demo_${Date.now()}_2`,
+        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4, 11, 45).toISOString(),
+        kwh: 28.0,
+        odometer: 12240,
+        pricePerKwh: 0.20,
+        totalCost: 5.60,
+        location: "Arbeit",
+        pvSurplus: true,
+        notes: "Bürotag Donnerstag"
+      },
+      {
+        id: `demo_${Date.now()}_3`,
+        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 8, 18, 15).toISOString(),
+        kwh: 41.2,
+        odometer: 12050,
+        pricePerKwh: 0.15,
+        totalCost: 6.18,
+        location: "Bayrhofs",
+        pvSurplus: true,
+        notes: "Sonniger Tag bei Bayrhofs"
+      },
+      {
+        id: `demo_${Date.now()}_4`,
+        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14, 10, 30).toISOString(),
+        kwh: 31.5,
+        odometer: 11780,
+        pricePerKwh: 0.32,
+        totalCost: 10.08,
+        location: "Zuhause",
+        pvSurplus: false,
+        notes: "Nachtladung Wallbox"
+      },
+      {
+        id: `demo_${Date.now()}_5`,
+        date: new Date(now.getFullYear(), now.getMonth() - 1, 18, 16, 10).toISOString(),
+        kwh: 38.5,
+        odometer: 11620,
+        pricePerKwh: 0.59,
+        totalCost: 22.72,
+        location: "Öffentlich",
+        pvSurplus: false,
+        notes: "HPC Schnelllader Autobahn"
+      }
+    ];
+
+    appData.sessions = demo;
+    appData.vehicle.currentOdo = 12450;
+    saveData();
+    renderAll();
+    triggerHaptic();
+    showToast('✨ Beispieldaten geladen');
+  }
+
+  function handleWipeAllData() {
+    if (!confirm('⚠️ Wirklich ALLE Daten löschen und zurücksetzen?')) return;
+    appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    saveData();
+    renderAll();
+    triggerHaptic();
+    showToast('Daten auf Werkseinstellungen zurückgesetzt');
+  }
+
+  // =========================================================================
+  // FORMATIERUNG & TOAST
+  // =========================================================================
+  function formatDe(num) {
+    return Number(num || 0).toLocaleString('de-DE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function formatDateTimeLocal(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  let toastTimer = null;
+  function showToast(msg) {
+    if (!DOM.swiftToast) return;
+    DOM.swiftToastMsg.textContent = msg;
+    DOM.swiftToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      DOM.swiftToast.classList.remove('show');
+    }, 2500);
+  }
+
+})();

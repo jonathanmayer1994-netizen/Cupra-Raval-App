@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient: Deep Oceanic Petrol to Midnight Black -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e1a24"/>
+      <stop offset="45%" stop-color="#091118"/>
+      <stop offset="100%" stop-color="#040608"/>
+    </linearGradient>
+
+    <!-- Glass Rim Glow -->
+    <linearGradient id="glassRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255, 255, 255, 0.35)"/>
+      <stop offset="40%" stop-color="rgba(192, 128, 81, 0.3)"/>
+      <stop offset="100%" stop-color="rgba(255, 255, 255, 0.05)"/>
+    </linearGradient>
+
+    <!-- Cupra Liquid Copper Gradient -->
+    <linearGradient id="copperGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd5b0"/>
+      <stop offset="25%" stop-color="#e8985c"/>
+      <stop offset="55%" stop-color="#c08051"/>
+      <stop offset="85%" stop-color="#8e4e27"/>
+      <stop offset="100%" stop-color="#5a2b10"/>
+    </linearGradient>
+
+    <!-- Cyber Petrol Accent -->
+    <linearGradient id="petrolGlow" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#4facfe"/>
+    </linearGradient>
+
+    <!-- Energy Yellow/Solar Gradient -->
+    <linearGradient id="energyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+
+    <!-- Ambient Shadow Filter -->
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="intenseCopperGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22" result="blur1"/>
+      <feGaussianBlur stdDeviation="8" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- iOS App Icon Squircle / Base -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Glass Inner Border -->
+  <rect x="4" y="4" width="504" height="504" rx="112" fill="none" stroke="url(#glassRim)" stroke-width="3"/>
+
+  <!-- Radial Tech Accent Circles / Grid lines -->
+  <circle cx="256" cy="245" r="185" fill="none" stroke="rgba(192, 128, 81, 0.12)" stroke-width="1.5" stroke-dasharray="8 6"/>
+  <circle cx="256" cy="245" r="140" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1"/>
+  <circle cx="256" cy="245" r="210" fill="none" stroke="rgba(79, 172, 254, 0.08)" stroke-width="2"/>
+
+  <!-- Background Copper Ambient Glow -->
+  <circle cx="256" cy="240" r="110" fill="#c08051" opacity="0.22" filter="url(#intenseCopperGlow)"/>
+
+  <!-- Cupra-Style Geometric Tribal Emblem Wing Left -->
+  <path d="M 120 170 
+           L 185 170 
+           L 245 275 
+           L 218 295 
+           L 185 240 
+           L 145 285 
+           L 128 270 
+           L 165 225 Z" 
+        fill="url(#copperGrad)" 
+        filter="url(#intenseCopperGlow)"/>
+
+  <!-- Cupra-Style Geometric Tribal Emblem Wing Right -->
+  <path d="M 392 170 
+           L 327 170 
+           L 267 275 
+           L 294 295 
+           L 327 240 
+           L 367 285 
+           L 384 270 
+           L 347 225 Z" 
+        fill="url(#copperGrad)" 
+        filter="url(#intenseCopperGlow)"/>
+
+  <!-- Center Tribal Horn / Apex V-Shape -->
+  <path d="M 256 182 
+           L 292 245 
+           L 256 310 
+           L 220 245 Z" 
+        fill="url(#copperGrad)" 
+        opacity="0.95"/>
+
+  <!-- High-Tech Central Electric Lightning Bolt / Raval Charge Spark -->
+  <path d="M 264 200 
+           L 242 254 
+           L 262 254 
+           L 248 305 
+           L 274 246 
+           L 254 246 Z" 
+        fill="url(#energyGrad)" 
+        filter="url(#softGlow)"/>
+
+  <!-- Bottom Brand Signature: RAVAL & Dynamic Line -->
+  <g transform="translate(256, 395)">
+    <!-- Aerodynamic Speed Line -->
+    <line x1="-130" y1="-28" x2="130" y2="-28" stroke="url(#copperGrad)" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+    <circle cx="0" cy="-28" r="4" fill="#ffd5b0"/>
+
+    <text text-anchor="middle" font-family="-apple-system, 'SF Pro Display', BlinkMacSystemFont, 'Montserrat', sans-serif" font-weight="900" font-size="28" letter-spacing="10" fill="#ffffff" opacity="0.95">
+      RAVAL
+    </text>
+    <text y="24" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-weight="600" font-size="12" letter-spacing="4" fill="#c08051">
+      ENDURANCE DYNAMIC
+    </text>
+  </g>
+</svg>
