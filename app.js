@@ -1463,7 +1463,6 @@
     const labels = hours.map(h => h.time);
     const sunData = hours.map(h => Number((h.sunHours * 60).toFixed(0))); // Minuten Sonne
     const rainData = hours.map(h => h.rain); // l/m²
-    const tempData = hours.map(h => h.temp); // °C
 
     const ctx = DOM.canvasHourlyChart.getContext('2d');
     const bronzeFill = ctx.createLinearGradient(0, 0, 0, 180);
@@ -1483,27 +1482,18 @@
             borderWidth: 1,
             borderRadius: 4,
             yAxisID: 'ySun',
-            order: 2
+            order: 1
           },
           {
             type: 'bar',
             label: 'Regen (l/m²)',
             data: rainData,
             backgroundColor: 'rgba(56, 189, 248, 0.7)',
+            borderColor: '#38bdf8',
+            borderWidth: 1,
             borderRadius: 4,
             yAxisID: 'yRain',
-            order: 3
-          },
-          {
-            type: 'line',
-            label: 'Temperatur (°C)',
-            data: tempData,
-            borderColor: '#ffffff',
-            borderWidth: 2,
-            pointRadius: 2,
-            tension: 0.35,
-            yAxisID: 'yTemp',
-            order: 1
+            order: 2
           }
         ]
       },
@@ -1518,8 +1508,7 @@
             callbacks: {
               label: (c) => {
                 if (c.datasetIndex === 0) return ` Sonne: ${c.parsed.y} Min / Std`;
-                if (c.datasetIndex === 1) return ` Regen: ${c.parsed.y} l/m²`;
-                return ` Temperatur: ${c.parsed.y} °C`;
+                return ` Regen: ${c.parsed.y} l/m²`;
               }
             }
           }
@@ -1536,13 +1525,9 @@
             ticks: { color: '#c08051', font: { size: 9 }, callback: v => `${v}m` }
           },
           yRain: {
-            display: false,
-            position: 'right'
-          },
-          yTemp: {
             position: 'right',
             grid: { display: false },
-            ticks: { color: '#ffffff', font: { size: 9 }, callback: v => `${v}°` }
+            ticks: { color: '#38bdf8', font: { size: 9 }, callback: v => `${v} l` }
           }
         }
       }
