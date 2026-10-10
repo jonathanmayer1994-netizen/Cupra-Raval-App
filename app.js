@@ -80,6 +80,7 @@
 
   function cacheDom() {
     // Header
+    DOM.appHeaderTitle = document.getElementById('appHeaderTitle');
     DOM.headerSubtitle = document.getElementById('headerSubtitle');
 
     // Navigation Dock
@@ -664,10 +665,12 @@
       DOM.dashAvgCost100.textContent = '-- € / 100 km';
     }
 
-    // Kompakte Autokarte unten
+    // Kompakte Autokarte unten & Header
     const v = appData.vehicle;
-    DOM.cardCarModelName.textContent = v.model;
-    DOM.headerSubtitle.textContent = v.model.toUpperCase();
+    const modelName = v.model || 'Cupra Raval Endurance Edition Dynamic';
+    DOM.cardCarModelName.textContent = modelName;
+    if (DOM.appHeaderTitle) DOM.appHeaderTitle.textContent = modelName;
+    if (DOM.headerSubtitle) DOM.headerSubtitle.textContent = 'Ladeerfassung • Bayrhofs PV-Planer';
     DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
     DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
     DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;
@@ -3194,7 +3197,7 @@
   }
 
   function handleLoadSampleData() {
-    if (!confirm('Beispieldaten für den Cupra Raval laden?')) return;
+    if (!confirm('Beispieldaten für den Cupra Raval Endurance Edition Dynamic laden?')) return;
 
     const now = new Date();
     const demo = [

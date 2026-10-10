@@ -1,7 +1,7 @@
 {
-  "name": "Cupra Raval Charge",
-  "short_name": "Raval Charge",
-  "description": "Ladeerfassung, Verbrauchsmetriken & PV-Büro-Planer für den Cupra Raval Endurance Dynamic Edition",
+  "name": "Cupra Raval Endurance Edition Dynamic",
+  "short_name": "Raval Dynamic",
+  "description": "Ladeerfassung, Verbrauchsmetriken & PV-Büro-Planer für den Cupra Raval Endurance Edition Dynamic",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
