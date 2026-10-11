@@ -1,53 +1,88 @@
 /**
  * ============================================================================
- * CUPRA RAVAL ENDURANCE - GOOGLE APPS SCRIPT BACKEND API
+ * CUPRA RAVAL ENDURANCE — GOOGLE APPS SCRIPT BACKEND (SMART AUTO-MAPPER)
+ * Passt sich dynamisch an dein Tabellenblatt "Raval_App_DB" an!
  * ============================================================================
  * 
- * ANLEITUNG ZUR EINRICHTUNG IN GOOGLE SHEETS:
- * 
- * 1. Öffne dein Google Sheet (oder erstelle ein neues leeres Google Sheet).
- * 2. Klicke im Menü oben auf: 'Erweiterungen' ➔ 'Apps Script'.
- * 3. Lösche den vorhandenen Code im Editor und füge diesen gesamten Code hier ein.
- * 4. Klicke oben auf das Disketten-Symbol 💾 (Speichern).
- * 
- * 5. BEREITSTELLUNG (WICHTIGSTER SCHRITT!):
- *    - Klicke oben rechts auf die blaue Schaltfläche 'Bereitstellen' ➔ 'Neue Bereitstellung'.
- *    - Klicke auf das Zahnrad ⚙️ neben "Typ auswählen" und wähle: 'Web-App'.
- *    - Beschreibung: "Cupra Raval Sync API"
- *    - Ausführen als: "Ich (<deine-email>)"
- *    - Wer hat Zugriff: "Jeder"  <--- EXTREM WICHTIG! NICHT "Nur ich"!
- *    - Klicke auf 'Bereitstellen'.
- *    - Bestätige die Google-Sicherheitsabfrage (Erweitert ➔ Zu ... wechseln).
- *    - Kopiere die Web-App-URL (endet auf /exec).
- * 
- * 6. Füge die URL in den Einstellungen der Cupra Raval PWA ein!
- * ============================================================================
+ * Unterstützt exakt dein Tabellen-Layout aus Screenshot:
+ * ID | Datum | Ort | kWh | Preis (€/kWh) | Gesamtkosten (€) | PV-Ladung | Notiz
+ * sowie beliebige andere Spaltenanordnungen!
  */
-
-const SHEET_NAME = "Ladedaten";
-const HEADERS = ["id", "date", "kwh", "odometer", "pricePerKwh", "totalCost", "location", "pvSurplus", "notes", "updatedAt"];
 
 /**
- * Liefert das Tabellenblatt "Ladedaten". Erstellt es inkl. Kopfzeilen, falls noch nicht vorhanden.
+ * Holt das aktive Tabellenblatt (oder das erste Tabellenblatt)
  */
-function getOrCreateSheet() {
+function getTargetSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
-    sheet.setFrozenRows(1);
+  // 1. Prüfe aktives Blatt
+  let sheet = ss.getActiveSheet();
+  if (sheet && sheet.getLastRow() > 0) {
+    return sheet;
   }
+  // 2. Prüfe Blatt "Raval_App_DB" oder "Ladedaten"
+  sheet = ss.getSheetByName("Raval_App_DB") || ss.getSheetByName("Ladedaten") || ss.getSheets()[0];
   return sheet;
 }
 
 /**
- * GET-Handler: Liefert Ladedaten als JSON oder JSONP
+ * Liest die vorhandenen Spaltenüberschriften aus Zeile 1
+ * und baut eine dynamische Spalten-Zuordnungs-Map auf.
+ */
+function getHeaderColumnMap(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 8);
+  let headers = [];
+  
+  if (sheet.getLastRow() >= 1) {
+    headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  }
+
+  // Falls Zeile 1 noch völlig leer ist, Standard-Köpfe schreiben
+  if (!headers || headers.every(h => !h || String(h).trim() === "")) {
+    const defaultHeaders = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand"];
+    sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
+    sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    sheet.setFrozenRows(1);
+    headers = defaultHeaders;
+  }
+
+  // Header-Index-Mapper (0-basiert)
+  const map = {
+    id: -1,
+    date: -1,
+    location: -1,
+    kwh: -1,
+    pricePerKwh: -1,
+    totalCost: -1,
+    pvSurplus: -1,
+    notes: -1,
+    odometer: -1,
+    updatedAt: -1,
+    rawHeaders: headers
+  };
+
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i] || "").toLowerCase().trim();
+    if (h === "id") map.id = i;
+    else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
+    else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
+    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie")) map.kwh = i;
+    else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
+    else if (h.includes("gesamtkosten") || h.includes("kosten") || h.includes("cost") || h.includes("total")) map.totalCost = i;
+    else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
+    else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
+    else if (h.includes("km") || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
+    else if (h.includes("updated") || h.includes("stand")) map.updatedAt = i;
+  }
+
+  return map;
+}
+
+/**
+ * GET-Handler: Liefert Ladedaten für die App
  */
 function doGet(e) {
   try {
-    const sheet = getOrCreateSheet();
+    const sheet = getTargetSheet();
     const action = e && e.parameter ? e.parameter.action : null;
     const callback = e && e.parameter ? e.parameter.callback : null;
 
@@ -56,71 +91,78 @@ function doGet(e) {
       const pingResult = {
         status: "success",
         message: "Cupra Raval Cloud API ist betriebsbereit!",
-        version: "2.0",
-        timestamp: new Date().toISOString(),
-        rows: Math.max(0, sheet.getLastRow() - 1)
+        sheetName: sheet.getName(),
+        rows: Math.max(0, sheet.getLastRow() - 1),
+        timestamp: new Date().toISOString()
       };
       return createOutput(pingResult, callback);
     }
 
-    // Ladedaten abrufen
+    const colMap = getHeaderColumnMap(sheet);
     const lastRow = sheet.getLastRow();
     const sessions = [];
 
     if (lastRow > 1) {
-      const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+      const values = sheet.getRange(2, 1, lastRow - 1, colMap.rawHeaders.length).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        if (!row[0] && !row[1]) continue; // Leerzeile überspringen
+        const idVal = colMap.id >= 0 ? row[colMap.id] : "";
+        const dateVal = colMap.date >= 0 ? row[colMap.date] : "";
+        if (!idVal && !dateVal) continue; // Leere Zeile überspringen
+
+        const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
+        const isPv = pvRaw === true || String(pvRaw).toLowerCase() === "true" || String(pvRaw).toLowerCase() === "ja";
 
         sessions.push({
-          id: String(row[0] || ("session_" + i)),
-          date: row[1] instanceof Date ? row[1].toISOString() : String(row[1] || ""),
-          kwh: parseNum(row[2]),
-          odometer: parseNum(row[3]),
-          pricePerKwh: parseNum(row[4]),
-          totalCost: parseNum(row[5]),
-          location: String(row[6] || "Bayrhofs"),
-          pvSurplus: row[7] === true || String(row[7]).toLowerCase() === "true",
-          notes: String(row[8] || ""),
-          updatedAt: row[9] ? String(row[9]) : ""
+          id: String(idVal || ("ses_cloud_" + i)),
+          date: dateVal instanceof Date ? dateVal.toISOString() : String(dateVal || new Date().toISOString()),
+          location: colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs",
+          kwh: colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0,
+          pricePerKwh: colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35,
+          totalCost: colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0,
+          pvSurplus: isPv,
+          notes: colMap.notes >= 0 ? String(row[colMap.notes] || "") : "",
+          odometer: colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0
         });
       }
     }
 
-    // Nach Datum absteigend sortieren
+    // Sortierung nach Datum absteigend
     sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return createOutput(sessions, callback);
   } catch (err) {
-    const errObj = { status: "error", message: err.toString() };
-    const cb = e && e.parameter ? e.parameter.callback : null;
-    return createOutput(errObj, cb);
+    return createOutput({ status: "error", message: err.toString() }, e && e.parameter ? e.parameter.callback : null);
   }
 }
 
 /**
- * POST-Handler: Speichert oder löscht Ladevorgänge
+ * POST-Handler: Speichert oder aktualisiert Ladungen
  */
 function doPost(e) {
   try {
-    const sheet = getOrCreateSheet();
+    const sheet = getTargetSheet();
     let payload = {};
 
     if (e && e.postData && e.postData.contents) {
-      payload = JSON.parse(e.postData.contents);
+      try {
+        payload = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        payload = e.parameter || {};
+      }
     } else if (e && e.parameter) {
       payload = e.parameter;
     }
 
     const action = payload.action || "create";
+    const colMap = getHeaderColumnMap(sheet);
 
-    // AKTION: Bulk Sync (mehrere Einträge auf einmal)
+    // AKTION: Bulk Sync (Mehrere oder alle Ladungen auf einmal)
     if (action === "bulk_sync" || action === "bulk_upload") {
       const list = Array.isArray(payload.sessions) ? payload.sessions : [];
       let savedCount = 0;
       for (let i = 0; i < list.length; i++) {
-        upsertSessionRow(sheet, list[i]);
+        upsertSessionWithMap(sheet, colMap, list[i]);
         savedCount++;
       }
       return createOutput({ status: "success", action: "bulk_sync", count: savedCount });
@@ -128,64 +170,77 @@ function doPost(e) {
 
     // AKTION: Löschen
     if (action === "delete") {
-      const targetId = payload.id;
+      const targetId = payload.id || payload.ID;
       if (targetId) {
-        deleteSessionRow(sheet, targetId);
+        deleteSessionById(sheet, colMap, targetId);
       }
       return createOutput({ status: "success", action: "delete", id: targetId });
     }
 
-    // AKTION: Speichern (Create oder Update)
+    // AKTION: Einzelner Ladevorgang (Erstellen oder Aktualisieren)
     const session = payload.session || payload;
-    upsertSessionRow(sheet, session);
+    upsertSessionWithMap(sheet, colMap, session);
 
-    return createOutput({ status: "success", action: "save", id: session.id });
+    return createOutput({ status: "success", action: "save", id: session.id || session.ID });
   } catch (err) {
     return createOutput({ status: "error", message: err.toString() });
   }
 }
 
 /**
- * Fügt einen Eintrag hinzu oder aktualisiert einen bestehenden anhand der ID
+ * Fügt eine Zeile dynamisch anhand der Spalten-Zuordnung ein oder aktualisiert sie
  */
-function upsertSessionRow(sheet, session) {
-  if (!session) return;
+function upsertSessionWithMap(sheet, colMap, s) {
+  if (!s) return;
   const lastRow = sheet.getLastRow();
-  const id = String(session.id || ("ses_" + Date.now()));
-  const rowData = [
-    id,
-    session.date || new Date().toISOString(),
-    parseNum(session.kwh),
-    parseNum(session.odometer),
-    parseNum(session.pricePerKwh),
-    parseNum(session.totalCost),
-    String(session.location || "Bayrhofs"),
-    Boolean(session.pvSurplus),
-    String(session.notes || ""),
-    new Date().toISOString()
-  ];
+  const numCols = colMap.rawHeaders.length;
+  const rowData = new Array(numCols).fill("");
 
-  if (lastRow > 1) {
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const id = String(s.id || s.ID || ("ses_" + Date.now()));
+  const dateStr = s.date || s.Datum || s.datum || new Date().toISOString();
+  const locStr = String(s.location || s.Ort || s.ort || s.standort || "Bayrhofs");
+  const kwhNum = parseNum(s.kwh || s.kWh || s.energie);
+  const priceNum = parseNum(s.pricePerKwh || s.preis || s["Preis (€/kWh)"]);
+  const costNum = parseNum(s.totalCost || s.gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+  const isPv = s.pvSurplus === true || s.pvSurplus === "true" || s["PV-Ladung"] === "Ja" || s["PV-Ladung"] === true;
+  const notesStr = String(s.notes || s.Notiz || s.notiz || "");
+  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.kmStand);
+
+  // Werte in die passenden Spalten schreiben
+  if (colMap.id >= 0) rowData[colMap.id] = id;
+  if (colMap.date >= 0) rowData[colMap.date] = dateStr;
+  if (colMap.location >= 0) rowData[colMap.location] = locStr;
+  if (colMap.kwh >= 0) rowData[colMap.kwh] = kwhNum;
+  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = priceNum;
+  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = costNum;
+  if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
+  if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
+  if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
+  if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
+
+  // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
+  if (lastRow > 1 && colMap.id >= 0) {
+    const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
       if (String(ids[i][0]) === id) {
-        sheet.getRange(i + 2, 1, 1, HEADERS.length).setValues([rowData]);
+        sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
         return;
       }
     }
   }
 
+  // Ansonsten neue Zeile anhängen
   sheet.appendRow(rowData);
 }
 
 /**
  * Löscht eine Zeile anhand der ID
  */
-function deleteSessionRow(sheet, targetId) {
+function deleteSessionById(sheet, colMap, targetId) {
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return;
+  if (lastRow <= 1 || colMap.id < 0) return;
 
-  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
   for (let i = 0; i < ids.length; i++) {
     if (String(ids[i][0]) === String(targetId)) {
       sheet.deleteRow(i + 2);
@@ -195,7 +250,7 @@ function deleteSessionRow(sheet, targetId) {
 }
 
 /**
- * Hilfsfunktion: Wandelt Zahlen sicher um (auch mit deutschem Komma)
+ * Zahlen sicher umwandeln (inkl. Kommazahlen)
  */
 function parseNum(val) {
   if (typeof val === "number") return val;
@@ -205,7 +260,7 @@ function parseNum(val) {
 }
 
 /**
- * Erstellt die HTTP-Rückgabe (JSON oder JSONP)
+ * Gibt JSON oder JSONP zurück
  */
 function createOutput(data, callback) {
   const jsonStr = JSON.stringify(data);

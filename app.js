@@ -654,22 +654,50 @@
     }
   }
 
+  function formatSessionForCloud(s) {
+    const kwh = parseNum(s.kwh);
+    const price = parseNum(s.pricePerKwh);
+    const cost = parseNum(s.totalCost) || Number((kwh * price).toFixed(2));
+    const isPv = Boolean(s.pvSurplus);
+    const loc = String(s.location || "Bayrhofs");
+    const dateStr = s.date || new Date().toISOString();
+    const id = String(s.id || ("ses_" + Date.now()));
+    const notes = String(s.notes || "");
+    const odo = parseNum(s.odometer);
+
+    return {
+      id,
+      ID: id,
+      date: dateStr,
+      Datum: dateStr,
+      location: loc,
+      Ort: loc,
+      kwh,
+      kWh: kwh,
+      pricePerKwh: price,
+      preis: price,
+      "Preis (€/kWh)": price,
+      totalCost: cost,
+      gesamtkosten: cost,
+      "Gesamtkosten (€)": cost,
+      pvSurplus: isPv,
+      "PV-Ladung": isPv ? "Ja" : "Nein",
+      notes,
+      Notiz: notes,
+      odometer: odo,
+      "km-Stand": odo
+    };
+  }
+
   async function postCloudSession(session, action = 'create') {
     setSyncStatus('saving');
     const apiUrl = getCloudApiUrl();
+    const formatted = formatSessionForCloud(session);
     const payload = {
       action,
       timestamp: new Date().toISOString(),
-      id: session.id,
-      date: session.date,
-      kwh: session.kwh,
-      odometer: session.odometer,
-      pricePerKwh: session.pricePerKwh,
-      totalCost: session.totalCost,
-      location: session.location,
-      pvSurplus: session.pvSurplus,
-      notes: session.notes,
-      session
+      ...formatted,
+      session: formatted
     };
 
     const controller = new AbortController();
@@ -688,12 +716,13 @@
       clearTimeout(timeoutId);
 
       setTimeout(() => {
-        setSyncStatus('synced');
+        if (!DOM.cloudDiagBox || DOM.cloudDiagBox.classList.contains('hidden') || DOM.cloudDiagBox.classList.contains('success')) {
+          setSyncStatus('synced');
+        }
       }, 700);
     } catch (err) {
       clearTimeout(timeoutId);
       console.warn('Google Sheets POST Fehler, speichere in Offline-Queue:', err);
-      // In Offline Queue sichern
       appData.pendingSyncQueue = appData.pendingSyncQueue || [];
       appData.pendingSyncQueue.push(payload);
       saveData();
@@ -734,14 +763,15 @@
     }
 
     setSyncStatus('saving');
-    showToast(`☁️ Übertrage ${appData.sessions.length} Einträge...`);
+    showToast(`☁️ Übertrage ${appData.sessions.length} Einträge in dein Google Sheet...`);
     const apiUrl = getCloudApiUrl();
 
     try {
+      const formattedSessions = appData.sessions.map(s => formatSessionForCloud(s));
       const payload = {
         action: 'bulk_sync',
         timestamp: new Date().toISOString(),
-        sessions: appData.sessions
+        sessions: formattedSessions
       };
 
       await fetch(apiUrl, {
@@ -775,8 +805,8 @@
       const text = await resp.text();
 
       if (text.startsWith('<')) {
-        if (text.includes('Sie benötigen Zugriff') || text.includes('accounts.google.com')) {
-          showCloudDiag('warning', '⚠️', '<strong>Test fehlgeschlagen (403 Forbidden):</strong><br>Google blockiert den Zugriff ("Sie benötigen Zugriff").<br><strong>Lösung:</strong> In Google Apps Script ➔ Bereitstellung bearbeiten ➔ <em>"Wer hat Zugriff: Jeder"</em> einstellen!');
+        if (text.includes('Sie benötigen Zugriff') || text.includes('accounts.google.com') || text.includes('Zugriff verweigert')) {
+          showCloudDiag('warning', '⚠️', '<strong>Test fehlgeschlagen (403 Zugriff verweigert):</strong><br>Google blockiert die Verbindung ("Sie benötigen Zugriff").<br><strong>Lösung:</strong> Prüfe in Apps Script die Web-App Freigabe: <em>"Ausführen als: Ich"</em> und <em>"Wer hat Zugriff: <strong>Jeder</strong>"</em> (siehe Anleitung unten).');
           showToast('⚠️ Google 403: Berechtigung fehlt');
           return;
         }
@@ -830,49 +860,66 @@
     showToast('Standard Google-Sheets URL wiederhergestellt');
   }
 
-  const APPS_SCRIPT_SOURCE_CODE = `const SHEET_NAME = "Ladedaten";
-const HEADERS = ["id", "date", "kwh", "odometer", "pricePerKwh", "totalCost", "location", "pvSurplus", "notes", "updatedAt"];
-
-function getOrCreateSheet() {
+  const APPS_SCRIPT_SOURCE_CODE = `function getTargetSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(HEADERS);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+  let sheet = ss.getActiveSheet();
+  if (sheet && sheet.getLastRow() > 0) return sheet;
+  return ss.getSheetByName("Raval_App_DB") || ss.getSheetByName("Ladedaten") || ss.getSheets()[0];
+}
+
+function getHeaderColumnMap(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 8);
+  let headers = sheet.getLastRow() >= 1 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  if (!headers || headers.every(h => !h || String(h).trim() === "")) {
+    headers = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand"];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
     sheet.setFrozenRows(1);
   }
-  return sheet;
+  const map = { id: -1, date: -1, location: -1, kwh: -1, pricePerKwh: -1, totalCost: -1, pvSurplus: -1, notes: -1, odometer: -1, rawHeaders: headers };
+  for (let i = 0; i < headers.length; i++) {
+    const h = String(headers[i] || "").toLowerCase().trim();
+    if (h === "id") map.id = i;
+    else if (h.includes("datum") || h.includes("date")) map.date = i;
+    else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
+    else if (h.includes("kwh") || h.includes("energie")) map.kwh = i;
+    else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
+    else if (h.includes("gesamtkosten") || h.includes("kosten")) map.totalCost = i;
+    else if (h.includes("pv")) map.pvSurplus = i;
+    else if (h.includes("notiz") || h.includes("note")) map.notes = i;
+    else if (h.includes("km") || h.includes("odo")) map.odometer = i;
+  }
+  return map;
 }
 
 function doGet(e) {
   try {
-    const sheet = getOrCreateSheet();
+    const sheet = getTargetSheet();
     const action = e && e.parameter ? e.parameter.action : null;
     const callback = e && e.parameter ? e.parameter.callback : null;
-
     if (action === "ping") {
-      return createOutput({ status: "success", message: "Cupra Raval Cloud API ist betriebsbereit!", rows: Math.max(0, sheet.getLastRow() - 1) }, callback);
+      return createOutput({ status: "success", message: "Cupra Raval Cloud API ist betriebsbereit!", sheet: sheet.getName(), rows: Math.max(0, sheet.getLastRow() - 1) }, callback);
     }
-
+    const colMap = getHeaderColumnMap(sheet);
     const lastRow = sheet.getLastRow();
     const sessions = [];
     if (lastRow > 1) {
-      const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+      const values = sheet.getRange(2, 1, lastRow - 1, colMap.rawHeaders.length).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        if (!row[0] && !row[1]) continue;
+        const idVal = colMap.id >= 0 ? row[colMap.id] : "";
+        if (!idVal && (!colMap.date || !row[colMap.date])) continue;
+        const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
         sessions.push({
-          id: String(row[0] || ("session_" + i)),
-          date: row[1] instanceof Date ? row[1].toISOString() : String(row[1] || ""),
-          kwh: parseNum(row[2]),
-          odometer: parseNum(row[3]),
-          pricePerKwh: parseNum(row[4]),
-          totalCost: parseNum(row[5]),
-          location: String(row[6] || "Bayrhofs"),
-          pvSurplus: row[7] === true || String(row[7]).toLowerCase() === "true",
-          notes: String(row[8] || ""),
-          updatedAt: row[9] ? String(row[9]) : ""
+          id: String(idVal || ("ses_" + i)),
+          date: colMap.date >= 0 && row[colMap.date] ? (row[colMap.date] instanceof Date ? row[colMap.date].toISOString() : String(row[colMap.date])) : new Date().toISOString(),
+          location: colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs",
+          kwh: colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0,
+          pricePerKwh: colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35,
+          totalCost: colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0,
+          pvSurplus: pvRaw === true || String(pvRaw).toLowerCase() === "true" || String(pvRaw).toLowerCase() === "ja",
+          notes: colMap.notes >= 0 ? String(row[colMap.notes] || "") : "",
+          odometer: colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0
         });
       }
     }
@@ -885,49 +932,59 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    const sheet = getOrCreateSheet();
+    const sheet = getTargetSheet();
     let payload = {};
     if (e && e.postData && e.postData.contents) {
-      payload = JSON.parse(e.postData.contents);
-    } else if (e && e.parameter) {
-      payload = e.parameter;
-    }
-
+      try { payload = JSON.parse(e.postData.contents); } catch(_) { payload = e.parameter || {}; }
+    } else if (e && e.parameter) payload = e.parameter;
     const action = payload.action || "create";
+    const colMap = getHeaderColumnMap(sheet);
     if (action === "bulk_sync" || action === "bulk_upload") {
       const list = Array.isArray(payload.sessions) ? payload.sessions : [];
-      for (let i = 0; i < list.length; i++) upsertSessionRow(sheet, list[i]);
+      for (let i = 0; i < list.length; i++) upsertSession(sheet, colMap, list[i]);
       return createOutput({ status: "success", count: list.length });
     }
     if (action === "delete") {
-      if (payload.id) deleteSessionRow(sheet, payload.id);
-      return createOutput({ status: "success", id: payload.id });
+      const targetId = payload.id || payload.ID;
+      if (targetId) deleteSession(sheet, colMap, targetId);
+      return createOutput({ status: "success", id: targetId });
     }
-
     const session = payload.session || payload;
-    upsertSessionRow(sheet, session);
-    return createOutput({ status: "success", id: session.id });
+    upsertSession(sheet, colMap, session);
+    return createOutput({ status: "success", id: session.id || session.ID });
   } catch (err) {
     return createOutput({ status: "error", message: err.toString() });
   }
 }
 
-function upsertSessionRow(sheet, session) {
-  if (!session) return;
+function upsertSession(sheet, colMap, s) {
+  if (!s) return;
   const lastRow = sheet.getLastRow();
-  const id = String(session.id || ("ses_" + Date.now()));
-  const rowData = [
-    id, session.date || new Date().toISOString(),
-    parseNum(session.kwh), parseNum(session.odometer),
-    parseNum(session.pricePerKwh), parseNum(session.totalCost),
-    String(session.location || "Bayrhofs"), Boolean(session.pvSurplus),
-    String(session.notes || ""), new Date().toISOString()
-  ];
-  if (lastRow > 1) {
-    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const numCols = colMap.rawHeaders.length;
+  const rowData = new Array(numCols).fill("");
+  const id = String(s.id || s.ID || ("ses_" + Date.now()));
+  const dateStr = s.date || s.Datum || new Date().toISOString();
+  const locStr = String(s.location || s.Ort || "Bayrhofs");
+  const kwhNum = parseNum(s.kwh || s.kWh);
+  const priceNum = parseNum(s.pricePerKwh || s.preis || s["Preis (€/kWh)"]);
+  const costNum = parseNum(s.totalCost || s.gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+  const isPv = s.pvSurplus === true || s.pvSurplus === "true" || s["PV-Ladung"] === "Ja";
+  const notesStr = String(s.notes || s.Notiz || "");
+  const odoNum = parseNum(s.odometer || s["km-Stand"]);
+  if (colMap.id >= 0) rowData[colMap.id] = id;
+  if (colMap.date >= 0) rowData[colMap.date] = dateStr;
+  if (colMap.location >= 0) rowData[colMap.location] = locStr;
+  if (colMap.kwh >= 0) rowData[colMap.kwh] = kwhNum;
+  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = priceNum;
+  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = costNum;
+  if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
+  if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
+  if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
+  if (lastRow > 1 && colMap.id >= 0) {
+    const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
       if (String(ids[i][0]) === id) {
-        sheet.getRange(i + 2, 1, 1, HEADERS.length).setValues([rowData]);
+        sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
         return;
       }
     }
@@ -935,10 +992,10 @@ function upsertSessionRow(sheet, session) {
   sheet.appendRow(rowData);
 }
 
-function deleteSessionRow(sheet, targetId) {
+function deleteSession(sheet, colMap, targetId) {
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return;
-  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  if (lastRow <= 1 || colMap.id < 0) return;
+  const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
   for (let i = 0; i < ids.length; i++) {
     if (String(ids[i][0]) === String(targetId)) {
       sheet.deleteRow(i + 2);
@@ -950,15 +1007,12 @@ function deleteSessionRow(sheet, targetId) {
 function parseNum(val) {
   if (typeof val === "number") return val;
   if (!val) return 0;
-  const cleaned = String(val).replace(",", ".").replace(/[^0-9.-]/g, "");
-  return Number(cleaned) || 0;
+  return Number(String(val).replace(",", ".").replace(/[^0-9.-]/g, "")) || 0;
 }
 
 function createOutput(data, callback) {
   const jsonStr = JSON.stringify(data);
-  if (callback) {
-    return ContentService.createTextOutput(callback + "(" + jsonStr + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
+  if (callback) return ContentService.createTextOutput(callback + "(" + jsonStr + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
   return ContentService.createTextOutput(jsonStr).setMimeType(ContentService.MimeType.JSON);
 }`;
 
