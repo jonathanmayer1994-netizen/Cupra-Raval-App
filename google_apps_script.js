@@ -61,9 +61,9 @@ function getHeaderColumnMap(sheet) {
     if (h === "id" || h.includes("kennung") || h.includes("vorgang") || h.includes("session")) map.id = i;
     else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
     else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
+    else if (h.includes("gesamtkosten") || (h.includes("kosten") && !h.includes("kwh")) || h.includes("total")) map.totalCost = i;
+    else if (h.includes("preis") || h.includes("price") || h.includes("cent")) map.pricePerKwh = i;
     else if (h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) map.kwh = i;
-    else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
-    else if (h.includes("gesamtkosten") || h.includes("kosten") || h.includes("cost") || h.includes("total")) map.totalCost = i;
     else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
     else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
     else if (h.includes("km") || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
