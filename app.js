@@ -17,7 +17,7 @@
 
   const DEFAULT_LOCATIONS = [
     { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
-    { id: "loc_arbeit", name: "Arbeit", icon: "💼", powerType: "pv", kwhPrice: 0.20 },
+    { id: "loc_arbeit", name: "Arbeit", icon: "💼", powerType: "grid", kwhPrice: 0.20 },
     { id: "loc_zuhause", name: "Zuhause", icon: "🏠", powerType: "grid", kwhPrice: 0.32 },
     { id: "loc_oeffentlich", name: "Öffentlich", icon: "⚡️", powerType: "grid", kwhPrice: 0.59 }
   ];
@@ -308,16 +308,17 @@
     if (data.settings && Array.isArray(data.settings.locations) && data.settings.locations.length > 0) {
       res.settings.locations = data.settings.locations.map((item, idx) => {
         if (typeof item === 'string') {
-          const isPv = (item.toLowerCase().includes('bayrhofs') || item.toLowerCase().includes('arbeit'));
-          const price = isPv ? 0.15 : (item.toLowerCase().includes('zuhause') ? 0.32 : 0.59);
+          const isPv = item.toLowerCase().includes('bayrhofs');
+          const price = isPv ? 0.15 : (item.toLowerCase().includes('arbeit') ? 0.20 : (item.toLowerCase().includes('zuhause') ? 0.32 : 0.59));
           const icon = item.toLowerCase().includes('bayrhofs') ? '🏢' : (item.toLowerCase().includes('arbeit') ? '💼' : (item.toLowerCase().includes('zuhause') ? '🏠' : '⚡️'));
           return { id: `loc_${idx}_${Date.now()}`, name: item, icon, powerType: isPv ? 'pv' : 'grid', kwhPrice: price };
         }
+        const isArbeit = item.name && item.name.toLowerCase() === 'arbeit';
         return {
           id: item.id || `loc_${idx}_${Date.now()}`,
           name: item.name || `Standort ${idx + 1}`,
           icon: item.icon || '🏢',
-          powerType: item.powerType === 'pv' ? 'pv' : 'grid',
+          powerType: isArbeit ? 'grid' : (item.powerType === 'pv' ? 'pv' : 'grid'),
           kwhPrice: Number(item.kwhPrice) || 0.30
         };
       });
@@ -340,7 +341,10 @@
       .map((s, idx) => {
         const locName = typeof s.location === 'object' ? s.location.name : (s.location || s.Ort || s.ort || 'Bayrhofs');
         const matchingLoc = res.settings.locations.find(l => l.name === locName);
-        const isPv = s.pvSurplus !== undefined ? Boolean(s.pvSurplus) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+        let isPv = s.pvSurplus !== undefined ? Boolean(s.pvSurplus) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+        if (locName.toLowerCase() === 'arbeit') {
+          isPv = false;
+        }
         const price = Number(s.pricePerKwh || s.preis) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
         const kwh = Number(s.kwh || s.kWh) || 0;
         const total = Number(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
@@ -4697,7 +4701,7 @@ function createOutput(data, callback) {
         pricePerKwh: 0.20,
         totalCost: 5.60,
         location: "Arbeit",
-        pvSurplus: true,
+        pvSurplus: false,
         notes: "Bürotag Donnerstag"
       },
       {
