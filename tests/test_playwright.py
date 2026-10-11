@@ -147,6 +147,12 @@ def run_tests():
         # SUITE 4: LADEVORGANG ERFASSEN FLOW (ZENTRALER FAB BUTTON)
         # =====================================================================
         print("\n--- SUITE 4: Ladevorgang erfassen Flow (FAB Modal) ---")
+        try:
+            prev_raw = page.locator("#dashMonthKwh").inner_text()
+            prev_kwh = float(prev_raw.replace("kWh", "").replace("geladen", "").replace(",", ".").strip())
+        except Exception:
+            prev_kwh = 0.0
+
         page.locator("#fabAddCharge").click()
         time.sleep(0.4)
         add_modal_open = page.locator("#modalAddCharge").evaluate("el => el.classList.contains('open')")
@@ -179,7 +185,11 @@ def run_tests():
 
         # Verify Dashboard KPI updated
         updated_month_kwh = page.locator("#dashMonthKwh").inner_text()
-        log_test("4.5 Dashboard KPI mit neuer Ladung synchronisiert", "42.5" in updated_month_kwh or "42," in updated_month_kwh, f"Monats-kWh: {updated_month_kwh}")
+        try:
+            new_kwh = float(updated_month_kwh.replace("kWh", "").replace("geladen", "").replace(",", ".").strip())
+        except Exception:
+            new_kwh = 0.0
+        log_test("4.5 Dashboard KPI mit neuer Ladung synchronisiert", new_kwh >= prev_kwh + 42.0, f"Monats-kWh: {updated_month_kwh}")
 
         # =====================================================================
         # SUITE 5: TAB 2: LADEN & HISTORIE + FILTER RAIL

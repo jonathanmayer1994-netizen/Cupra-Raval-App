@@ -328,25 +328,38 @@
       res.settings.locations = JSON.parse(JSON.stringify(DEFAULT_LOCATIONS));
     }
 
-    // Sessions Migration
-    res.sessions = res.sessions.map((s, idx) => {
-      const locName = typeof s.location === 'object' ? s.location.name : (s.location || 'Bayrhofs');
-      const matchingLoc = res.settings.locations.find(l => l.name === locName);
-      const isPv = s.pvSurplus !== undefined ? Boolean(s.pvSurplus) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
-      const price = Number(s.pricePerKwh) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+    // Sessions Migration & Filter out invalid dummy rows
+    res.sessions = res.sessions
+      .filter(s => {
+        const id = String(s.id || s.ID || '');
+        const kwh = Number(s.kwh || s.kWh || 0);
+        const price = Number(s.pricePerKwh || s.preis || 0);
+        const cost = Number(s.totalCost || s.kosten || 0);
+        if (id.includes('d8074cf3') || (kwh <= 0 && price <= 0 && cost <= 0)) {
+          return false;
+        }
+        return true;
+      })
+      .map((s, idx) => {
+        const locName = typeof s.location === 'object' ? s.location.name : (s.location || s.Ort || s.ort || 'Bayrhofs');
+        const matchingLoc = res.settings.locations.find(l => l.name === locName);
+        const isPv = s.pvSurplus !== undefined ? Boolean(s.pvSurplus) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+        const price = Number(s.pricePerKwh || s.preis) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+        const kwh = Number(s.kwh || s.kWh) || 0;
+        const total = Number(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
 
-      return {
-        id: s.id || `session_${Date.now()}_${idx}`,
-        date: s.date || new Date().toISOString(),
-        kwh: Number(s.kwh) || 0,
-        odometer: Number(s.odometer) || 0,
-        pricePerKwh: price,
-        totalCost: Number(s.totalCost) || Number(((Number(s.kwh) || 0) * price).toFixed(2)),
-        location: locName,
-        pvSurplus: isPv,
-        notes: s.notes || ""
-      };
-    });
+        return {
+          id: s.id || `session_${Date.now()}_${idx}`,
+          date: s.date || s.Datum || s.datum || new Date().toISOString(),
+          kwh,
+          odometer: Number(s.odometer || s['km-Stand']) || 0,
+          pricePerKwh: price,
+          totalCost: total,
+          location: locName,
+          pvSurplus: isPv,
+          notes: String(s.notes || s.notiz || s.Notiz || '')
+        };
+      });
 
     res.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -405,25 +418,59 @@
     return Number(cleaned) || 0;
   }
 
+  function isValidSession(s) {
+    if (!s) return false;
+    const id = String(s.id || s.ID || '');
+    const kwh = parseNum(s.kwh || s.kWh);
+    const price = parseNum(s.pricePerKwh || s.preis);
+    const cost = parseNum(s.totalCost || s.kosten);
+
+    // 1. Spezifische Dummy-Einträge aus früheren Fehlübertragungen entfernen
+    if (id.includes('d8074cf3') || id.includes('4b9be1ef')) return false;
+
+    // 2. Test-Einträge aus Debugging entfernen
+    if (id.startsWith('test_') || id.startsWith('pv_')) return false;
+
+    // 3. Dummy-Einträge ohne kWh, Preis und Kosten verwerfen
+    if (kwh <= 0 && price <= 0 && cost <= 0) return false;
+
+    return true;
+  }
+
   function mapRawSession(s, idx) {
-    const locName = typeof s.location === 'object' ? (s.location.name || 'Bayrhofs') : (s.location || s.ort || s.standort || 'Bayrhofs');
-    const matchingLoc = (appData && appData.settings && appData.settings.locations ? appData.settings.locations.find(l => l.name === locName) : null);
-    const isPv = s.pvSurplus !== undefined ? (s.pvSurplus === true || s.pvSurplus === 'true' || s.pv === true) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
-    const price = parseNum(s.pricePerKwh || s.price || s.preis || s.preis_pro_kwh) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
-    const kwh = parseNum(s.kwh || s.energie || s.lademenge);
-    const cost = parseNum(s.totalCost || s.cost || s.kosten || s.gesamtkosten) || Number((kwh * price).toFixed(2));
-    const rawDate = s.date || s.datum || new Date().toISOString();
+    const locName = typeof s.location === 'object'
+      ? (s.location.name || 'Bayrhofs')
+      : String(s.Ort || s.ort || s.location || s.Location || s.standort || s.Standort || 'Bayrhofs');
+
+    const matchingLoc = (appData && appData.settings && appData.settings.locations
+      ? appData.settings.locations.find(l => l.name.toLowerCase() === locName.toLowerCase())
+      : null);
+
+    const rawPv = s['PV-Ladung'] !== undefined ? s['PV-Ladung'] : (s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : s.pv_ladung));
+    let isPv = false;
+    if (rawPv === true || rawPv === 'true' || String(rawPv).toLowerCase() === 'ja') {
+      isPv = true;
+    } else if (matchingLoc && matchingLoc.powerType === 'pv') {
+      isPv = true;
+    }
+
+    const price = parseNum(s.pricePerKwh || s.preis || s.Preis || s['Preis (€/kWh)']) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+    const kwh = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
+    const cost = parseNum(s.totalCost || s.kosten || s.Kosten || s.gesamtkosten || s['Gesamtkosten (€)']) || Number((kwh * price).toFixed(2));
+    const rawDate = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
+    const notesStr = String(s.notes || s.notiz || s.Notiz || s.notizen || s.bemerkung || '');
+    const odoNum = parseNum(s.odometer || s.km || s.kmstand || s['km-Stand'] || s.kilometer);
 
     return {
-      id: String(s.id || `session_cloud_${idx}_${Date.now()}`),
+      id: String(s.id || s.ID || `session_cloud_${idx}_${Date.now()}`),
       date: new Date(rawDate).toISOString(),
       kwh,
-      odometer: parseNum(s.odometer || s.km || s.kmstand || s.kilometer),
+      odometer: odoNum,
       pricePerKwh: price,
       totalCost: cost,
       location: locName,
       pvSurplus: Boolean(isPv),
-      notes: String(s.notes || s.notizen || s.bemerkung || '')
+      notes: notesStr
     };
   }
 
@@ -439,7 +486,7 @@
           const obj = {};
           headers.forEach((h, hIdx) => { obj[h] = row[hIdx]; });
           return mapRawSession(obj, idx);
-        });
+        }).filter(isValidSession);
       }
       list = parsed;
     } else if (parsed && Array.isArray(parsed.data)) {
@@ -453,19 +500,25 @@
     }
 
     if (!list || !Array.isArray(list)) return [];
-    return list.map((s, idx) => mapRawSession(s, idx));
+    return list.map((s, idx) => mapRawSession(s, idx)).filter(isValidSession);
   }
 
   function mergeSessions(cloudSessions) {
     if (!cloudSessions || cloudSessions.length === 0) return false;
 
     const map = new Map();
-    // 1. Lokale Sessions einpflegen
-    (appData.sessions || []).forEach(s => {
+    // 1. Lokale Sessions einpflegen (Dummy-Zeilen vorher filtern)
+    (appData.sessions || []).filter(isValidSession).forEach(s => {
       map.set(s.id, s);
     });
     // 2. Cloud Sessions einpflegen / überschreiben
-    cloudSessions.forEach(cs => {
+    cloudSessions.filter(isValidSession).forEach(cs => {
+      const existing = map.get(cs.id);
+      if (existing) {
+        // Lokale PV-Einstellung und Notiz bevorzugen, falls Cloud "Nein" oder leer hat
+        if (!cs.pvSurplus && existing.pvSurplus) cs.pvSurplus = true;
+        if (!cs.notes && existing.notes) cs.notes = existing.notes;
+      }
       map.set(cs.id, cs);
     });
 
@@ -659,37 +712,52 @@
   }
 
   function formatSessionForCloud(s) {
-    const kwh = parseNum(s.kwh);
-    const price = parseNum(s.pricePerKwh);
-    const cost = parseNum(s.totalCost) || Number((kwh * price).toFixed(2));
+    const kwh = parseNum(s.kwh || s.kWh);
+    const price = parseNum(s.pricePerKwh || s.preis);
+    const cost = parseNum(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
     const isPv = Boolean(s.pvSurplus);
-    const loc = String(s.location || "Bayrhofs");
-    const dateStr = s.date || new Date().toISOString();
-    const id = String(s.id || ("ses_" + Date.now()));
-    const notes = String(s.notes || "");
-    const odo = parseNum(s.odometer);
+    const loc = typeof s.location === 'object'
+      ? (s.location.name || 'Bayrhofs')
+      : String(s.location || s.Ort || s.ort || 'Bayrhofs');
+    const dateStr = s.date || s.Datum || new Date().toISOString();
+    const id = String(s.id || s.ID || ('session_' + Date.now()));
+    const notes = String(s.notes || s.notiz || s.Notiz || '');
+    const odo = parseNum(s.odometer || s['km-Stand']);
 
     return {
       id,
       ID: id,
       date: dateStr,
       Datum: dateStr,
+      timestamp: dateStr,
       location: loc,
+      Location: loc,
+      ort: loc,
       Ort: loc,
+      standort: loc,
       kwh,
       kWh: kwh,
+      energie: kwh,
       pricePerKwh: price,
       preis: price,
-      "Preis (€/kWh)": price,
+      Preis: price,
+      'Preis (€/kWh)': price,
       totalCost: cost,
+      kosten: cost,
+      Kosten: cost,
       gesamtkosten: cost,
-      "Gesamtkosten (€)": cost,
+      Gesamtkosten: cost,
+      'Gesamtkosten (€)': cost,
       pvSurplus: isPv,
-      "PV-Ladung": isPv ? "Ja" : "Nein",
+      pv: isPv,
+      pv_ladung: isPv ? 'Ja' : 'Nein',
+      'PV-Ladung': isPv ? 'Ja' : 'Nein',
       notes,
+      notiz: notes,
       Notiz: notes,
       odometer: odo,
-      "km-Stand": odo
+      km: odo,
+      'km-Stand': odo
     };
   }
 
@@ -757,38 +825,42 @@
   }
 
   async function bulkUploadToCloud() {
-    if (!appData.sessions || appData.sessions.length === 0) {
-      showToast('ℹ️ Keine lokalen Ladedaten zum Hochladen vorhanden');
+    const validSessions = (appData.sessions || []).filter(isValidSession);
+    if (validSessions.length === 0) {
+      showToast('ℹ️ Keine gültigen lokalen Ladedaten zum Hochladen vorhanden');
       return;
     }
 
-    if (!confirm(`Möchtest du alle ${appData.sessions.length} lokalen Ladevorgänge jetzt in Google Sheets übertragen?`)) {
+    if (!confirm(`Möchtest du alle ${validSessions.length} lokalen Ladevorgänge jetzt in Google Sheets übertragen?`)) {
       return;
     }
 
     setSyncStatus('saving');
-    showToast(`☁️ Übertrage ${appData.sessions.length} Einträge in dein Google Sheet...`);
+    showToast(`☁️ Übertrage ${validSessions.length} Einträge in dein Google Sheet...`);
     const apiUrl = getCloudApiUrl();
 
+    let successCount = 0;
     try {
-      const formattedSessions = appData.sessions.map(s => formatSessionForCloud(s));
-      const payload = {
-        action: 'bulk_sync',
-        timestamp: new Date().toISOString(),
-        sessions: formattedSessions
-      };
-
-      await fetch(apiUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
+      // Sequentiell einzeln senden:
+      // 100% kompatibel mit Apps Script, verhindert Dummy-Zeilen durch Bulk-Payloads
+      for (let i = 0; i < validSessions.length; i++) {
+        const formatted = formatSessionForCloud(validSessions[i]);
+        await fetch(apiUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(formatted)
+        });
+        successCount++;
+        if (i < validSessions.length - 1) {
+          await new Promise(r => setTimeout(r, 180));
+        }
+      }
 
       triggerHaptic();
       setSyncStatus('synced');
-      showToast(`☁️ ${appData.sessions.length} Ladevorgänge an Google Sheets gesendet! ✓`);
-      showCloudDiag('success', '✅', `Alle <strong>${appData.sessions.length} lokalen Ladevorgänge</strong> wurden an Google Sheets übertragen.`);
+      showToast(`☁️ Alle ${successCount} Ladevorgänge erfolgreich an Google Sheets gesendet! ✓`);
+      showCloudDiag('success', '✅', `Alle <strong>${successCount} lokalen Ladevorgänge</strong> wurden an Google Sheets übertragen.`);
     } catch (err) {
       setSyncStatus('offline');
       showToast('⚠️ Fehler beim Hochladen in die Cloud');
@@ -864,7 +936,11 @@
     showToast('Standard Google-Sheets URL wiederhergestellt');
   }
 
-  const APPS_SCRIPT_SOURCE_CODE = `function getTargetSheet() {
+  const APPS_SCRIPT_SOURCE_CODE = `/**
+ * CUPRA RAVAL ENDURANCE — GOOGLE APPS SCRIPT BACKEND (SMART AUTO-MAPPER)
+ * Tabellen-Layout: ID | Datum | Ort | kWh | Preis (€/kWh) | Gesamtkosten (€) | PV-Ladung | Notiz
+ */
+function getTargetSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getActiveSheet();
   if (sheet && sheet.getLastRow() > 0) return sheet;
@@ -884,14 +960,14 @@ function getHeaderColumnMap(sheet) {
   for (let i = 0; i < headers.length; i++) {
     const h = String(headers[i] || "").toLowerCase().trim();
     if (h === "id") map.id = i;
-    else if (h.includes("datum") || h.includes("date")) map.date = i;
+    else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
     else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
-    else if (h.includes("kwh") || h.includes("energie")) map.kwh = i;
+    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie")) map.kwh = i;
     else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
-    else if (h.includes("gesamtkosten") || h.includes("kosten")) map.totalCost = i;
-    else if (h.includes("pv")) map.pvSurplus = i;
-    else if (h.includes("notiz") || h.includes("note")) map.notes = i;
-    else if (h.includes("km") || h.includes("odo")) map.odometer = i;
+    else if (h.includes("gesamtkosten") || h.includes("kosten") || h.includes("cost") || h.includes("total")) map.totalCost = i;
+    else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
+    else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
+    else if (h.includes("km") || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
   }
   return map;
 }
@@ -912,18 +988,40 @@ function doGet(e) {
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
         const idVal = colMap.id >= 0 ? row[colMap.id] : "";
-        if (!idVal && (!colMap.date || !row[colMap.date])) continue;
+        const dateVal = colMap.date >= 0 ? row[colMap.date] : "";
+        if (!idVal && !dateVal) continue;
+        const kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+        const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
+        const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
         const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
+        const isPv = pvRaw === true || String(pvRaw).toLowerCase() === "true" || String(pvRaw).toLowerCase() === "ja";
+        const locVal = colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs";
+        const notesVal = colMap.notes >= 0 ? String(row[colMap.notes] || "") : "";
+        const odoVal = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
+        if (String(idVal).includes("d8074cf3") || (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0)) continue;
         sessions.push({
-          id: String(idVal || ("ses_" + i)),
-          date: colMap.date >= 0 && row[colMap.date] ? (row[colMap.date] instanceof Date ? row[colMap.date].toISOString() : String(row[colMap.date])) : new Date().toISOString(),
-          location: colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs",
-          kwh: colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0,
-          pricePerKwh: colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35,
-          totalCost: colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0,
-          pvSurplus: pvRaw === true || String(pvRaw).toLowerCase() === "true" || String(pvRaw).toLowerCase() === "ja",
-          notes: colMap.notes >= 0 ? String(row[colMap.notes] || "") : "",
-          odometer: colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0
+          id: String(idVal || ("ses_cloud_" + i)),
+          ID: String(idVal || ("ses_cloud_" + i)),
+          date: dateVal instanceof Date ? dateVal.toISOString() : String(dateVal || new Date().toISOString()),
+          Datum: dateVal instanceof Date ? dateVal.toISOString() : String(dateVal || new Date().toISOString()),
+          location: locVal,
+          Ort: locVal,
+          kwh: kwhVal,
+          kWh: kwhVal,
+          pricePerKwh: priceVal,
+          preis: priceVal,
+          "Preis (€/kWh)": priceVal,
+          totalCost: totalVal,
+          kosten: totalVal,
+          gesamtkosten: totalVal,
+          "Gesamtkosten (€)": totalVal,
+          pvSurplus: isPv,
+          "PV-Ladung": isPv ? "Ja" : "Nein",
+          notes: notesVal,
+          notiz: notesVal,
+          Notiz: notesVal,
+          odometer: odoVal,
+          "km-Stand": odoVal
         });
       }
     }
@@ -943,38 +1041,40 @@ function doPost(e) {
     } else if (e && e.parameter) payload = e.parameter;
     const action = payload.action || "create";
     const colMap = getHeaderColumnMap(sheet);
-    if (action === "bulk_sync" || action === "bulk_upload") {
-      const list = Array.isArray(payload.sessions) ? payload.sessions : [];
-      for (let i = 0; i < list.length; i++) upsertSession(sheet, colMap, list[i]);
+    if (action === "bulk_sync" || action === "bulk_upload" || Array.isArray(payload) || Array.isArray(payload.sessions)) {
+      const list = Array.isArray(payload) ? payload : (Array.isArray(payload.sessions) ? payload.sessions : []);
+      for (let i = 0; i < list.length; i++) upsertSessionWithMap(sheet, colMap, list[i]);
       return createOutput({ status: "success", count: list.length });
     }
     if (action === "delete") {
       const targetId = payload.id || payload.ID;
-      if (targetId) deleteSession(sheet, colMap, targetId);
+      if (targetId) deleteSessionById(sheet, colMap, targetId);
       return createOutput({ status: "success", id: targetId });
     }
     const session = payload.session || payload;
-    upsertSession(sheet, colMap, session);
+    upsertSessionWithMap(sheet, colMap, session);
     return createOutput({ status: "success", id: session.id || session.ID });
   } catch (err) {
     return createOutput({ status: "error", message: err.toString() });
   }
 }
 
-function upsertSession(sheet, colMap, s) {
+function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
+  const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
+  const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
+  const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) return;
   const lastRow = sheet.getLastRow();
   const numCols = colMap.rawHeaders.length;
   const rowData = new Array(numCols).fill("");
-  const id = String(s.id || s.ID || ("ses_" + Date.now()));
-  const dateStr = s.date || s.Datum || new Date().toISOString();
-  const locStr = String(s.location || s.Ort || "Bayrhofs");
-  const kwhNum = parseNum(s.kwh || s.kWh);
-  const priceNum = parseNum(s.pricePerKwh || s.preis || s["Preis (€/kWh)"]);
-  const costNum = parseNum(s.totalCost || s.gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
-  const isPv = s.pvSurplus === true || s.pvSurplus === "true" || s["PV-Ladung"] === "Ja";
-  const notesStr = String(s.notes || s.Notiz || "");
-  const odoNum = parseNum(s.odometer || s["km-Stand"]);
+  const id = String(s.id || s.ID || ("session_" + Date.now()));
+  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
+  const locStr = typeof s.location === 'object' ? (s.location.name || 'Bayrhofs') : String(s.ort || s.Ort || s.location || s.Location || s.standort || "Bayrhofs");
+  const rawPv = s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : (s.pv_ladung !== undefined ? s.pv_ladung : s["PV-Ladung"]));
+  const isPv = rawPv === true || rawPv === "true" || String(rawPv).toLowerCase() === "ja";
+  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
+  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
   if (colMap.id >= 0) rowData[colMap.id] = id;
   if (colMap.date >= 0) rowData[colMap.date] = dateStr;
   if (colMap.location >= 0) rowData[colMap.location] = locStr;
@@ -996,7 +1096,7 @@ function upsertSession(sheet, colMap, s) {
   sheet.appendRow(rowData);
 }
 
-function deleteSession(sheet, colMap, targetId) {
+function deleteSessionById(sheet, colMap, targetId) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1 || colMap.id < 0) return;
   const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
@@ -1009,7 +1109,7 @@ function deleteSession(sheet, colMap, targetId) {
 }
 
 function parseNum(val) {
-  if (typeof val === "number") return val;
+  if (typeof val === "number") return isNaN(val) ? 0 : val;
   if (!val) return 0;
   return Number(String(val).replace(",", ".").replace(/[^0-9.-]/g, "")) || 0;
 }

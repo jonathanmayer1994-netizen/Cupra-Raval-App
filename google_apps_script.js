@@ -4,7 +4,7 @@
  * Passt sich dynamisch an dein Tabellenblatt "Raval_App_DB" an!
  * ============================================================================
  * 
- * Unterstützt exakt dein Tabellen-Layout aus Screenshot:
+ * Unterstützt exakt dein Tabellen-Layout:
  * ID | Datum | Ort | kWh | Preis (€/kWh) | Gesamtkosten (€) | PV-Ladung | Notiz
  * sowie beliebige andere Spaltenanordnungen!
  */
@@ -110,19 +110,43 @@ function doGet(e) {
         const dateVal = colMap.date >= 0 ? row[colMap.date] : "";
         if (!idVal && !dateVal) continue; // Leere Zeile überspringen
 
+        const kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+        const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
+        const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
         const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
         const isPv = pvRaw === true || String(pvRaw).toLowerCase() === "true" || String(pvRaw).toLowerCase() === "ja";
+        const locVal = colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs";
+        const notesVal = colMap.notes >= 0 ? String(row[colMap.notes] || "") : "";
+        const odoVal = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
+
+        // Dummy-UUID-Zeilen mit 0 kWh überspringen
+        if (String(idVal).includes("d8074cf3") || (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0)) {
+          continue;
+        }
 
         sessions.push({
           id: String(idVal || ("ses_cloud_" + i)),
+          ID: String(idVal || ("ses_cloud_" + i)),
           date: dateVal instanceof Date ? dateVal.toISOString() : String(dateVal || new Date().toISOString()),
-          location: colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs",
-          kwh: colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0,
-          pricePerKwh: colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35,
-          totalCost: colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0,
+          Datum: dateVal instanceof Date ? dateVal.toISOString() : String(dateVal || new Date().toISOString()),
+          location: locVal,
+          Ort: locVal,
+          kwh: kwhVal,
+          kWh: kwhVal,
+          pricePerKwh: priceVal,
+          preis: priceVal,
+          "Preis (€/kWh)": priceVal,
+          totalCost: totalVal,
+          kosten: totalVal,
+          gesamtkosten: totalVal,
+          "Gesamtkosten (€)": totalVal,
           pvSurplus: isPv,
-          notes: colMap.notes >= 0 ? String(row[colMap.notes] || "") : "",
-          odometer: colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0
+          "PV-Ladung": isPv ? "Ja" : "Nein",
+          notes: notesVal,
+          notiz: notesVal,
+          Notiz: notesVal,
+          odometer: odoVal,
+          "km-Stand": odoVal
         });
       }
     }
@@ -157,9 +181,9 @@ function doPost(e) {
     const action = payload.action || "create";
     const colMap = getHeaderColumnMap(sheet);
 
-    // AKTION: Bulk Sync (Mehrere oder alle Ladungen auf einmal)
-    if (action === "bulk_sync" || action === "bulk_upload") {
-      const list = Array.isArray(payload.sessions) ? payload.sessions : [];
+    // AKTION: Bulk Sync (Array direkt oder in payload.sessions)
+    if (action === "bulk_sync" || action === "bulk_upload" || Array.isArray(payload) || Array.isArray(payload.sessions)) {
+      const list = Array.isArray(payload) ? payload : (Array.isArray(payload.sessions) ? payload.sessions : []);
       let savedCount = 0;
       for (let i = 0; i < list.length; i++) {
         upsertSessionWithMap(sheet, colMap, list[i]);
@@ -192,19 +216,31 @@ function doPost(e) {
  */
 function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
+
+  const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
+  const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
+  const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+
+  // Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
+  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) {
+    return;
+  }
+
   const lastRow = sheet.getLastRow();
   const numCols = colMap.rawHeaders.length;
   const rowData = new Array(numCols).fill("");
 
-  const id = String(s.id || s.ID || ("ses_" + Date.now()));
-  const dateStr = s.date || s.Datum || s.datum || new Date().toISOString();
-  const locStr = String(s.location || s.Ort || s.ort || s.standort || "Bayrhofs");
-  const kwhNum = parseNum(s.kwh || s.kWh || s.energie);
-  const priceNum = parseNum(s.pricePerKwh || s.preis || s["Preis (€/kWh)"]);
-  const costNum = parseNum(s.totalCost || s.gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
-  const isPv = s.pvSurplus === true || s.pvSurplus === "true" || s["PV-Ladung"] === "Ja" || s["PV-Ladung"] === true;
-  const notesStr = String(s.notes || s.Notiz || s.notiz || "");
-  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.kmStand);
+  const id = String(s.id || s.ID || ("session_" + Date.now()));
+  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
+  const locStr = typeof s.location === 'object' 
+    ? (s.location.name || 'Bayrhofs') 
+    : String(s.ort || s.Ort || s.location || s.Location || s.standort || s.Standort || "Bayrhofs");
+
+  const rawPv = s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : (s.pv_ladung !== undefined ? s.pv_ladung : s["PV-Ladung"]));
+  const isPv = rawPv === true || rawPv === "true" || String(rawPv).toLowerCase() === "ja";
+
+  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
+  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
 
   // Werte in die passenden Spalten schreiben
   if (colMap.id >= 0) rowData[colMap.id] = id;
@@ -253,7 +289,7 @@ function deleteSessionById(sheet, colMap, targetId) {
  * Zahlen sicher umwandeln (inkl. Kommazahlen)
  */
 function parseNum(val) {
-  if (typeof val === "number") return val;
+  if (typeof val === "number") return isNaN(val) ? 0 : val;
   if (!val) return 0;
   const cleaned = String(val).replace(",", ".").replace(/[^0-9.-]/g, "");
   return Number(cleaned) || 0;
