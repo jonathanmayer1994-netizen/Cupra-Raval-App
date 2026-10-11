@@ -104,6 +104,7 @@
     DOM.btnSaveCloudUrl = document.getElementById('btnSaveCloudUrl');
     DOM.btnResetCloudUrl = document.getElementById('btnResetCloudUrl');
     DOM.btnCopyScriptCode = document.getElementById('btnCopyScriptCode');
+    DOM.btnCleanCloudSheet = document.getElementById('btnCleanCloudSheet');
 
     // Navigation Dock
     DOM.dockTabBtns = document.querySelectorAll('.dock-tab-btn');
@@ -504,22 +505,31 @@
   }
 
   function mergeSessions(cloudSessions) {
-    if (!cloudSessions || cloudSessions.length === 0) return false;
+    if (!cloudSessions) return false;
 
+    // Nur gültige Cloud-Sessions berücksichtigen (keine 0 kWh Dummy-Zeilen)
+    const validCloud = cloudSessions.filter(isValidSession);
+
+    // Identifiziere lokale Sessions, die noch in der Offline-Queue liegen und noch nicht hochgeladen wurden
+    const pendingIds = new Set(
+      (appData.pendingSyncQueue || []).map(item => item.id || item.ID || (item.session && (item.session.id || item.session.ID))).filter(Boolean)
+    );
+
+    const pendingLocal = (appData.sessions || []).filter(s => pendingIds.has(s.id) && isValidSession(s));
+
+    // Die Cloud-Sessions sind die alleinige Referenz ("Single Source of Truth")
+    // Alle iPhones haben exakt denselben Datenbestand!
     const map = new Map();
-    // 1. Lokale Sessions einpflegen (Dummy-Zeilen vorher filtern)
-    (appData.sessions || []).filter(isValidSession).forEach(s => {
-      map.set(s.id, s);
-    });
-    // 2. Cloud Sessions einpflegen / überschreiben
-    cloudSessions.filter(isValidSession).forEach(cs => {
-      const existing = map.get(cs.id);
-      if (existing) {
-        // Lokale PV-Einstellung und Notiz bevorzugen, falls Cloud "Nein" oder leer hat
-        if (!cs.pvSurplus && existing.pvSurplus) cs.pvSurplus = true;
-        if (!cs.notes && existing.notes) cs.notes = existing.notes;
-      }
+
+    validCloud.forEach(cs => {
       map.set(cs.id, cs);
+    });
+
+    // Noch ungesendete lokale Einträge behalten
+    pendingLocal.forEach(ps => {
+      if (!map.has(ps.id)) {
+        map.set(ps.id, ps);
+      }
     });
 
     appData.sessions = Array.from(map.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -761,7 +771,93 @@
     };
   }
 
+  async function deleteCloudSession(id) {
+    if (!id) return;
+    setSyncStatus('saving');
+    const apiUrl = getCloudApiUrl();
+
+    // Reiner Lösch-Befehl: niemals kWh, Ort oder 0-Werte mitsenden!
+    const payload = {
+      action: 'delete',
+      id: String(id),
+      ID: String(id),
+      timestamp: new Date().toISOString()
+    };
+
+    // Entferne diesen Eintrag auch aus der lokalen Offline-Queue
+    if (appData.pendingSyncQueue && appData.pendingSyncQueue.length > 0) {
+      appData.pendingSyncQueue = appData.pendingSyncQueue.filter(item => {
+        const itemId = item.id || item.ID || (item.session && (item.session.id || item.session.ID));
+        return itemId !== id;
+      });
+      saveData();
+    }
+
+    try {
+      // 1. Primär: POST
+      await fetch(apiUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.warn('POST Delete Fehler, versuche GET Fallback:', err);
+    }
+
+    // 2. Sekundär / Verstärkung: GET (wird von Google Apps Script garantiert ohne CORS-Probleme verarbeitet)
+    try {
+      const getUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=delete&id=${encodeURIComponent(id)}`;
+      await fetchWithJsonp(getUrl, 4000);
+    } catch (_) {
+      // Ignoriere JSONP Timeout bei erfolgreichem POST
+    }
+
+    setSyncStatus('synced');
+
+    // Nach dem Löschen: Aktualisiere synchron den Datenstand von Google Sheets
+    setTimeout(() => {
+      fetchCloudSessions(false);
+    }, 600);
+  }
+
+  async function cleanCloudSheet() {
+    if (!confirm('Möchtest du fehlerhafte Dummy-Zeilen (0 kWh) aus deinem Google Sheet bereinigen? Gültige Ladevorgänge bleiben vollständig erhalten.')) {
+      return;
+    }
+
+    setSyncStatus('saving');
+    showToast('🧹 Bereinige Google Sheet...');
+    const apiUrl = getCloudApiUrl();
+
+    try {
+      await fetch(apiUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'cleanup' })
+      });
+    } catch (err) {
+      console.warn('Cleanup POST Fehler:', err);
+    }
+
+    try {
+      const getUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=cleanup`;
+      await fetchWithJsonp(getUrl, 4000);
+    } catch (_) {}
+
+    setTimeout(() => {
+      fetchCloudSessions(true);
+      showToast('✅ Google Sheet bereinigt');
+    }, 1000);
+  }
+
   async function postCloudSession(session, action = 'create') {
+    if (action === 'delete') {
+      const targetId = session.id || session.ID;
+      return deleteCloudSession(targetId);
+    }
+
     setSyncStatus('saving');
     const apiUrl = getCloudApiUrl();
     const formatted = formatSessionForCloud(session);
@@ -937,59 +1033,134 @@
   }
 
   const APPS_SCRIPT_SOURCE_CODE = `/**
+ * ============================================================================
  * CUPRA RAVAL ENDURANCE — GOOGLE APPS SCRIPT BACKEND (SMART AUTO-MAPPER)
- * Tabellen-Layout: ID | Datum | Ort | kWh | Preis (€/kWh) | Gesamtkosten (€) | PV-Ladung | Notiz
+ * Passt sich dynamisch an dein Tabellenblatt "Raval_App_DB" an!
+ * ============================================================================
+ * 
+ * Unterstützt exakt dein Tabellen-Layout:
+ * ID | Datum | Ort | kWh | Preis (€/kWh) | Gesamtkosten (€) | PV-Ladung | Notiz
+ * sowie beliebige andere Spaltenanordnungen!
+ */
+
+/**
+ * Holt das Ziel-Tabellenblatt (bevorzugt "Raval_App_DB", sonst "Ladedaten")
  */
 function getTargetSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getActiveSheet();
-  if (sheet && sheet.getLastRow() > 0) return sheet;
-  return ss.getSheetByName("Raval_App_DB") || ss.getSheetByName("Ladedaten") || ss.getSheets()[0];
+  return ss.getSheetByName("Raval_App_DB") 
+      || ss.getSheetByName("Ladedaten") 
+      || ss.getActiveSheet() 
+      || ss.getSheets()[0];
 }
 
+/**
+ * Liest die vorhandenen Spaltenüberschriften aus Zeile 1
+ * und baut eine dynamische Spalten-Zuordnungs-Map auf.
+ */
 function getHeaderColumnMap(sheet) {
   const lastCol = Math.max(sheet.getLastColumn(), 8);
-  let headers = sheet.getLastRow() >= 1 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
-  if (!headers || headers.every(h => !h || String(h).trim() === "")) {
-    headers = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand"];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
-    sheet.setFrozenRows(1);
+  let headers = [];
+  
+  if (sheet.getLastRow() >= 1) {
+    headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   }
-  const map = { id: -1, date: -1, location: -1, kwh: -1, pricePerKwh: -1, totalCost: -1, pvSurplus: -1, notes: -1, odometer: -1, rawHeaders: headers };
+
+  // Falls Zeile 1 noch völlig leer ist, Standard-Köpfe schreiben
+  if (!headers || headers.every(h => !h || String(h).trim() === "")) {
+    const defaultHeaders = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand"];
+    sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
+    sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    sheet.setFrozenRows(1);
+    headers = defaultHeaders;
+  }
+
+  // Header-Index-Mapper (0-basiert)
+  const map = {
+    id: -1,
+    date: -1,
+    location: -1,
+    kwh: -1,
+    pricePerKwh: -1,
+    totalCost: -1,
+    pvSurplus: -1,
+    notes: -1,
+    odometer: -1,
+    updatedAt: -1,
+    rawHeaders: headers
+  };
+
   for (let i = 0; i < headers.length; i++) {
     const h = String(headers[i] || "").toLowerCase().trim();
-    if (h === "id") map.id = i;
+    if (h === "id" || h.includes("kennung") || h.includes("vorgang") || h.includes("session")) map.id = i;
     else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
     else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
-    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie")) map.kwh = i;
+    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) map.kwh = i;
     else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
     else if (h.includes("gesamtkosten") || h.includes("kosten") || h.includes("cost") || h.includes("total")) map.totalCost = i;
     else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
     else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
     else if (h.includes("km") || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
+    else if (h.includes("updated") || h.includes("stand")) map.updatedAt = i;
   }
+
+  // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
+  if (map.id < 0) map.id = 0;
+
   return map;
 }
 
+/**
+ * GET-Handler: Liefert Ladedaten für die App, oder führt Aktionen (delete, ping, cleanup) aus.
+ * Volle JSONP-Kompatibilität für iOS Safari PWAs.
+ */
 function doGet(e) {
   try {
     const sheet = getTargetSheet();
     const action = e && e.parameter ? e.parameter.action : null;
     const callback = e && e.parameter ? e.parameter.callback : null;
-    if (action === "ping") {
-      return createOutput({ status: "success", message: "Cupra Raval Cloud API ist betriebsbereit!", sheet: sheet.getName(), rows: Math.max(0, sheet.getLastRow() - 1) }, callback);
-    }
     const colMap = getHeaderColumnMap(sheet);
+
+    // 1. Ping / Test-Endpunkt
+    if (action === "ping") {
+      const pingResult = {
+        status: "success",
+        message: "Cupra Raval Cloud API ist betriebsbereit!",
+        sheetName: sheet.getName(),
+        rows: Math.max(0, sheet.getLastRow() - 1),
+        timestamp: new Date().toISOString()
+      };
+      return createOutput(pingResult, callback);
+    }
+
+    // 2. Einzelnes Ereignis löschen (pro Ereignis, niemals alle Daten!)
+    if (action === "delete") {
+      const targetId = e && e.parameter ? (e.parameter.id || e.parameter.ID) : null;
+      let count = 0;
+      if (targetId) {
+        count = deleteSessionById(sheet, colMap, targetId);
+      }
+      return createOutput({ status: "success", action: "delete", id: targetId, deleted: count }, callback);
+    }
+
+    // 3. Dummy-Zeilen (0 kWh) bereinigen
+    if (action === "cleanup") {
+      const count = cleanDummyRows(sheet, colMap);
+      return createOutput({ status: "success", action: "cleanup", cleaned: count }, callback);
+    }
+
+    // 4. Ladedaten liefern
     const lastRow = sheet.getLastRow();
     const sessions = [];
+
     if (lastRow > 1) {
       const values = sheet.getRange(2, 1, lastRow - 1, colMap.rawHeaders.length).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        const idVal = colMap.id >= 0 ? row[colMap.id] : "";
-        const dateVal = colMap.date >= 0 ? row[colMap.date] : "";
-        if (!idVal && !dateVal) continue;
+        const idVal = colMap.id >= 0 ? row[colMap.id] : row[0];
+        const dateVal = colMap.date >= 0 ? row[colMap.date] : row[1];
+        if (!idVal && !dateVal) continue; // Leere Zeile überspringen
+
         const kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
         const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
         const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
@@ -998,7 +1169,12 @@ function doGet(e) {
         const locVal = colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs";
         const notesVal = colMap.notes >= 0 ? String(row[colMap.notes] || "") : "";
         const odoVal = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
-        if (String(idVal).includes("d8074cf3") || (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0)) continue;
+
+        // Dummy-Zeilen mit 0 kWh überspringen
+        if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
+          continue;
+        }
+
         sessions.push({
           id: String(idVal || ("ses_cloud_" + i)),
           ID: String(idVal || ("ses_cloud_" + i)),
@@ -1025,56 +1201,107 @@ function doGet(e) {
         });
       }
     }
+
+    // Sortierung nach Datum absteigend
     sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     return createOutput(sessions, callback);
   } catch (err) {
     return createOutput({ status: "error", message: err.toString() }, e && e.parameter ? e.parameter.callback : null);
   }
 }
 
+/**
+ * POST-Handler: Speichert, löscht oder aktualisiert Ladungen
+ */
 function doPost(e) {
   try {
     const sheet = getTargetSheet();
     let payload = {};
+
     if (e && e.postData && e.postData.contents) {
-      try { payload = JSON.parse(e.postData.contents); } catch(_) { payload = e.parameter || {}; }
-    } else if (e && e.parameter) payload = e.parameter;
-    const action = payload.action || "create";
+      try {
+        payload = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        payload = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      payload = e.parameter;
+    }
+
+    const action = payload.action || (e && e.parameter && e.parameter.action) || "create";
     const colMap = getHeaderColumnMap(sheet);
+
+    // AKTION: Löschen (Nur pro Ereignis, niemals alle Daten!)
+    if (action === "delete") {
+      const targetId = payload.id || payload.ID || (payload.session && (payload.session.id || payload.session.ID)) || (e && e.parameter && (e.parameter.id || e.parameter.ID));
+      let count = 0;
+      if (targetId) {
+        count = deleteSessionById(sheet, colMap, targetId);
+      }
+      return createOutput({ status: "success", action: "delete", id: targetId, deleted: count });
+    }
+
+    // AKTION: Bereinigung unvollständiger Dummy-Zeilen
+    if (action === "cleanup") {
+      const count = cleanDummyRows(sheet, colMap);
+      return createOutput({ status: "success", action: "cleanup", cleaned: count });
+    }
+
+    // AKTION: Bulk Sync (Array direkt oder in payload.sessions)
     if (action === "bulk_sync" || action === "bulk_upload" || Array.isArray(payload) || Array.isArray(payload.sessions)) {
       const list = Array.isArray(payload) ? payload : (Array.isArray(payload.sessions) ? payload.sessions : []);
-      for (let i = 0; i < list.length; i++) upsertSessionWithMap(sheet, colMap, list[i]);
-      return createOutput({ status: "success", count: list.length });
+      let savedCount = 0;
+      for (let i = 0; i < list.length; i++) {
+        upsertSessionWithMap(sheet, colMap, list[i]);
+        savedCount++;
+      }
+      return createOutput({ status: "success", action: "bulk_sync", count: savedCount });
     }
-    if (action === "delete") {
-      const targetId = payload.id || payload.ID;
-      if (targetId) deleteSessionById(sheet, colMap, targetId);
-      return createOutput({ status: "success", id: targetId });
-    }
+
+    // AKTION: Einzelner Ladevorgang (Erstellen oder Aktualisieren)
     const session = payload.session || payload;
     upsertSessionWithMap(sheet, colMap, session);
-    return createOutput({ status: "success", id: session.id || session.ID });
+
+    return createOutput({ status: "success", action: "save", id: session.id || session.ID });
   } catch (err) {
     return createOutput({ status: "error", message: err.toString() });
   }
 }
 
+/**
+ * Fügt eine Zeile dynamisch anhand der Spalten-Zuordnung ein oder aktualisiert sie
+ */
 function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
+  if (s.action === "delete" || s.action === "cleanup") return;
+
   const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
   const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
   const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
-  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) return;
+
+  // WICHTIG: Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
+  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) {
+    return;
+  }
+
   const lastRow = sheet.getLastRow();
   const numCols = colMap.rawHeaders.length;
   const rowData = new Array(numCols).fill("");
+
   const id = String(s.id || s.ID || ("session_" + Date.now()));
   const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
-  const locStr = typeof s.location === 'object' ? (s.location.name || 'Bayrhofs') : String(s.ort || s.Ort || s.location || s.Location || s.standort || "Bayrhofs");
+  const locStr = typeof s.location === 'object' 
+    ? (s.location.name || 'Bayrhofs') 
+    : String(s.ort || s.Ort || s.location || s.Location || s.standort || s.Standort || "Bayrhofs");
+
   const rawPv = s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : (s.pv_ladung !== undefined ? s.pv_ladung : s["PV-Ladung"]));
   const isPv = rawPv === true || rawPv === "true" || String(rawPv).toLowerCase() === "ja";
+
   const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
   const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
+
+  // Werte in die passenden Spalten schreiben
   if (colMap.id >= 0) rowData[colMap.id] = id;
   if (colMap.date >= 0) rowData[colMap.date] = dateStr;
   if (colMap.location >= 0) rowData[colMap.location] = locStr;
@@ -1084,40 +1311,99 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
   if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
   if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
-  if (lastRow > 1 && colMap.id >= 0) {
-    const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
+  if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
+
+  // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
+  if (lastRow > 1) {
+    const colIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
+    const ids = sheet.getRange(2, colIdx, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]) === id) {
+      if (String(ids[i][0]).trim() === id.trim()) {
         sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
         return;
       }
     }
   }
+
+  // Ansonsten neue Zeile anhängen
   sheet.appendRow(rowData);
 }
 
+/**
+ * Löscht ein Ladeereignis anhand der ID — löscht nur exakt diese Zeile(n), NIEMALS alle Daten!
+ * Rückwärts-Iteration stellt sicher, dass auch Dubletten sauber gelöscht werden, ohne Indexverschiebung.
+ */
 function deleteSessionById(sheet, colMap, targetId) {
+  if (!targetId) return 0;
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1 || colMap.id < 0) return;
-  const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(targetId)) {
+  if (lastRow <= 1) return 0;
+
+  const numCols = Math.max(colMap.rawHeaders.length, sheet.getLastColumn(), 8);
+  const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  const target = String(targetId).trim();
+  let deletedCount = 0;
+
+  for (let i = data.length - 1; i >= 0; i--) {
+    const row = data[i];
+    const idInCol = colMap.id >= 0 ? String(row[colMap.id] || "").trim() : "";
+    const idInFirstCol = String(row[0] || "").trim();
+
+    if (idInCol === target || idInFirstCol === target) {
       sheet.deleteRow(i + 2);
-      return;
+      deletedCount++;
     }
   }
+
+  return deletedCount;
 }
 
+/**
+ * Bereinigt fehlerhafte Dummy-Zeilen mit 0 kWh, 0 Preis und 0 Kosten
+ */
+function cleanDummyRows(sheet, colMap) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 0;
+
+  const numCols = Math.max(colMap.rawHeaders.length, sheet.getLastColumn(), 8);
+  const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  let cleanedCount = 0;
+
+  for (let i = data.length - 1; i >= 0; i--) {
+    const row = data[i];
+    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : parseNum(row[3]);
+    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : parseNum(row[4]);
+    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : parseNum(row[5]);
+
+    if (kwh <= 0 && price <= 0 && cost <= 0) {
+      sheet.deleteRow(i + 2);
+      cleanedCount++;
+    }
+  }
+
+  return cleanedCount;
+}
+
+/**
+ * Zahlen sicher umwandeln (inkl. Kommazahlen)
+ */
 function parseNum(val) {
   if (typeof val === "number") return isNaN(val) ? 0 : val;
   if (!val) return 0;
-  return Number(String(val).replace(",", ".").replace(/[^0-9.-]/g, "")) || 0;
+  const cleaned = String(val).replace(",", ".").replace(/[^0-9.-]/g, "");
+  return Number(cleaned) || 0;
 }
 
+/**
+ * Gibt JSON oder JSONP zurück
+ */
 function createOutput(data, callback) {
   const jsonStr = JSON.stringify(data);
-  if (callback) return ContentService.createTextOutput(callback + "(" + jsonStr + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
-  return ContentService.createTextOutput(jsonStr).setMimeType(ContentService.MimeType.JSON);
+  if (callback) {
+    return ContentService.createTextOutput(callback + "(" + jsonStr + ")")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(jsonStr)
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
 
   function handleCopyScriptCode() {
@@ -1421,12 +1707,35 @@ function createOutput(data, callback) {
         handleCopyScriptCode();
       });
     }
+    if (DOM.btnCleanCloudSheet) {
+      DOM.btnCleanCloudSheet.addEventListener('click', () => {
+        cleanCloudSheet();
+      });
+    }
 
     // Auto-Flush bei wiederkehrender Online-Verbindung
     window.addEventListener('online', () => {
       flushPendingSyncQueue();
       fetchCloudSessions(false);
     });
+
+    // Auto-Sync beim Entsperren / App-Wechsel auf iPhones
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        fetchCloudSessions(false);
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      fetchCloudSessions(false);
+    });
+
+    // Periodischer Background-Sync alle 60 Sekunden (falls App im Vordergrund aktiv ist)
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        fetchCloudSessions(false);
+      }
+    }, 60000);
   }
 
   // =========================================================================
@@ -2809,8 +3118,8 @@ function createOutput(data, callback) {
     triggerHaptic();
     showToast('Ladevorgang gelöscht');
 
-    // Cloud-Sync Löschung im Hintergrund
-    postCloudSession({ id }, 'delete');
+    // Cloud-Sync: Löscht nur exakt dieses Ereignis aus Google Sheets
+    deleteCloudSession(id);
   }
 
   // =========================================================================

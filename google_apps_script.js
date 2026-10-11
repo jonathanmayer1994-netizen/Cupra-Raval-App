@@ -10,18 +10,14 @@
  */
 
 /**
- * Holt das aktive Tabellenblatt (oder das erste Tabellenblatt)
+ * Holt das Ziel-Tabellenblatt (bevorzugt "Raval_App_DB", sonst "Ladedaten")
  */
 function getTargetSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // 1. Prüfe aktives Blatt
-  let sheet = ss.getActiveSheet();
-  if (sheet && sheet.getLastRow() > 0) {
-    return sheet;
-  }
-  // 2. Prüfe Blatt "Raval_App_DB" oder "Ladedaten"
-  sheet = ss.getSheetByName("Raval_App_DB") || ss.getSheetByName("Ladedaten") || ss.getSheets()[0];
-  return sheet;
+  return ss.getSheetByName("Raval_App_DB") 
+      || ss.getSheetByName("Ladedaten") 
+      || ss.getActiveSheet() 
+      || ss.getSheets()[0];
 }
 
 /**
@@ -62,10 +58,10 @@ function getHeaderColumnMap(sheet) {
 
   for (let i = 0; i < headers.length; i++) {
     const h = String(headers[i] || "").toLowerCase().trim();
-    if (h === "id") map.id = i;
+    if (h === "id" || h.includes("kennung") || h.includes("vorgang") || h.includes("session")) map.id = i;
     else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
     else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
-    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie")) map.kwh = i;
+    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) map.kwh = i;
     else if (h.includes("preis") || h.includes("price")) map.pricePerKwh = i;
     else if (h.includes("gesamtkosten") || h.includes("kosten") || h.includes("cost") || h.includes("total")) map.totalCost = i;
     else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
@@ -74,19 +70,24 @@ function getHeaderColumnMap(sheet) {
     else if (h.includes("updated") || h.includes("stand")) map.updatedAt = i;
   }
 
+  // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
+  if (map.id < 0) map.id = 0;
+
   return map;
 }
 
 /**
- * GET-Handler: Liefert Ladedaten für die App
+ * GET-Handler: Liefert Ladedaten für die App, oder führt Aktionen (delete, ping, cleanup) aus.
+ * Volle JSONP-Kompatibilität für iOS Safari PWAs.
  */
 function doGet(e) {
   try {
     const sheet = getTargetSheet();
     const action = e && e.parameter ? e.parameter.action : null;
     const callback = e && e.parameter ? e.parameter.callback : null;
+    const colMap = getHeaderColumnMap(sheet);
 
-    // Ping / Test-Endpunkt
+    // 1. Ping / Test-Endpunkt
     if (action === "ping") {
       const pingResult = {
         status: "success",
@@ -98,7 +99,23 @@ function doGet(e) {
       return createOutput(pingResult, callback);
     }
 
-    const colMap = getHeaderColumnMap(sheet);
+    // 2. Einzelnes Ereignis löschen (pro Ereignis, niemals alle Daten!)
+    if (action === "delete") {
+      const targetId = e && e.parameter ? (e.parameter.id || e.parameter.ID) : null;
+      let count = 0;
+      if (targetId) {
+        count = deleteSessionById(sheet, colMap, targetId);
+      }
+      return createOutput({ status: "success", action: "delete", id: targetId, deleted: count }, callback);
+    }
+
+    // 3. Dummy-Zeilen (0 kWh) bereinigen
+    if (action === "cleanup") {
+      const count = cleanDummyRows(sheet, colMap);
+      return createOutput({ status: "success", action: "cleanup", cleaned: count }, callback);
+    }
+
+    // 4. Ladedaten liefern
     const lastRow = sheet.getLastRow();
     const sessions = [];
 
@@ -106,8 +123,8 @@ function doGet(e) {
       const values = sheet.getRange(2, 1, lastRow - 1, colMap.rawHeaders.length).getValues();
       for (let i = 0; i < values.length; i++) {
         const row = values[i];
-        const idVal = colMap.id >= 0 ? row[colMap.id] : "";
-        const dateVal = colMap.date >= 0 ? row[colMap.date] : "";
+        const idVal = colMap.id >= 0 ? row[colMap.id] : row[0];
+        const dateVal = colMap.date >= 0 ? row[colMap.date] : row[1];
         if (!idVal && !dateVal) continue; // Leere Zeile überspringen
 
         const kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
@@ -119,8 +136,8 @@ function doGet(e) {
         const notesVal = colMap.notes >= 0 ? String(row[colMap.notes] || "") : "";
         const odoVal = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
 
-        // Dummy-UUID-Zeilen mit 0 kWh überspringen
-        if (String(idVal).includes("d8074cf3") || (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0)) {
+        // Dummy-Zeilen mit 0 kWh überspringen
+        if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
           continue;
         }
 
@@ -161,7 +178,7 @@ function doGet(e) {
 }
 
 /**
- * POST-Handler: Speichert oder aktualisiert Ladungen
+ * POST-Handler: Speichert, löscht oder aktualisiert Ladungen
  */
 function doPost(e) {
   try {
@@ -178,8 +195,24 @@ function doPost(e) {
       payload = e.parameter;
     }
 
-    const action = payload.action || "create";
+    const action = payload.action || (e && e.parameter && e.parameter.action) || "create";
     const colMap = getHeaderColumnMap(sheet);
+
+    // AKTION: Löschen (Nur pro Ereignis, niemals alle Daten!)
+    if (action === "delete") {
+      const targetId = payload.id || payload.ID || (payload.session && (payload.session.id || payload.session.ID)) || (e && e.parameter && (e.parameter.id || e.parameter.ID));
+      let count = 0;
+      if (targetId) {
+        count = deleteSessionById(sheet, colMap, targetId);
+      }
+      return createOutput({ status: "success", action: "delete", id: targetId, deleted: count });
+    }
+
+    // AKTION: Bereinigung unvollständiger Dummy-Zeilen
+    if (action === "cleanup") {
+      const count = cleanDummyRows(sheet, colMap);
+      return createOutput({ status: "success", action: "cleanup", cleaned: count });
+    }
 
     // AKTION: Bulk Sync (Array direkt oder in payload.sessions)
     if (action === "bulk_sync" || action === "bulk_upload" || Array.isArray(payload) || Array.isArray(payload.sessions)) {
@@ -190,15 +223,6 @@ function doPost(e) {
         savedCount++;
       }
       return createOutput({ status: "success", action: "bulk_sync", count: savedCount });
-    }
-
-    // AKTION: Löschen
-    if (action === "delete") {
-      const targetId = payload.id || payload.ID;
-      if (targetId) {
-        deleteSessionById(sheet, colMap, targetId);
-      }
-      return createOutput({ status: "success", action: "delete", id: targetId });
     }
 
     // AKTION: Einzelner Ladevorgang (Erstellen oder Aktualisieren)
@@ -216,12 +240,13 @@ function doPost(e) {
  */
 function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
+  if (s.action === "delete" || s.action === "cleanup") return;
 
   const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
   const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
   const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
 
-  // Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
+  // WICHTIG: Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
   if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) {
     return;
   }
@@ -255,10 +280,11 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
 
   // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
-  if (lastRow > 1 && colMap.id >= 0) {
-    const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
+  if (lastRow > 1) {
+    const colIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
+    const ids = sheet.getRange(2, colIdx, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
-      if (String(ids[i][0]) === id) {
+      if (String(ids[i][0]).trim() === id.trim()) {
         sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
         return;
       }
@@ -270,19 +296,57 @@ function upsertSessionWithMap(sheet, colMap, s) {
 }
 
 /**
- * Löscht eine Zeile anhand der ID
+ * Löscht ein Ladeereignis anhand der ID — löscht nur exakt diese Zeile(n), NIEMALS alle Daten!
+ * Rückwärts-Iteration stellt sicher, dass auch Dubletten sauber gelöscht werden, ohne Indexverschiebung.
  */
 function deleteSessionById(sheet, colMap, targetId) {
+  if (!targetId) return 0;
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1 || colMap.id < 0) return;
+  if (lastRow <= 1) return 0;
 
-  const ids = sheet.getRange(2, colMap.id + 1, lastRow - 1, 1).getValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(targetId)) {
+  const numCols = Math.max(colMap.rawHeaders.length, sheet.getLastColumn(), 8);
+  const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  const target = String(targetId).trim();
+  let deletedCount = 0;
+
+  for (let i = data.length - 1; i >= 0; i--) {
+    const row = data[i];
+    const idInCol = colMap.id >= 0 ? String(row[colMap.id] || "").trim() : "";
+    const idInFirstCol = String(row[0] || "").trim();
+
+    if (idInCol === target || idInFirstCol === target) {
       sheet.deleteRow(i + 2);
-      return;
+      deletedCount++;
     }
   }
+
+  return deletedCount;
+}
+
+/**
+ * Bereinigt fehlerhafte Dummy-Zeilen mit 0 kWh, 0 Preis und 0 Kosten
+ */
+function cleanDummyRows(sheet, colMap) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 0;
+
+  const numCols = Math.max(colMap.rawHeaders.length, sheet.getLastColumn(), 8);
+  const data = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+  let cleanedCount = 0;
+
+  for (let i = data.length - 1; i >= 0; i--) {
+    const row = data[i];
+    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : parseNum(row[3]);
+    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : parseNum(row[4]);
+    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : parseNum(row[5]);
+
+    if (kwh <= 0 && price <= 0 && cost <= 0) {
+      sheet.deleteRow(i + 2);
+      cleanedCount++;
+    }
+  }
+
+  return cleanedCount;
 }
 
 /**

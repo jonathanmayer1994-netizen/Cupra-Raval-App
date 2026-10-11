@@ -488,6 +488,9 @@
                     ☁️ Lokale Daten hochladen
                   </button>
                 </div>
+                <button type="button" class="btn-swift-secondary full-width" id="btnCleanCloudSheet" style="margin-top: 8px;">
+                  🧹 Leere Dummy-Zeilen im Google Sheet bereinigen
+                </button>
               </div>
 
               <!-- Accordion: Web-App URL & Google Apps Script Setup-Guide -->
@@ -511,10 +514,11 @@
                     <ol class="cloud-guide-list">
                       <li>Öffne dein Google Sheet ➔ Klicke oben auf <strong>Erweiterungen ➔ Apps Script</strong>.</li>
                       <li>Ersetze den Inhalt mit dem Skript aus <code class="code-tag">google_apps_script.js</code> und klicke auf Speichern 💾.</li>
-                      <li>Klicke oben rechts auf <strong>Bereitstellen ➔ Bereitstellung verwalten</strong> (oder Neue Bereitstellung):
-                        <br/>• Typ: <strong>Web-App</strong>
-                        <br/>• Ausführen als: <strong>Ich (&lt;deine-email&gt;)</strong>
+                      <li>Klicke oben rechts auf <strong>Bereitstellen ➔ Bereitstellungen verwalten</strong> (oder Neue Bereitstellung):
+                        <br/>• Klicke auf das Stift-Symbol ✏️ (Bearbeiten)
+                        <br/>• Version: <strong>Neue Version</strong> auswählen!
                         <br/>• <span class="highlight-important">Wer hat Zugriff: <strong>Jeder</strong> (Anyone)</span> <em>(Wichtig: NICHT "Nur ich"!)</em>
+                        <br/>• Klicke auf <strong>Bereitstellen</strong>.
                       </li>
                     </ol>
                     <button type="button" class="btn-swift-secondary full-width" id="btnCopyScriptCode" style="margin-top: 8px;">
