@@ -13,7 +13,7 @@
   const STORAGE_KEY = 'cupra_raval_data';
   const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
   const CURRENT_SCHEMA = 3;
-  const GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
+  const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
     { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
@@ -34,6 +34,7 @@
     settings: {
       currency: "€",
       locations: JSON.parse(JSON.stringify(DEFAULT_LOCATIONS)),
+      googleSheetsUrl: DEFAULT_GOOGLE_SHEETS_API_URL,
       weatherGps: {
         name: "GPS: Bayrhofs / Kempten",
         lat: 47.72,
@@ -41,7 +42,8 @@
       },
       pvThresholdSunshineHours: 4.5
     },
-    sessions: []
+    sessions: [],
+    pendingSyncQueue: []
   };
 
   const AVAILABLE_ICONS = ['🏢', '🏠', '⚡️', '☀️', '🔌', '💼', '🅿️', '🌲', '🚗', '🔋'];
@@ -92,6 +94,15 @@
     DOM.cloudSettingsDot = document.getElementById('cloudSettingsDot');
     DOM.cloudSettingsLabel = document.getElementById('cloudSettingsLabel');
     DOM.cloudLastSyncTime = document.getElementById('cloudLastSyncTime');
+    DOM.cloudDiagBox = document.getElementById('cloudDiagBox');
+    DOM.cloudDiagIcon = document.getElementById('cloudDiagIcon');
+    DOM.cloudDiagText = document.getElementById('cloudDiagText');
+    DOM.btnTestCloudConnection = document.getElementById('btnTestCloudConnection');
+    DOM.btnBulkUploadCloud = document.getElementById('btnBulkUploadCloud');
+    DOM.inputCloudApiUrl = document.getElementById('inputCloudApiUrl');
+    DOM.btnSaveCloudUrl = document.getElementById('btnSaveCloudUrl');
+    DOM.btnResetCloudUrl = document.getElementById('btnResetCloudUrl');
+    DOM.btnCopyScriptCode = document.getElementById('btnCopyScriptCode');
 
     // Navigation Dock
     DOM.dockTabBtns = document.querySelectorAll('.dock-tab-btn');
@@ -280,6 +291,7 @@
       settings: {
         currency: "€",
         locations: [],
+        googleSheetsUrl: (data.settings && data.settings.googleSheetsUrl && String(data.settings.googleSheetsUrl).trim()) || DEFAULT_GOOGLE_SHEETS_API_URL,
         weatherGps: {
           name: (data.settings && data.settings.weatherGps && data.settings.weatherGps.name) || DEFAULT_DATA.settings.weatherGps.name,
           lat: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lat) ?? DEFAULT_DATA.settings.weatherGps.lat),
@@ -287,7 +299,8 @@
         },
         pvThresholdSunshineHours: Number((data.settings && data.settings.pvThresholdSunshineHours) ?? DEFAULT_DATA.settings.pvThresholdSunshineHours)
       },
-      sessions: Array.isArray(data.sessions) ? data.sessions : []
+      sessions: Array.isArray(data.sessions) ? data.sessions : [],
+      pendingSyncQueue: Array.isArray(data.pendingSyncQueue) ? data.pendingSyncQueue : []
     };
 
     // Locations Migration
@@ -363,8 +376,139 @@
   }
 
   // =========================================================================
-  // GOOGLE SHEETS CLOUD-BACKEND SYNC
+  // GOOGLE SHEETS CLOUD-BACKEND SYNC & MULTI-TRANSPORT ENGINE
   // =========================================================================
+  function getCloudApiUrl() {
+    return (appData && appData.settings && appData.settings.googleSheetsUrl && appData.settings.googleSheetsUrl.trim()) || DEFAULT_GOOGLE_SHEETS_API_URL;
+  }
+
+  function showCloudDiag(type, icon, message) {
+    if (!DOM.cloudDiagBox) return;
+    if (type === 'none') {
+      DOM.cloudDiagBox.classList.add('hidden');
+      return;
+    }
+    DOM.cloudDiagBox.className = 'cloud-diag-box ' + (type === 'success' ? 'success' : (type === 'warning' ? 'warning' : ''));
+    if (DOM.cloudDiagIcon) DOM.cloudDiagIcon.textContent = icon;
+    if (DOM.cloudDiagText) DOM.cloudDiagText.innerHTML = message;
+    DOM.cloudDiagBox.classList.remove('hidden');
+  }
+
+  function parseNum(val) {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    const cleaned = String(val).replace(',', '.').replace(/[^0-9.-]/g, '');
+    return Number(cleaned) || 0;
+  }
+
+  function mapRawSession(s, idx) {
+    const locName = typeof s.location === 'object' ? (s.location.name || 'Bayrhofs') : (s.location || s.ort || s.standort || 'Bayrhofs');
+    const matchingLoc = (appData && appData.settings && appData.settings.locations ? appData.settings.locations.find(l => l.name === locName) : null);
+    const isPv = s.pvSurplus !== undefined ? (s.pvSurplus === true || s.pvSurplus === 'true' || s.pv === true) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+    const price = parseNum(s.pricePerKwh || s.price || s.preis || s.preis_pro_kwh) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+    const kwh = parseNum(s.kwh || s.energie || s.lademenge);
+    const cost = parseNum(s.totalCost || s.cost || s.kosten || s.gesamtkosten) || Number((kwh * price).toFixed(2));
+    const rawDate = s.date || s.datum || new Date().toISOString();
+
+    return {
+      id: String(s.id || `session_cloud_${idx}_${Date.now()}`),
+      date: new Date(rawDate).toISOString(),
+      kwh,
+      odometer: parseNum(s.odometer || s.km || s.kmstand || s.kilometer),
+      pricePerKwh: price,
+      totalCost: cost,
+      location: locName,
+      pvSurplus: Boolean(isPv),
+      notes: String(s.notes || s.notizen || s.bemerkung || '')
+    };
+  }
+
+  function extractSessionsFromPayload(parsed) {
+    if (!parsed) return [];
+    let list = null;
+
+    if (Array.isArray(parsed)) {
+      // Erkennung von 2D-Tabellen-Arrays [[Kopfzeilen], [Zeile 1], ...]
+      if (parsed.length > 0 && Array.isArray(parsed[0])) {
+        const headers = parsed[0].map(h => String(h).toLowerCase().trim());
+        return parsed.slice(1).map((row, idx) => {
+          const obj = {};
+          headers.forEach((h, hIdx) => { obj[h] = row[hIdx]; });
+          return mapRawSession(obj, idx);
+        });
+      }
+      list = parsed;
+    } else if (parsed && Array.isArray(parsed.data)) {
+      list = parsed.data;
+    } else if (parsed && Array.isArray(parsed.sessions)) {
+      list = parsed.sessions;
+    } else if (parsed && Array.isArray(parsed.rows)) {
+      list = parsed.rows;
+    } else if (parsed && Array.isArray(parsed.items)) {
+      list = parsed.items;
+    }
+
+    if (!list || !Array.isArray(list)) return [];
+    return list.map((s, idx) => mapRawSession(s, idx));
+  }
+
+  function mergeSessions(cloudSessions) {
+    if (!cloudSessions || cloudSessions.length === 0) return false;
+
+    const map = new Map();
+    // 1. Lokale Sessions einpflegen
+    (appData.sessions || []).forEach(s => {
+      map.set(s.id, s);
+    });
+    // 2. Cloud Sessions einpflegen / überschreiben
+    cloudSessions.forEach(cs => {
+      map.set(cs.id, cs);
+    });
+
+    appData.sessions = Array.from(map.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Höchsten km-Stand synchronisieren
+    const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), appData.vehicle.currentOdo);
+    appData.vehicle.currentOdo = maxOdo;
+
+    saveData();
+    renderAll();
+    return true;
+  }
+
+  function fetchWithJsonp(url, timeoutMs = 7000) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'cupraJsonpCb_' + Math.floor(Math.random() * 1000000);
+      const script = document.createElement('script');
+      const sep = url.includes('?') ? '&' : '?';
+      const fullUrl = `${url}${sep}callback=${callbackName}&_t=${Date.now()}`;
+
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('JSONP Timeout (Google Sheets Antwort zu langsam)'));
+      }, timeoutMs);
+
+      function cleanup() {
+        clearTimeout(timer);
+        if (script.parentNode) script.parentNode.removeChild(script);
+        delete window[callbackName];
+      }
+
+      window[callbackName] = (data) => {
+        cleanup();
+        resolve(data);
+      };
+
+      script.onerror = () => {
+        cleanup();
+        reject(new Error('JSONP Ladefehler (Zugriff verweigert oder ungültige URL)'));
+      };
+
+      script.src = fullUrl;
+      document.head.appendChild(script);
+    });
+  }
+
   function setSyncStatus(state) {
     currentSyncState = state;
     if (DOM.btnSyncCloud) {
@@ -390,7 +534,7 @@
     }
 
     if (DOM.cloudSettingsDot) {
-      DOM.cloudSettingsDot.className = 'cloud-status-dot ' + (state === 'syncing' || state === 'saving' ? 'syncing' : 'online');
+      DOM.cloudSettingsDot.className = 'cloud-status-dot ' + (state === 'syncing' || state === 'saving' ? 'syncing' : (state === 'synced' ? 'online' : ''));
     }
 
     if (DOM.cloudSettingsLabel) {
@@ -417,11 +561,16 @@
       showToast('☁️ Synchronisiere mit Google Sheets...');
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const apiUrl = getCloudApiUrl();
+    let rawData = null;
+    let fetchError = null;
 
+    // 1. Primär: Moderner fetch mit Redirect-Follow
     try {
-      const response = await fetch(GOOGLE_SHEETS_API_URL, {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6500);
+
+      const response = await fetch(apiUrl, {
         method: 'GET',
         redirect: 'follow',
         cache: 'no-store',
@@ -430,81 +579,75 @@
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`HTTP Status ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const text = await response.text();
       if (!text || text.trim().startsWith('<')) {
-        throw new Error('Empfangene Antwort ist kein JSON (evtl. Zugriffs-Berechtigung)');
-      }
-
-      const parsed = JSON.parse(text);
-      let list = null;
-
-      if (Array.isArray(parsed)) {
-        list = parsed;
-      } else if (parsed && Array.isArray(parsed.data)) {
-        list = parsed.data;
-      } else if (parsed && Array.isArray(parsed.sessions)) {
-        list = parsed.sessions;
-      } else if (parsed && Array.isArray(parsed.rows)) {
-        list = parsed.rows;
-      } else if (parsed && Array.isArray(parsed.items)) {
-        list = parsed.items;
-      }
-
-      if (list && Array.isArray(list)) {
-        const mapped = list.map((s, idx) => {
-          const locName = typeof s.location === 'object' ? s.location.name : (s.location || 'Bayrhofs');
-          const matchingLoc = appData.settings.locations.find(l => l.name === locName);
-          const isPv = s.pvSurplus !== undefined ? (s.pvSurplus === true || s.pvSurplus === 'true' || s.pv === true) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
-          const price = Number(s.pricePerKwh || s.price) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
-          const kwh = Number(s.kwh) || 0;
-          const cost = Number(s.totalCost || s.cost) || Number((kwh * price).toFixed(2));
-
-          return {
-            id: s.id || `session_cloud_${idx}_${Date.now()}`,
-            date: s.date ? new Date(s.date).toISOString() : new Date().toISOString(),
-            kwh,
-            odometer: Number(s.odometer) || 0,
-            pricePerKwh: price,
-            totalCost: cost,
-            location: locName,
-            pvSurplus: Boolean(isPv),
-            notes: s.notes || ""
-          };
-        });
-
-        if (mapped.length > 0) {
-          appData.sessions = mapped.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-          // Höchsten km-Stand als aktuellen Odometer synchronisieren
-          const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), appData.vehicle.currentOdo);
-          appData.vehicle.currentOdo = maxOdo;
-
-          // Direkt lokal im localStorage cachen
-          saveData();
-
-          // UI, Dashboard und Historie aktualisieren
-          renderAll();
-
-          setSyncStatus('synced');
-          if (isManual) {
-            triggerHaptic();
-            showToast(`☁️ ${mapped.length} Ladevorgänge synchronisiert ✓`);
-          }
-          return;
+        if (text && (text.includes('Sie benötigen Zugriff') || text.includes('accounts.google.com') || text.includes('drive-logo'))) {
+          throw new Error('AUTH_403: Google Apps Script Freigabe steht auf "Nur ich". Bitte auf "Jeder" stellen!');
         }
+        throw new Error('Antwort ist HTML statt JSON.');
       }
 
-      setSyncStatus('synced');
-      if (isManual) {
-        showToast('☁️ Bereits auf dem neuesten Stand');
-      }
+      rawData = JSON.parse(text);
     } catch (err) {
-      clearTimeout(timeoutId);
-      console.warn('Google Sheets Sync Status:', err.message);
-      setSyncStatus('offline');
+      fetchError = err;
+      console.warn('Standard Fetch nicht erfolgreich, prüfe Fallback:', err.message);
+    }
+
+    // 2. Fallback: JSONP Transport (umgeht CORS-Einschränkungen im Browser)
+    if (!rawData && (!fetchError || !fetchError.message.startsWith('AUTH_403'))) {
+      try {
+        rawData = await fetchWithJsonp(apiUrl, 5000);
+      } catch (jsonpErr) {
+        console.warn('JSONP Fallback nicht erfolgreich:', jsonpErr.message);
+      }
+    }
+
+    // 3. Auswertung und Speicherung
+    if (rawData) {
+      const parsedList = extractSessionsFromPayload(rawData);
+
+      if (parsedList.length > 0) {
+        mergeSessions(parsedList);
+        setSyncStatus('synced');
+        showCloudDiag('success', '✅', `Google Sheets verbunden: <strong>${parsedList.length} Ladevorgänge</strong> synchronisiert.`);
+        if (isManual) {
+          triggerHaptic();
+          showToast(`☁️ ${parsedList.length} Ladevorgänge synchronisiert ✓`);
+        }
+        flushPendingSyncQueue();
+        return;
+      } else {
+        // Tabelle ist online, aber noch leer
+        setSyncStatus('synced');
+        showCloudDiag('success', '✅', 'Google Sheets ist verbunden (Tabelle ist noch leer). Tippe auf "Lokale Daten hochladen", um bestehende Ladungen zu übertragen.');
+        if (isManual) {
+          showToast('☁️ Google Sheets verbunden (Tabelle leer)');
+        }
+        flushPendingSyncQueue();
+        return;
+      }
+    }
+
+    // 4. Diagnose & Fehlermeldung
+    setSyncStatus('offline');
+    const errMsg = fetchError ? fetchError.message : 'Verbindungsaufbau fehlgeschlagen';
+    console.warn('Google Sheets Sync Status:', errMsg);
+
+    if (errMsg.includes('AUTH_403') || errMsg.includes('403') || errMsg.includes('Zugriff')) {
+      showCloudDiag('warning', '⚠️', '<strong>Google Sheets Zugriff verweigert (403):</strong><br>In Google Apps Script muss die Freigabe auf <em>"Wer hat Zugriff: <strong>Jeder</strong>"</em> stehen. Aktuell blockiert Google den Zugriff.');
+      if (isManual) {
+        showToast('⚠️ Google 403: Freigabe auf "Jeder" stellen!');
+      }
+    } else if (!navigator.onLine) {
+      showCloudDiag('warning', '📡', '<strong>Offline:</strong> Keine aktive Internetverbindung. Die App verwendet den lokalen Speicher.');
+      if (isManual) {
+        showToast('⚠️ Keine Internetverbindung – Lokaler Cache aktiv');
+      }
+    } else {
+      showCloudDiag('warning', '⚠️', '<strong>Cloud nicht erreichbar:</strong> Google Apps Script antwortet nicht oder blockiert die Verbindung. Prüfe URL und Freigabe ("Jeder").');
       if (isManual) {
         showToast('⚠️ Cloud nicht erreichbar – Lokaler Cache aktiv');
       }
@@ -513,26 +656,27 @@
 
   async function postCloudSession(session, action = 'create') {
     setSyncStatus('saving');
+    const apiUrl = getCloudApiUrl();
+    const payload = {
+      action,
+      timestamp: new Date().toISOString(),
+      id: session.id,
+      date: session.date,
+      kwh: session.kwh,
+      odometer: session.odometer,
+      pricePerKwh: session.pricePerKwh,
+      totalCost: session.totalCost,
+      location: session.location,
+      pvSurplus: session.pvSurplus,
+      notes: session.notes,
+      session
+    };
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     try {
-      const payload = {
-        action,
-        timestamp: new Date().toISOString(),
-        id: session.id,
-        date: session.date,
-        kwh: session.kwh,
-        odometer: session.odometer,
-        pricePerKwh: session.pricePerKwh,
-        totalCost: session.totalCost,
-        location: session.location,
-        pvSurplus: session.pvSurplus,
-        notes: session.notes,
-        session
-      };
-
-      await fetch(GOOGLE_SHEETS_API_URL, {
+      await fetch(apiUrl, {
         method: 'POST',
         mode: 'no-cors',
         headers: {
@@ -543,15 +687,310 @@
       });
       clearTimeout(timeoutId);
 
-      // Google Apps Script empfängt die Daten im Hintergrund
       setTimeout(() => {
         setSyncStatus('synced');
       }, 700);
     } catch (err) {
       clearTimeout(timeoutId);
-      console.warn('Google Sheets POST Fehler:', err);
+      console.warn('Google Sheets POST Fehler, speichere in Offline-Queue:', err);
+      // In Offline Queue sichern
+      appData.pendingSyncQueue = appData.pendingSyncQueue || [];
+      appData.pendingSyncQueue.push(payload);
+      saveData();
       setSyncStatus('offline');
     }
+  }
+
+  async function flushPendingSyncQueue() {
+    if (!appData.pendingSyncQueue || appData.pendingSyncQueue.length === 0) return;
+    const queue = [...appData.pendingSyncQueue];
+    const apiUrl = getCloudApiUrl();
+
+    for (const item of queue) {
+      try {
+        await fetch(apiUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(item)
+        });
+        appData.pendingSyncQueue = (appData.pendingSyncQueue || []).filter(q => q.id !== item.id);
+        saveData();
+      } catch (err) {
+        console.warn('Queue-Flush pausiert:', err);
+        break;
+      }
+    }
+  }
+
+  async function bulkUploadToCloud() {
+    if (!appData.sessions || appData.sessions.length === 0) {
+      showToast('ℹ️ Keine lokalen Ladedaten zum Hochladen vorhanden');
+      return;
+    }
+
+    if (!confirm(`Möchtest du alle ${appData.sessions.length} lokalen Ladevorgänge jetzt in Google Sheets übertragen?`)) {
+      return;
+    }
+
+    setSyncStatus('saving');
+    showToast(`☁️ Übertrage ${appData.sessions.length} Einträge...`);
+    const apiUrl = getCloudApiUrl();
+
+    try {
+      const payload = {
+        action: 'bulk_sync',
+        timestamp: new Date().toISOString(),
+        sessions: appData.sessions
+      };
+
+      await fetch(apiUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+
+      triggerHaptic();
+      setSyncStatus('synced');
+      showToast(`☁️ ${appData.sessions.length} Ladevorgänge an Google Sheets gesendet! ✓`);
+      showCloudDiag('success', '✅', `Alle <strong>${appData.sessions.length} lokalen Ladevorgänge</strong> wurden an Google Sheets übertragen.`);
+    } catch (err) {
+      setSyncStatus('offline');
+      showToast('⚠️ Fehler beim Hochladen in die Cloud');
+      showCloudDiag('warning', '⚠️', 'Fehler beim Senden: ' + err.message);
+    }
+  }
+
+  async function testCloudConnection() {
+    triggerHaptic();
+    showToast('🔍 Teste Google Sheets Verbindung...');
+    showCloudDiag('none');
+
+    const apiUrl = getCloudApiUrl();
+    const testUrl = apiUrl + (apiUrl.includes('?') ? '&' : '?') + 'action=ping&_t=' + Date.now();
+
+    try {
+      const resp = await fetch(testUrl, { method: 'GET', redirect: 'follow', cache: 'no-store' });
+      const text = await resp.text();
+
+      if (text.startsWith('<')) {
+        if (text.includes('Sie benötigen Zugriff') || text.includes('accounts.google.com')) {
+          showCloudDiag('warning', '⚠️', '<strong>Test fehlgeschlagen (403 Forbidden):</strong><br>Google blockiert den Zugriff ("Sie benötigen Zugriff").<br><strong>Lösung:</strong> In Google Apps Script ➔ Bereitstellung bearbeiten ➔ <em>"Wer hat Zugriff: Jeder"</em> einstellen!');
+          showToast('⚠️ Google 403: Berechtigung fehlt');
+          return;
+        }
+        showCloudDiag('warning', '⚠️', 'Google antwortete mit HTML statt JSON. Prüfe die Web-App Freigabe.');
+        showToast('⚠️ Ungültiges Antwortformat');
+        return;
+      }
+
+      const json = JSON.parse(text);
+      showCloudDiag('success', '✅', `<strong>Verbindung erfolgreich!</strong><br>${json.message || 'API antwortet einwandfrei.'} (${json.rows !== undefined ? json.rows + ' Zeilen in Google Sheet' : 'Bereit'})`);
+      setSyncStatus('synced');
+      showToast('✅ Verbindung erfolgreich!');
+    } catch (e) {
+      try {
+        const jsonpData = await fetchWithJsonp(testUrl, 4500);
+        showCloudDiag('success', '✅', `<strong>Verbindung erfolgreich über JSONP!</strong><br>${jsonpData.message || 'API antwortet einwandfrei.'}`);
+        setSyncStatus('synced');
+        showToast('✅ Verbindung erfolgreich!');
+      } catch (err) {
+        if (!navigator.onLine) {
+          showCloudDiag('warning', '📡', '<strong>Offline:</strong> Kein Internet vorhanden.');
+        } else {
+          showCloudDiag('warning', '⚠️', '<strong>Verbindung fehlgeschlagen:</strong> CORS-Fehler oder Google 403 Zugriffsbeschränkung.<br>Stelle sicher, dass in Apps Script <em>"Wer hat Zugriff: <strong>Jeder</strong>"</em> ausgewählt ist.');
+        }
+        showToast('⚠️ Verbindungstest fehlgeschlagen');
+      }
+    }
+  }
+
+  function handleSaveCloudUrl() {
+    if (!DOM.inputCloudApiUrl) return;
+    const url = DOM.inputCloudApiUrl.value.trim();
+    if (!url) {
+      showToast('⚠️ Bitte eine gültige Web-App URL eingeben');
+      return;
+    }
+    appData.settings.googleSheetsUrl = url;
+    saveData();
+    triggerHaptic();
+    showToast('☁️ Web-App URL gespeichert ✓');
+    testCloudConnection();
+  }
+
+  function handleResetCloudUrl() {
+    if (DOM.inputCloudApiUrl) {
+      DOM.inputCloudApiUrl.value = DEFAULT_GOOGLE_SHEETS_API_URL;
+    }
+    appData.settings.googleSheetsUrl = DEFAULT_GOOGLE_SHEETS_API_URL;
+    saveData();
+    triggerHaptic();
+    showToast('Standard Google-Sheets URL wiederhergestellt');
+  }
+
+  const APPS_SCRIPT_SOURCE_CODE = `const SHEET_NAME = "Ladedaten";
+const HEADERS = ["id", "date", "kwh", "odometer", "pricePerKwh", "totalCost", "location", "pvSurplus", "notes", "updatedAt"];
+
+function getOrCreateSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAME);
+    sheet.appendRow(HEADERS);
+    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function doGet(e) {
+  try {
+    const sheet = getOrCreateSheet();
+    const action = e && e.parameter ? e.parameter.action : null;
+    const callback = e && e.parameter ? e.parameter.callback : null;
+
+    if (action === "ping") {
+      return createOutput({ status: "success", message: "Cupra Raval Cloud API ist betriebsbereit!", rows: Math.max(0, sheet.getLastRow() - 1) }, callback);
+    }
+
+    const lastRow = sheet.getLastRow();
+    const sessions = [];
+    if (lastRow > 1) {
+      const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+      for (let i = 0; i < values.length; i++) {
+        const row = values[i];
+        if (!row[0] && !row[1]) continue;
+        sessions.push({
+          id: String(row[0] || ("session_" + i)),
+          date: row[1] instanceof Date ? row[1].toISOString() : String(row[1] || ""),
+          kwh: parseNum(row[2]),
+          odometer: parseNum(row[3]),
+          pricePerKwh: parseNum(row[4]),
+          totalCost: parseNum(row[5]),
+          location: String(row[6] || "Bayrhofs"),
+          pvSurplus: row[7] === true || String(row[7]).toLowerCase() === "true",
+          notes: String(row[8] || ""),
+          updatedAt: row[9] ? String(row[9]) : ""
+        });
+      }
+    }
+    sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return createOutput(sessions, callback);
+  } catch (err) {
+    return createOutput({ status: "error", message: err.toString() }, e && e.parameter ? e.parameter.callback : null);
+  }
+}
+
+function doPost(e) {
+  try {
+    const sheet = getOrCreateSheet();
+    let payload = {};
+    if (e && e.postData && e.postData.contents) {
+      payload = JSON.parse(e.postData.contents);
+    } else if (e && e.parameter) {
+      payload = e.parameter;
+    }
+
+    const action = payload.action || "create";
+    if (action === "bulk_sync" || action === "bulk_upload") {
+      const list = Array.isArray(payload.sessions) ? payload.sessions : [];
+      for (let i = 0; i < list.length; i++) upsertSessionRow(sheet, list[i]);
+      return createOutput({ status: "success", count: list.length });
+    }
+    if (action === "delete") {
+      if (payload.id) deleteSessionRow(sheet, payload.id);
+      return createOutput({ status: "success", id: payload.id });
+    }
+
+    const session = payload.session || payload;
+    upsertSessionRow(sheet, session);
+    return createOutput({ status: "success", id: session.id });
+  } catch (err) {
+    return createOutput({ status: "error", message: err.toString() });
+  }
+}
+
+function upsertSessionRow(sheet, session) {
+  if (!session) return;
+  const lastRow = sheet.getLastRow();
+  const id = String(session.id || ("ses_" + Date.now()));
+  const rowData = [
+    id, session.date || new Date().toISOString(),
+    parseNum(session.kwh), parseNum(session.odometer),
+    parseNum(session.pricePerKwh), parseNum(session.totalCost),
+    String(session.location || "Bayrhofs"), Boolean(session.pvSurplus),
+    String(session.notes || ""), new Date().toISOString()
+  ];
+  if (lastRow > 1) {
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === id) {
+        sheet.getRange(i + 2, 1, 1, HEADERS.length).setValues([rowData]);
+        return;
+      }
+    }
+  }
+  sheet.appendRow(rowData);
+}
+
+function deleteSessionRow(sheet, targetId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]) === String(targetId)) {
+      sheet.deleteRow(i + 2);
+      return;
+    }
+  }
+}
+
+function parseNum(val) {
+  if (typeof val === "number") return val;
+  if (!val) return 0;
+  const cleaned = String(val).replace(",", ".").replace(/[^0-9.-]/g, "");
+  return Number(cleaned) || 0;
+}
+
+function createOutput(data, callback) {
+  const jsonStr = JSON.stringify(data);
+  if (callback) {
+    return ContentService.createTextOutput(callback + "(" + jsonStr + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(jsonStr).setMimeType(ContentService.MimeType.JSON);
+}`;
+
+  function handleCopyScriptCode() {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(APPS_SCRIPT_SOURCE_CODE).then(() => {
+        triggerHaptic();
+        showToast('📋 Apps-Script-Code in Zwischenablage kopiert! ✓');
+      }).catch(() => {
+        fallbackCopyText(APPS_SCRIPT_SOURCE_CODE);
+      });
+    } else {
+      fallbackCopyText(APPS_SCRIPT_SOURCE_CODE);
+    }
+  }
+
+  function fallbackCopyText(text) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      triggerHaptic();
+      showToast('📋 Apps-Script-Code in Zwischenablage kopiert! ✓');
+    } catch (_) {
+      showToast('⚠️ Kopieren nicht unterstützt');
+    }
+    document.body.removeChild(textArea);
   }
 
   // =========================================================================
@@ -786,7 +1225,7 @@
     DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
     DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
 
-    // Google Sheets Cloud Sync Buttons
+    // Google Sheets Cloud Sync Buttons & Actions
     if (DOM.btnSyncCloud) {
       DOM.btnSyncCloud.addEventListener('click', () => {
         fetchCloudSessions(true);
@@ -799,6 +1238,37 @@
         triggerHaptic();
       });
     }
+    if (DOM.btnTestCloudConnection) {
+      DOM.btnTestCloudConnection.addEventListener('click', () => {
+        testCloudConnection();
+      });
+    }
+    if (DOM.btnBulkUploadCloud) {
+      DOM.btnBulkUploadCloud.addEventListener('click', () => {
+        bulkUploadToCloud();
+      });
+    }
+    if (DOM.btnSaveCloudUrl) {
+      DOM.btnSaveCloudUrl.addEventListener('click', () => {
+        handleSaveCloudUrl();
+      });
+    }
+    if (DOM.btnResetCloudUrl) {
+      DOM.btnResetCloudUrl.addEventListener('click', () => {
+        handleResetCloudUrl();
+      });
+    }
+    if (DOM.btnCopyScriptCode) {
+      DOM.btnCopyScriptCode.addEventListener('click', () => {
+        handleCopyScriptCode();
+      });
+    }
+
+    // Auto-Flush bei wiederkehrender Online-Verbindung
+    window.addEventListener('online', () => {
+      flushPendingSyncQueue();
+      fetchCloudSessions(false);
+    });
   }
 
   // =========================================================================
@@ -3681,6 +4151,10 @@
     DOM.cfgModelName.value = v.model;
     DOM.cfgBatteryCap.value = v.batteryKwh;
     DOM.cfgPower.value = v.powerPs;
+
+    if (DOM.inputCloudApiUrl) {
+      DOM.inputCloudApiUrl.value = getCloudApiUrl();
+    }
   }
 
   function handleSaveVehicleSettings() {

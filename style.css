@@ -2588,3 +2588,174 @@ select option {
   line-height: 1.35;
   margin: 0;
 }
+
+.cloud-diag-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: #fca5a5;
+  transition: all 0.25s ease;
+}
+
+.cloud-diag-box.success {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #86efac;
+}
+
+.cloud-diag-box.warning {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+
+.cloud-diag-box.hidden {
+  display: none;
+}
+
+.cloud-diag-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.cloud-diag-text {
+  flex: 1;
+}
+
+.cloud-sync-actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cloud-sync-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.cloud-config-accordion {
+  margin-top: 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.cloud-accordion-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cupra-bronze);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.cloud-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.cloud-accordion-summary .chevron {
+  transition: transform 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.cloud-config-accordion[open] .cloud-accordion-summary .chevron {
+  transform: rotate(90deg);
+}
+
+.cloud-accordion-body {
+  padding: 10px 12px 14px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cloud-input-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.cloud-input-row {
+  display: flex;
+  width: 100%;
+}
+
+.cloud-url-actions-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-swift-small {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--cupra-bronze);
+  color: #0b1118;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-swift-small.outline {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}
+
+.btn-swift-small:active {
+  opacity: 0.7;
+}
+
+.cloud-guide-card {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(14, 22, 32, 0.85);
+  border: 1px solid rgba(192, 128, 81, 0.2);
+}
+
+.cloud-guide-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.cloud-guide-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.cloud-guide-list li {
+  margin-bottom: 5px;
+}
+
+.cloud-guide-list .highlight-important {
+  color: #fcd34d;
+  font-weight: 700;
+}
+
+.cloud-guide-list .code-tag {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: var(--cupra-bronze);
+}
+

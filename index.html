@@ -468,9 +468,61 @@
               <p class="cloud-sync-desc">
                 Zentrales Backend: Ladedaten werden zwischen allen iPhones über Google Sheets synchronisiert und für Offline-Nutzung lokal zwischengespeichert.
               </p>
-              <button type="button" class="btn-swift-secondary full-width" id="btnManualCloudSync">
-                ⟳ Jetzt mit Google Sheets abgleichen
-              </button>
+
+              <!-- Diagnose- & Status-Meldungsbox -->
+              <div class="cloud-diag-box hidden" id="cloudDiagBox">
+                <span class="cloud-diag-icon" id="cloudDiagIcon">⚠️</span>
+                <div class="cloud-diag-text" id="cloudDiagText">Diagnosemeldung</div>
+              </div>
+
+              <!-- Aktions-Buttons -->
+              <div class="cloud-sync-actions-stack">
+                <button type="button" class="btn-swift-secondary full-width" id="btnManualCloudSync">
+                  ⟳ Jetzt mit Google Sheets abgleichen
+                </button>
+                <div class="cloud-sync-btn-group">
+                  <button type="button" class="btn-swift-secondary" id="btnTestCloudConnection" style="flex: 1;">
+                    🔍 Verbindung prüfen
+                  </button>
+                  <button type="button" class="btn-swift-secondary" id="btnBulkUploadCloud" style="flex: 1;">
+                    ☁️ Lokale Daten hochladen
+                  </button>
+                </div>
+              </div>
+
+              <!-- Accordion: Web-App URL & Google Apps Script Setup-Guide -->
+              <details class="cloud-config-accordion" id="cloudConfigAccordion">
+                <summary class="cloud-accordion-summary">
+                  <span>⚙️ Web-App URL & Google Sheets Anleitung</span>
+                  <span class="chevron">›</span>
+                </summary>
+                <div class="cloud-accordion-body">
+                  <label class="cloud-input-label" for="inputCloudApiUrl">Google Apps Script Web-App URL:</label>
+                  <div class="cloud-input-row">
+                    <input type="url" class="swift-input" id="inputCloudApiUrl" placeholder="https://script.google.com/macros/s/.../exec" spellcheck="false" autocomplete="off" />
+                  </div>
+                  <div class="cloud-url-actions-row">
+                    <button type="button" class="btn-swift-small" id="btnSaveCloudUrl">URL speichern</button>
+                    <button type="button" class="btn-swift-small outline" id="btnResetCloudUrl">Standard wiederherstellen</button>
+                  </div>
+
+                  <div class="cloud-guide-card">
+                    <div class="cloud-guide-title">📋 3-Schritte-Anleitung für Google Sheets:</div>
+                    <ol class="cloud-guide-list">
+                      <li>Öffne dein Google Sheet ➔ Klicke oben auf <strong>Erweiterungen ➔ Apps Script</strong>.</li>
+                      <li>Ersetze den Inhalt mit dem Skript aus <code class="code-tag">google_apps_script.js</code> und klicke auf Speichern 💾.</li>
+                      <li>Klicke oben rechts auf <strong>Bereitstellen ➔ Bereitstellung verwalten</strong> (oder Neue Bereitstellung):
+                        <br/>• Typ: <strong>Web-App</strong>
+                        <br/>• Ausführen als: <strong>Ich (&lt;deine-email&gt;)</strong>
+                        <br/>• <span class="highlight-important">Wer hat Zugriff: <strong>Jeder</strong> (Anyone)</span> <em>(Wichtig: NICHT "Nur ich"!)</em>
+                      </li>
+                    </ol>
+                    <button type="button" class="btn-swift-secondary full-width" id="btnCopyScriptCode" style="margin-top: 8px;">
+                      📋 Apps-Script-Code in Zwischenablage kopieren
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
 
