@@ -12,7 +12,7 @@
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
   const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
-  const CURRENT_SCHEMA = 3;
+  const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
@@ -29,7 +29,7 @@
       model: "Cupra Raval Endurance Edition Dynamic",
       batteryKwh: 52.0,
       powerPs: 211,
-      currentOdo: 12450
+      currentOdo: 0
     },
     settings: {
       currency: "€",
@@ -169,6 +169,7 @@
     DOM.cfgModelName = document.getElementById('cfgModelName');
     DOM.cfgBatteryCap = document.getElementById('cfgBatteryCap');
     DOM.cfgPower = document.getElementById('cfgPower');
+    DOM.cfgCurrentOdo = document.getElementById('cfgCurrentOdo');
     DOM.btnSaveVehicleSettings = document.getElementById('btnSaveVehicleSettings');
     DOM.btnToggleLocationEditMode = document.getElementById('btnToggleLocationEditMode');
     DOM.editModeIcon = document.getElementById('editModeIcon');
@@ -287,7 +288,13 @@
         model: (data.vehicle && data.vehicle.model) || DEFAULT_DATA.vehicle.model,
         batteryKwh: Number((data.vehicle && data.vehicle.batteryKwh) || DEFAULT_DATA.vehicle.batteryKwh),
         powerPs: Number((data.vehicle && data.vehicle.powerPs) || DEFAULT_DATA.vehicle.powerPs),
-        currentOdo: Number((data.vehicle && data.vehicle.currentOdo) || DEFAULT_DATA.vehicle.currentOdo)
+        currentOdo: (() => {
+          let o = (data.vehicle && data.vehicle.currentOdo !== undefined && data.vehicle.currentOdo !== null)
+            ? Number(data.vehicle.currentOdo)
+            : DEFAULT_DATA.vehicle.currentOdo;
+          if (o === 12450) o = 0;
+          return isNaN(o) ? 0 : Math.max(0, o);
+        })()
       },
       settings: {
         currency: "€",
@@ -1458,6 +1465,8 @@ function createOutput(data, callback) {
       else renderChargesStream();
     } else if (tabId === 'weather') {
       renderWeatherViews();
+    } else if (tabId === 'settings') {
+      renderSettingsForms();
     }
   }
 
@@ -1491,6 +1500,10 @@ function createOutput(data, callback) {
     DOM.settingsSubPanes.forEach(pane => {
       pane.classList.toggle('active', pane.id === `settab-${subId}`);
     });
+
+    if (subId === 'vehicle') {
+      renderSettingsForms();
+    }
 
     triggerHaptic();
   }
@@ -1922,7 +1935,7 @@ function createOutput(data, callback) {
       monthKm,
       yearKm,
       totalTrackedKm,
-      totalOdo: currentOdo || (sorted.length > 0 ? sorted[sorted.length - 1].odometer : 12450),
+      totalOdo: (currentOdo !== undefined && currentOdo !== null) ? currentOdo : (sorted.length > 0 ? sorted[sorted.length - 1].odometer : 0),
       avgKmPerDay,
       avgKmPerMonth,
       segments
@@ -4615,9 +4628,12 @@ function createOutput(data, callback) {
   // =========================================================================
   function renderSettingsForms() {
     const v = appData.vehicle;
-    DOM.cfgModelName.value = v.model;
-    DOM.cfgBatteryCap.value = v.batteryKwh;
-    DOM.cfgPower.value = v.powerPs;
+    if (DOM.cfgModelName) DOM.cfgModelName.value = v.model;
+    if (DOM.cfgBatteryCap) DOM.cfgBatteryCap.value = v.batteryKwh;
+    if (DOM.cfgPower) DOM.cfgPower.value = v.powerPs;
+    if (DOM.cfgCurrentOdo) {
+      DOM.cfgCurrentOdo.value = Math.round(v.currentOdo ?? 0);
+    }
 
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();
@@ -4625,12 +4641,18 @@ function createOutput(data, callback) {
   }
 
   function handleSaveVehicleSettings() {
-    appData.vehicle.model = DOM.cfgModelName.value.trim() || DEFAULT_DATA.vehicle.model;
-    appData.vehicle.batteryKwh = parseFloat(DOM.cfgBatteryCap.value) || 52.0;
-    appData.vehicle.powerPs = parseInt(DOM.cfgPower.value, 10) || 211;
+    appData.vehicle.model = (DOM.cfgModelName && DOM.cfgModelName.value.trim()) || DEFAULT_DATA.vehicle.model;
+    appData.vehicle.batteryKwh = (DOM.cfgBatteryCap && parseFloat(DOM.cfgBatteryCap.value)) || 52.0;
+    appData.vehicle.powerPs = (DOM.cfgPower && parseInt(DOM.cfgPower.value, 10)) || 211;
+    if (DOM.cfgCurrentOdo) {
+      const parsedOdo = parseInt(DOM.cfgCurrentOdo.value, 10);
+      appData.vehicle.currentOdo = isNaN(parsedOdo) ? 0 : Math.max(0, parsedOdo);
+    }
 
     saveData();
     renderDashboard();
+    renderChargesStream();
+    renderAnalyticsCharts();
     triggerHaptic();
     showToast('Fahrzeugdaten aktualisiert ✓');
   }

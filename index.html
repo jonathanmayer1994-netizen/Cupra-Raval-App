@@ -125,7 +125,7 @@
               <span class="kpi-currency">km</span>
             </div>
             <div class="kpi-cell-bottom" id="dashYearDistanceSub">
-              Gesamt: 12.450 km
+              Gesamt: 0 km
             </div>
           </div>
 
@@ -189,7 +189,7 @@
             </div>
             <div class="meta-card-item">
               <span class="capsule-label">Kilometerstand</span>
-              <span class="capsule-value bronze-val" id="cardCurrentOdo">12.450 <small>km</small></span>
+              <span class="capsule-value bronze-val" id="cardCurrentOdo">0 <small>km</small></span>
             </div>
             <div class="meta-card-item">
               <span class="capsule-label">BATTERIE</span>
@@ -417,6 +417,18 @@
                   </div>
                 </div>
 
+              </div>
+
+              <!-- Feld 4: Kilometerstand (Laufleistung) -->
+              <div class="specs-field-group">
+                <label class="specs-field-label" for="cfgCurrentOdo">
+                  <span class="specs-label-tag">KILOMETERSTAND</span>
+                </label>
+                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-field-icon">📍</span>
+                  <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
+                  <span class="specs-unit-badge">km</span>
+                </div>
               </div>
 
             </div>
@@ -684,7 +696,7 @@
               <span class="delta-tag-live" id="entryDeltaKmTag">+0 km</span>
             </label>
             <div class="input-addon-box">
-              <input type="number" id="entryOdometer" class="form-touch-input" placeholder="12450" step="1" min="0" required>
+              <input type="number" id="entryOdometer" class="form-touch-input" placeholder="0" step="1" min="0" required>
               <span class="addon-suffix">km</span>
             </div>
           </div>

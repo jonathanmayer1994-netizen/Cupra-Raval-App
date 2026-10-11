@@ -302,7 +302,20 @@ def run_tests():
 
         # Sub-Tab 1: Fahrzeug Spezifikationen
         model_input_val = page.locator("#cfgModelName").input_value()
+        odo_input_val = page.locator("#cfgCurrentOdo").input_value()
         log_test("8.1 Fahrzeug-Einstellungsformular geladen", model_input_val == expected_title, f"Modellname: '{model_input_val}'")
+        log_test("8.1b Kilometerstand im Formular editierbar", page.locator("#cfgCurrentOdo").is_visible(), f"Odo-Input Wert: '{odo_input_val}'")
+
+        # Test Kilometerstand editieren und speichern
+        page.locator("#cfgCurrentOdo").fill("150")
+        page.locator("#btnSaveVehicleSettings").click()
+        time.sleep(0.3)
+        card_odo_val = page.locator("#cardCurrentOdo").inner_text()
+        log_test("8.1c Kilometerstand gespeichert und auf Dashboard aktualisiert", "150" in card_odo_val, f"Card km: '{card_odo_val}'")
+        # Zurücksetzen auf 0
+        page.locator("#cfgCurrentOdo").fill("0")
+        page.locator("#btnSaveVehicleSettings").click()
+        time.sleep(0.3)
 
         # Sub-Tab 2: Standorte & Apple Edit Mode
         page.locator('.picker-seg[data-settab="locations"]').click()
