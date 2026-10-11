@@ -12,6 +12,7 @@
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
   const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
+  const CURRENT_SCHEMA = 3;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
