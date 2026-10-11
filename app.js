@@ -13,6 +13,7 @@
   const STORAGE_KEY = 'cupra_raval_data';
   const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
   const CURRENT_SCHEMA = 3;
+  const GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
     { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
@@ -56,6 +57,7 @@
   let weatherForecast14Days = null;
   let isWeatherExpanded = false;
   let isLocationsEditMode = false;
+  let currentSyncState = 'synced';
 
   // Chart Instanzen
   let chartMain = null;
@@ -76,11 +78,20 @@
     setupEvents();
     renderAll();
     autoRequestGpsAndFetchWeather();
+    fetchCloudSessions(false);
   });
 
   function cacheDom() {
-    // Header
+    // Header & Cloud Sync
     DOM.appHeaderTitle = document.getElementById('appHeaderTitle');
+    DOM.btnSyncCloud = document.getElementById('btnSyncCloud');
+    DOM.syncStatusIcon = document.getElementById('syncStatusIcon');
+    DOM.syncStatusText = document.getElementById('syncStatusText');
+    DOM.btnManualCloudSync = document.getElementById('btnManualCloudSync');
+    DOM.cloudSettingsIndicator = document.getElementById('cloudSettingsIndicator');
+    DOM.cloudSettingsDot = document.getElementById('cloudSettingsDot');
+    DOM.cloudSettingsLabel = document.getElementById('cloudSettingsLabel');
+    DOM.cloudLastSyncTime = document.getElementById('cloudLastSyncTime');
 
     // Navigation Dock
     DOM.dockTabBtns = document.querySelectorAll('.dock-tab-btn');
@@ -352,6 +363,198 @@
   }
 
   // =========================================================================
+  // GOOGLE SHEETS CLOUD-BACKEND SYNC
+  // =========================================================================
+  function setSyncStatus(state) {
+    currentSyncState = state;
+    if (DOM.btnSyncCloud) {
+      DOM.btnSyncCloud.classList.remove('syncing', 'saving', 'synced', 'offline');
+
+      if (state === 'syncing') {
+        DOM.btnSyncCloud.classList.add('syncing');
+        if (DOM.syncStatusIcon) DOM.syncStatusIcon.textContent = '🔄';
+        if (DOM.syncStatusText) DOM.syncStatusText.textContent = 'Lädt...';
+      } else if (state === 'saving') {
+        DOM.btnSyncCloud.classList.add('saving');
+        if (DOM.syncStatusIcon) DOM.syncStatusIcon.textContent = '⏳';
+        if (DOM.syncStatusText) DOM.syncStatusText.textContent = 'Speichert...';
+      } else if (state === 'synced') {
+        DOM.btnSyncCloud.classList.add('synced');
+        if (DOM.syncStatusIcon) DOM.syncStatusIcon.textContent = '☁️';
+        if (DOM.syncStatusText) DOM.syncStatusText.textContent = 'Sync';
+      } else {
+        DOM.btnSyncCloud.classList.add('offline');
+        if (DOM.syncStatusIcon) DOM.syncStatusIcon.textContent = '☁️';
+        if (DOM.syncStatusText) DOM.syncStatusText.textContent = 'Sync';
+      }
+    }
+
+    if (DOM.cloudSettingsDot) {
+      DOM.cloudSettingsDot.className = 'cloud-status-dot ' + (state === 'syncing' || state === 'saving' ? 'syncing' : 'online');
+    }
+
+    if (DOM.cloudSettingsLabel) {
+      if (state === 'syncing') {
+        DOM.cloudSettingsLabel.textContent = 'Synchronisiere mit Google Sheets...';
+      } else if (state === 'saving') {
+        DOM.cloudSettingsLabel.textContent = 'Speichert in Google Sheets...';
+      } else if (state === 'synced') {
+        DOM.cloudSettingsLabel.textContent = 'Google Sheets synchronisiert';
+      } else {
+        DOM.cloudSettingsLabel.textContent = 'Lokaler Cache aktiv';
+      }
+    }
+
+    if (state === 'synced' && DOM.cloudLastSyncTime) {
+      const timeStr = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      DOM.cloudLastSyncTime.textContent = `Heute ${timeStr}`;
+    }
+  }
+
+  async function fetchCloudSessions(isManual = false) {
+    setSyncStatus('syncing');
+    if (isManual) {
+      showToast('☁️ Synchronisiere mit Google Sheets...');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    try {
+      const response = await fetch(GOOGLE_SHEETS_API_URL, {
+        method: 'GET',
+        redirect: 'follow',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP Status ${response.status}`);
+      }
+
+      const text = await response.text();
+      if (!text || text.trim().startsWith('<')) {
+        throw new Error('Empfangene Antwort ist kein JSON (evtl. Zugriffs-Berechtigung)');
+      }
+
+      const parsed = JSON.parse(text);
+      let list = null;
+
+      if (Array.isArray(parsed)) {
+        list = parsed;
+      } else if (parsed && Array.isArray(parsed.data)) {
+        list = parsed.data;
+      } else if (parsed && Array.isArray(parsed.sessions)) {
+        list = parsed.sessions;
+      } else if (parsed && Array.isArray(parsed.rows)) {
+        list = parsed.rows;
+      } else if (parsed && Array.isArray(parsed.items)) {
+        list = parsed.items;
+      }
+
+      if (list && Array.isArray(list)) {
+        const mapped = list.map((s, idx) => {
+          const locName = typeof s.location === 'object' ? s.location.name : (s.location || 'Bayrhofs');
+          const matchingLoc = appData.settings.locations.find(l => l.name === locName);
+          const isPv = s.pvSurplus !== undefined ? (s.pvSurplus === true || s.pvSurplus === 'true' || s.pv === true) : (matchingLoc ? matchingLoc.powerType === 'pv' : false);
+          const price = Number(s.pricePerKwh || s.price) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+          const kwh = Number(s.kwh) || 0;
+          const cost = Number(s.totalCost || s.cost) || Number((kwh * price).toFixed(2));
+
+          return {
+            id: s.id || `session_cloud_${idx}_${Date.now()}`,
+            date: s.date ? new Date(s.date).toISOString() : new Date().toISOString(),
+            kwh,
+            odometer: Number(s.odometer) || 0,
+            pricePerKwh: price,
+            totalCost: cost,
+            location: locName,
+            pvSurplus: Boolean(isPv),
+            notes: s.notes || ""
+          };
+        });
+
+        if (mapped.length > 0) {
+          appData.sessions = mapped.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+          // Höchsten km-Stand als aktuellen Odometer synchronisieren
+          const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), appData.vehicle.currentOdo);
+          appData.vehicle.currentOdo = maxOdo;
+
+          // Direkt lokal im localStorage cachen
+          saveData();
+
+          // UI, Dashboard und Historie aktualisieren
+          renderAll();
+
+          setSyncStatus('synced');
+          if (isManual) {
+            triggerHaptic();
+            showToast(`☁️ ${mapped.length} Ladevorgänge synchronisiert ✓`);
+          }
+          return;
+        }
+      }
+
+      setSyncStatus('synced');
+      if (isManual) {
+        showToast('☁️ Bereits auf dem neuesten Stand');
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('Google Sheets Sync Status:', err.message);
+      setSyncStatus('offline');
+      if (isManual) {
+        showToast('⚠️ Cloud nicht erreichbar – Lokaler Cache aktiv');
+      }
+    }
+  }
+
+  async function postCloudSession(session, action = 'create') {
+    setSyncStatus('saving');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const payload = {
+        action,
+        timestamp: new Date().toISOString(),
+        id: session.id,
+        date: session.date,
+        kwh: session.kwh,
+        odometer: session.odometer,
+        pricePerKwh: session.pricePerKwh,
+        totalCost: session.totalCost,
+        location: session.location,
+        pvSurplus: session.pvSurplus,
+        notes: session.notes,
+        session
+      };
+
+      await fetch(GOOGLE_SHEETS_API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      // Google Apps Script empfängt die Daten im Hintergrund
+      setTimeout(() => {
+        setSyncStatus('synced');
+      }, 700);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.warn('Google Sheets POST Fehler:', err);
+      setSyncStatus('offline');
+    }
+  }
+
+  // =========================================================================
   // NAVIGATION & TAB SWITCHING
   // =========================================================================
   function switchMainTab(tabId) {
@@ -582,6 +785,20 @@
     DOM.importJsonInput.addEventListener('change', handleImportJson);
     DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
     DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
+
+    // Google Sheets Cloud Sync Buttons
+    if (DOM.btnSyncCloud) {
+      DOM.btnSyncCloud.addEventListener('click', () => {
+        fetchCloudSessions(true);
+        triggerHaptic();
+      });
+    }
+    if (DOM.btnManualCloudSync) {
+      DOM.btnManualCloudSync.addEventListener('click', () => {
+        fetchCloudSessions(true);
+        triggerHaptic();
+      });
+    }
   }
 
   // =========================================================================
@@ -1963,6 +2180,9 @@
     renderAll();
     triggerHaptic();
     showToast('Ladevorgang gelöscht');
+
+    // Cloud-Sync Löschung im Hintergrund
+    postCloudSession({ id }, 'delete');
   }
 
   // =========================================================================
@@ -2439,20 +2659,35 @@
     for (let j = 0; j < hourly.time.length; j++) {
       if (hourly.time[j].startsWith(dateStr)) {
         const timePart = hourly.time[j].slice(11, 16);
+        const hourNum = parseInt(timePart.slice(0, 2), 10);
         const sunSec = hourly.sunshine_duration ? (hourly.sunshine_duration[j] || 0) : 0;
         const sunHours = Number((sunSec / 3600).toFixed(2));
         const rain = Number((hourly.precipitation ? (hourly.precipitation[j] || 0) : 0).toFixed(1));
         const temp = Math.round(hourly.temperature_2m ? hourly.temperature_2m[j] : 15);
         const code = hourly.weather_code ? hourly.weather_code[j] : 0;
-        const hInfo = determineAccurateWeatherIcon(sunHours > 0.5 ? 6 : 1, rain, code);
+
+        let icon;
+        if (hourNum < 6 || hourNum >= 21) {
+          if (code >= 95) icon = '⛈️';
+          else if ((code >= 71 && code <= 77) || code === 85 || code === 86) icon = '🌨️';
+          else if (rain >= 0.5) icon = '🌧️';
+          else if (rain > 0) icon = '🌧️';
+          else if (code >= 45 && code <= 48) icon = FOG_ICON_HTML;
+          else if (code === 3) icon = '☁️';
+          else if (code === 2) icon = '☁️';
+          else icon = '🌙';
+        } else {
+          const hInfo = determineAccurateWeatherIcon(sunHours > 0.5 ? 7 : (sunHours > 0.1 ? 3 : 0.5), rain, code);
+          icon = hInfo.icon;
+        }
 
         hours.push({
           time: timePart,
-          hour: parseInt(timePart.slice(0, 2), 10),
+          hour: hourNum,
           sunHours,
           rain,
           temp,
-          icon: hInfo.icon
+          icon
         });
       }
     }
@@ -2467,7 +2702,13 @@
       const sunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9).toFixed(2)) : 0;
       const rain = (h >= 14 && h <= 16) ? 0.3 : 0.0;
       const temp = Math.round(8 + (isDay ? Math.sin(((h - 7) / 12) * Math.PI) * 9 : 0));
-      const hInfo = determineAccurateWeatherIcon(sunHours * 8, rain, rain > 0 ? 80 : 0);
+      let icon;
+      if (!isDay) {
+        icon = rain > 0 ? '🌧️' : '🌙';
+      } else {
+        const hInfo = determineAccurateWeatherIcon(sunHours * 8, rain, rain > 0 ? 80 : 0);
+        icon = hInfo.icon;
+      }
 
       hours.push({
         time: `${String(h).padStart(2, '0')}:00`,
@@ -2475,7 +2716,7 @@
         sunHours,
         rain,
         temp,
-        icon: hInfo.icon
+        icon
       });
     }
     return hours;
@@ -2547,68 +2788,85 @@
     return list;
   }
 
+  const FOG_ICON_HTML = `<svg class="weather-icon-svg" viewBox="0 0 36 36" width="26" height="26"><defs><linearGradient id="fogCloudGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e2e8f0"/><stop offset="100%" stop-color="#94a3b8"/></linearGradient></defs><path fill="url(#fogCloudGrad)" d="M28.5 19a5.5 5.5 0 0 0-4.66-8.42A7.5 7.5 0 0 0 10 14a6 6 0 0 0-4 5.67C6 22.6 8.4 25 11.33 25h17.17A4.5 4.5 0 0 0 33 20.5 4.5 4.5 0 0 0 28.5 19z"/><path stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round" d="M7 28h22M11 32h14"/></svg>`;
+
   /**
-   * Präzise Icon- & Zustands-Bestimmung abgestimmt auf Sonnenstunden UND Niederschlag
-   * Tage mit 6h+ Sonne zeigen NIEMALS ein reines Regen- oder Wolken-Icon!
+   * Präzise Icon- & Zustands-Bestimmung abgestimmt auf Sonnenstunden, Niederschlag und WMO-Code.
+   * Tage mit 6h+ Sonne zeigen NIEMALS ein reines Regen-, Wolken- oder Nebel-Icon!
+   * Nebel wird sauber als Vektor-Icon gerendert, niemals als weißer Kasten.
    */
   function determineAccurateWeatherIcon(sunshineHours, rainMm, code) {
-    if (code >= 95) {
-      return {
-        icon: '⛈️',
-        conditionText: sunshineHours >= 4.0 ? 'Sonne & Gewitter' : 'Gewitter'
-      };
-    }
-    if (code >= 71 && code <= 77) {
-      return { icon: '🌨️', conditionText: 'Schneefall' };
-    }
-    if (code >= 45 && code <= 48) {
-      return { icon: '🌫️', conditionText: 'Nebel' };
+    const sun = Number(sunshineHours) || 0;
+    const rain = Number(rainMm) || 0;
+    const c = (code !== undefined && code !== null) ? Number(code) : 0;
+
+    // 1. Schwere Unwetter / Gewitter (WMO 95, 96, 99)
+    if (c >= 95) {
+      if (sun >= 4.0) {
+        return { icon: '⛈️', conditionText: 'Sonne & Gewitter' };
+      }
+      return { icon: '⛈️', conditionText: c >= 96 ? 'Gewitter mit Hagel' : 'Gewitter' };
     }
 
-    // Hohe Sonnenscheindauer (>= 6 Stunden) -> IMMER primär sonnig!
-    if (sunshineHours >= 6.0) {
-      if (rainMm >= 2.0) {
-        return { icon: '🌦️', conditionText: 'Sonnig, Schauer' };
+    // 2. Schnee / Schneeschauer (WMO 71-77, 85-86, gefrierender Regen)
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86 || c === 56 || c === 57 || c === 66 || c === 67) {
+      if (c === 77) return { icon: '🌨️', conditionText: 'Schneegriesel' };
+      if (c === 85 || c === 86) return { icon: '🌨️', conditionText: 'Schneeschauer' };
+      if (c === 56 || c === 57 || c === 66 || c === 67) return { icon: '🌨️', conditionText: 'Gefrierender Regen' };
+      return { icon: '🌨️', conditionText: 'Schneefall' };
+    }
+
+    // 3. Hohe Sonnenscheindauer (>= 6.0 Stunden) -> IMMER primär sonnig!
+    // Hinweis: Morgendlicher Frühnebel (Code 45/48) verzieht sich rasch – bei 6-10h Sonne ist der Tag sonnig!
+    if (sun >= 6.0) {
+      if (rain >= 2.0) {
+        return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
       }
-      if (rainMm >= 0.5) {
-        return { icon: '🌤️', conditionText: 'Heiter, kurze Schauer' };
-      }
-      if (sunshineHours >= 8.5) {
-        return { icon: '☀️', conditionText: 'Strahlend sonnig' };
+      if (rain >= 0.5) {
+        return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
       }
       return { icon: '☀️', conditionText: 'Sonnig' };
     }
 
-    // Mäßige Sonnenscheindauer (4.0 bis 5.9 Stunden)
-    if (sunshineHours >= 4.0) {
-      if (rainMm >= 2.5) {
+    // 4. Mäßige Sonnenscheindauer (4.0 bis 5.9 Stunden)
+    if (sun >= 4.0) {
+      if (rain >= 2.5) {
         return { icon: '🌦️', conditionText: 'Regenschauer' };
       }
-      if (rainMm >= 0.6) {
+      if (rain >= 0.6) {
         return { icon: '⛅', conditionText: 'Wechselhaft' };
       }
-      return { icon: '🌤️', conditionText: 'Überwiegend heiter' };
+      return { icon: '🌤️', conditionText: 'Heiter' };
     }
 
-    // Teils Sonne (2.0 bis 3.9 Stunden)
-    if (sunshineHours >= 2.0) {
-      if (rainMm >= 1.5) {
+    // 5. Teils Sonne (2.0 bis 3.9 Stunden)
+    if (sun >= 2.0) {
+      if (rain >= 1.5) {
         return { icon: '🌧️', conditionText: 'Regen' };
       }
-      if (rainMm >= 0.4) {
-        return { icon: '🌦️', conditionText: 'Leichte Schauer' };
+      if (rain >= 0.4) {
+        return { icon: '🌦️', conditionText: 'Schauer' };
+      }
+      if (c === 45 || c === 48) {
+        return { icon: FOG_ICON_HTML, conditionText: 'Hochnebel' };
       }
       return { icon: '⛅', conditionText: 'Teils sonnig' };
     }
 
-    // Sehr wenig Sonne (< 2 Stunden)
-    if (rainMm >= 2.0) {
-      return { icon: '🌧️', conditionText: 'Starker Regen' };
+    // 6. Sehr wenig Sonne (< 2.0 Stunden)
+    if (rain >= 2.5 || c === 65 || c === 82) {
+      return { icon: '🌧️', conditionText: 'Starkregen' };
     }
-    if (rainMm >= 0.5) {
+    if (rain >= 0.5 || (c >= 61 && c <= 63) || (c >= 80 && c <= 81)) {
       return { icon: '🌧️', conditionText: 'Regnerisch' };
     }
-    if (code === 3) {
+    if (rain > 0 || (c >= 51 && c <= 55)) {
+      return { icon: '🌧️', conditionText: 'Nieselregen' };
+    }
+    if (c === 45 || c === 48) {
+      return { icon: FOG_ICON_HTML, conditionText: 'Nebel' };
+    }
+    if (c === 3) {
       return { icon: '☁️', conditionText: 'Dicht bewölkt' };
     }
     return { icon: '☁️', conditionText: 'Bedeckt' };
@@ -2672,7 +2930,6 @@
           <div class="day-stats-row">
             <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
             <span class="day-rain-stat">💧 ${item.rainMm} l/m²</span>
-            ${item.sunrise && item.sunset ? `<span class="day-sun-times" style="font-size:0.64rem; color:rgba(245,158,11,0.85); font-weight:700; margin-left:3px;">🌅 ${item.sunrise} | 🌇 ${item.sunset}</span>` : ''}
           </div>
         </div>
 
@@ -2696,7 +2953,7 @@
     if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
     const today = weatherForecast14Days[0];
 
-    DOM.dashPvIconCircle.textContent = today.icon;
+    DOM.dashPvIconCircle.innerHTML = today.icon;
     DOM.dashRecoHeadline.innerHTML = `Heute: <strong>${today.sunshineHours}h Sonne</strong> <span class="rain-sub-stat">💧 ${today.rainMm} l/m²</span>`;
 
     if (today.decision === 'office') {
@@ -3366,6 +3623,7 @@
       return;
     }
 
+    let savedSession = null;
     if (editId) {
       const idx = appData.sessions.findIndex(s => s.id === editId);
       if (idx !== -1) {
@@ -3380,9 +3638,10 @@
           pvSurplus: isPv,
           notes
         };
+        savedSession = appData.sessions[idx];
       }
     } else {
-      appData.sessions.push({
+      savedSession = {
         id: `session_${Date.now()}`,
         date: new Date(dt).toISOString(),
         kwh,
@@ -3392,7 +3651,8 @@
         location: locName,
         pvSurplus: isPv,
         notes
-      });
+      };
+      appData.sessions.push(savedSession);
     }
 
     // Kilometerstand automatisch addieren / fortschreiben
@@ -3406,6 +3666,11 @@
     renderAll();
     triggerHaptic();
     showToast(editId ? 'Ladung aktualisiert ✓' : 'Ladevorgang gespeichert ⚡️');
+
+    // Im Hintergrund an Google Sheets senden (Optimistic UI)
+    if (savedSession) {
+      postCloudSession(savedSession, editId ? 'update' : 'create');
+    }
   }
 
   // =========================================================================

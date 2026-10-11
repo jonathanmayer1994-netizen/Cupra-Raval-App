@@ -43,6 +43,12 @@
           <h1 class="app-title" id="appHeaderTitle">Cupra Raval Endurance Edition Dynamic</h1>
         </div>
       </div>
+      <div class="header-sync-wrap">
+        <button type="button" class="btn-sync-header" id="btnSyncCloud" title="Mit Google Sheets synchronisieren" aria-label="Mit Google Sheets synchronisieren">
+          <span class="sync-icon-spin" id="syncStatusIcon">☁️</span>
+          <span class="sync-label-text" id="syncStatusText">Sync</span>
+        </button>
+      </div>
     </header>
 
     <!-- Hauptbereich mit den 4 Menüpunkten -->
@@ -314,13 +320,13 @@
 
         <!-- 4-Tage Vorschau & 14-Tage Ausklappmenü -->
         <div class="forecast-section-title">
-          <span>PV-Ladefenster & Wetterprognose</span>
+          <span class="forecast-title-text">PV-Ladefenster & Wetter</span>
           <span class="forecast-days-badge" id="forecastDaysCountBadge">4 Tage Vorschau</span>
         </div>
 
         <!-- Hinweis: Tag antippen für Stundengraph -->
         <div class="forecast-click-hint">
-          <span>👆 Tippe auf einen Tag für den stündlichen Wetterverlauf & PV-Ertrag</span>
+          <span>👆 Tag antippen für stündlichen Verlauf & PV&#8209;Ertrag</span>
         </div>
 
         <!-- Die ersten 4 Tage (Standardansicht) -->
@@ -449,6 +455,25 @@
 
         <!-- Sub-Tab 3: Datensicherung & Backup -->
         <div id="settab-backup" class="settings-sub-pane">
+          <div class="swift-inset-group">
+            <div class="inset-group-header">Cloud-Synchronisation (Google Sheets)</div>
+            <div class="cloud-sync-card">
+              <div class="cloud-sync-info-row">
+                <div class="cloud-status-indicator" id="cloudSettingsIndicator">
+                  <span class="cloud-status-dot online" id="cloudSettingsDot"></span>
+                  <span class="cloud-status-label" id="cloudSettingsLabel">Google Sheets aktiv</span>
+                </div>
+                <span class="cloud-last-sync-time" id="cloudLastSyncTime">Bereit</span>
+              </div>
+              <p class="cloud-sync-desc">
+                Zentrales Backend: Ladedaten werden zwischen allen iPhones über Google Sheets synchronisiert und für Offline-Nutzung lokal zwischengespeichert.
+              </p>
+              <button type="button" class="btn-swift-secondary full-width" id="btnManualCloudSync">
+                ⟳ Jetzt mit Google Sheets abgleichen
+              </button>
+            </div>
+          </div>
+
           <div class="swift-inset-group">
             <div class="inset-group-header">Datensicherheit & Export</div>
 
