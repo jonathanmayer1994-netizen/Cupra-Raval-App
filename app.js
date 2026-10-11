@@ -12,9 +12,7 @@
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
   const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
-  const CURRENT_SCHEMA = 3;
-  const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbw27RV9W5_1iLmnEd4eBBpcxd2eGLYau0W8X6-LXFzUDZ85DyzJIKz2TlAoi0QD8YGW/exec';
-  const OLD_BLOCKED_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
+  const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
     { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
@@ -293,10 +291,7 @@
       settings: {
         currency: "€",
         locations: [],
-        googleSheetsUrl: (() => {
-          const raw = (data.settings && data.settings.googleSheetsUrl && String(data.settings.googleSheetsUrl).trim()) || DEFAULT_GOOGLE_SHEETS_API_URL;
-          return raw === OLD_BLOCKED_URL ? DEFAULT_GOOGLE_SHEETS_API_URL : raw;
-        })(),
+        googleSheetsUrl: (data.settings && data.settings.googleSheetsUrl && String(data.settings.googleSheetsUrl).trim()) || DEFAULT_GOOGLE_SHEETS_API_URL,
         weatherGps: {
           name: (data.settings && data.settings.weatherGps && data.settings.weatherGps.name) || DEFAULT_DATA.settings.weatherGps.name,
           lat: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lat) ?? DEFAULT_DATA.settings.weatherGps.lat),
