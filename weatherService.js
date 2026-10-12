@@ -21,7 +21,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const CACHE_KEY = 'cupra_raval_weather_service_cache_v5';
+  const CACHE_KEY = 'cupra_raval_weather_service_cache_v6';
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten Cache wie angefordert
 
   // Fallback-Sonnenzeiten für Kempten/Allgäu (Bayrhofs Region)
@@ -242,31 +242,93 @@
   }
 
   // =========================================================================
-  // WETTER-ICON & ZUSTAND BESTIMMEN (KOMPATIBEL MIT APP)
+  // WETTER-ICON & ZUSTAND BESTIMMEN (100% INDIVIDUELL & EMOJI-BASIERT)
   // =========================================================================
-  const FOG_ICON_HTML = `<svg class="wx-fog-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 14.5h16" stroke="rgba(226,232,240,0.85)"/><path d="M6 18h12" stroke="rgba(226,232,240,0.7)"/><path d="M17.5 11a4.5 4.5 0 0 0-8.6-1.5A3.5 3.5 0 0 0 5 13h14a3 3 0 0 0-1.5-2z" fill="rgba(148,163,184,0.3)" stroke="rgba(226,232,240,0.85)"/></svg>`;
-
+  /**
+   * Präzise Icon- & Wetterzustandsbestimmung (100% Emoji-basiert, niemals SVG-Artefakte).
+   * Garantiert individuelles, treffendes Icon für jede Wetterlage:
+   * - ☀️ Sehr sonnig / Sonnig (>= 6h Sonne, trocken)
+   * - 🌤️ Überwiegend sonnig / Heiter (4h bis < 6h Sonne)
+   * - ⛅ Teils wolkig (2h bis < 4h Sonne)
+   * - 🌥️ Überwiegend bewölkt
+   * - ☁️ Bedeckt / Dicht bewölkt (< 2h Sonne, trocken)
+   * - 🌦️ Sonne & Schauer (Sonne + Niederschlag kombiniert)
+   * - 🌧️ Regen / Regenschauer / Starkregen
+   * - ⛈️ Gewitter / Unwetter
+   * - 🌨️ Schnee / Schneeschauer
+   * - 🌫️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
+   */
   function determineAccurateWeatherIcon(sunshineHours, rainMm, weatherCode) {
-    const code = Number(weatherCode) || 0;
-    const rain = Number(rainMm) || 0;
     const sun = Number(sunshineHours) || 0;
+    const rain = Number(rainMm) || 0;
+    const c = (weatherCode !== undefined && weatherCode !== null) ? Number(weatherCode) : 0;
 
-    if (code >= 95) return { icon: '⛈️', conditionText: 'Gewitter' };
-    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: '🌨️', conditionText: 'Schneefall' };
-    if (code >= 45 && code <= 48) return { icon: FOG_ICON_HTML, conditionText: 'Nebel' };
-
-    if (rain >= 4.0) return { icon: '🌧️', conditionText: 'Kräftiger Regen' };
-    if (rain >= 0.8) return { icon: '🌧️', conditionText: 'Regenschauer' };
-    if (rain >= 0.2) {
-      if (sun >= 4.0) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
-      return { icon: '🌧️', conditionText: 'Leichter Regen' };
+    // 1. Gewitter & Unwetter (WMO 95, 96, 99)
+    if (c >= 95) {
+      if (c >= 96) return { icon: '⛈️', conditionText: 'Gewitter mit Hagel' };
+      if (sun >= 4.0) return { icon: '⛈️', conditionText: 'Sonne & Gewitter' };
+      return { icon: '⛈️', conditionText: 'Gewitter' };
     }
 
-    if (sun >= 6.5) return { icon: '☀️', conditionText: 'Sehr sonnig' };
-    if (sun >= 4.0) return { icon: '🌤️', conditionText: 'Überwiegend sonnig' };
-    if (sun >= 1.5) return { icon: '⛅️', conditionText: 'Teils wolkig' };
-    if (code === 3) return { icon: '☁️', conditionText: 'Bedeckt' };
-    return { icon: '☁️', conditionText: 'Wolkig' };
+    // 2. Schnee & Eis (WMO 71-77, 85-86, 56-57, 66-67)
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86 || c === 56 || c === 57 || c === 66 || c === 67) {
+      if (c === 85 || c === 86) return { icon: '🌨️', conditionText: 'Schneeschauer' };
+      if (c === 77) return { icon: '🌨️', conditionText: 'Schneegriesel' };
+      if (c === 56 || c === 57 || c === 66 || c === 67) return { icon: '🌨️', conditionText: 'Gefrierender Regen' };
+      if (sun >= 3.5) return { icon: '🌨️', conditionText: 'Sonne & Schnee' };
+      return { icon: '🌨️', conditionText: 'Schneefall' };
+    }
+
+    // 3. Sehr viel Sonnenschein (>= 7.5 Stunden) -> IMMER sonniges Icon!
+    // Hinweis: Morgendlicher Frühnebel (Code 45/48) löst sich bei 7-10h Sonne vormittags komplett auf.
+    if (sun >= 7.5) {
+      if (rain >= 2.0) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (rain >= 0.5) return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
+      return { icon: '☀️', conditionText: 'Sehr sonnig' };
+    }
+
+    // 4. Viel Sonnenschein (6.0 bis < 7.5 Stunden)
+    if (sun >= 6.0) {
+      if (rain >= 2.0) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (rain >= 0.5) return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
+      return { icon: '☀️', conditionText: 'Sonnig' };
+    }
+
+    // 5. Gute Sonnenscheindauer (4.0 bis < 6.0 Stunden)
+    if (sun >= 4.0) {
+      if (rain >= 2.5) return { icon: '🌧️', conditionText: 'Regenschauer' };
+      if (rain >= 0.6) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (c === 45 || c === 48) return { icon: '🌤️', conditionText: 'Morgennebel, heiter' };
+      if (c === 1 || c === 0) return { icon: '🌤️', conditionText: 'Überwiegend heiter' };
+      return { icon: '🌤️', conditionText: 'Überwiegend sonnig' };
+    }
+
+    // 6. Teils Sonne / Mäßig (2.0 bis < 4.0 Stunden)
+    if (sun >= 2.0) {
+      if (rain >= 2.5) return { icon: '🌧️', conditionText: 'Regenschauer' };
+      if (rain >= 0.6) return { icon: '🌦️', conditionText: 'Wechselhaft mit Regen' };
+      if (rain >= 0.2) return { icon: '🌦️', conditionText: 'Kurze Schauer' };
+      if (c === 45 || c === 48) return { icon: '⛅', conditionText: 'Nebelauflösung' };
+      return { icon: '⛅', conditionText: 'Teils wolkig' };
+    }
+
+    // 7. Wenig Sonne (0.8 bis < 2.0 Stunden)
+    if (sun >= 0.8) {
+      if (rain >= 3.0) return { icon: '🌧️', conditionText: 'Starkregen' };
+      if (rain >= 0.6) return { icon: '🌧️', conditionText: 'Regnerisch' };
+      if (rain >= 0.2) return { icon: '🌧️', conditionText: 'Leichter Regen' };
+      if (c === 45 || c === 48) return { icon: '🌫️', conditionText: 'Hochnebel' };
+      if (c === 3) return { icon: '☁️', conditionText: 'Dicht bewölkt' };
+      return { icon: '🌥️', conditionText: 'Überwiegend bewölkt' };
+    }
+
+    // 8. Kaum / Keine Sonne (< 0.8 Stunden)
+    if (rain >= 3.0 || c === 65 || c === 82) return { icon: '🌧️', conditionText: 'Starkregen' };
+    if (rain >= 0.8 || (c >= 61 && c <= 63) || (c >= 80 && c <= 81)) return { icon: '🌧️', conditionText: 'Regen' };
+    if (rain > 0 || (c >= 51 && c <= 55)) return { icon: '🌧️', conditionText: 'Nieselregen' };
+    if (c === 45 || c === 48) return { icon: '🌫️', conditionText: 'Nebel' };
+    if (c === 3) return { icon: '☁️', conditionText: 'Bedeckt' };
+    return { icon: '☁️', conditionText: 'Trüb & bedeckt' };
   }
 
   // =========================================================================
@@ -366,13 +428,13 @@
               else if ((hCode >= 71 && hCode <= 77) || hCode === 85 || hCode === 86) icon = '🌨️';
               else if (rain >= 0.5) icon = '🌧️';
               else if (rain > 0) icon = '🌧️';
-              else if (hCode >= 45 && hCode <= 48) icon = FOG_ICON_HTML;
+              else if (hCode >= 45 && hCode <= 48) icon = '🌫️';
               else if (hCode === 3) icon = '☁️';
               else if (hCode === 2) icon = '☁️';
               else icon = '🌙';
             } else {
               const hInfo = determineAccurateWeatherIcon(sunH > 0.5 ? 7 : (sunH > 0.1 ? 3 : 0.5), rain, hCode);
-              icon = hInfo.icon;
+              icon = (hInfo && hInfo.icon) ? hInfo.icon : '☀️';
             }
 
             // PV Leistung für diese Stunde (kW)
@@ -576,6 +638,8 @@
   function clearCache() {
     try {
       localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem('cupra_raval_weather_service_cache_v5');
+      localStorage.removeItem('cupra_raval_weather_cache');
     } catch (_) {}
   }
 

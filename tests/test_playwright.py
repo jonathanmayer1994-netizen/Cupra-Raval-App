@@ -337,8 +337,10 @@ def run_tests():
 
             # 7.1c: 5-Minuten Caching in localStorage
             cache_check = page.evaluate("""() => {
-                const ttl = window.WeatherService?.CACHE_TTL_MS;
-                const raw = localStorage.getItem('cupra_raval_weather_service_cache_v5');
+                const s = window.WeatherService;
+                const ttl = s?.CACHE_TTL_MS;
+                const cacheKey = s?.CACHE_KEY || 'cupra_raval_weather_service_cache_v6';
+                const raw = localStorage.getItem(cacheKey);
                 const parsed = raw ? JSON.parse(raw) : null;
                 return {
                     ttlMatches5Min: ttl === 300000,
@@ -362,6 +364,20 @@ def run_tests():
 
             solar_stat_count = page.locator(".day-forecast-card .day-solar-stat").count()
             log_test("7.2b Solar-PV Ertragskennzeichnung auf Tageskarten", solar_stat_count > 0, f"{solar_stat_count} Tage mit PV-Ertragsanzeige")
+
+            # 7.2c: 100% aller Karten haben ein individuelles, nicht-leeres Emoji-Icon
+            icons_check = page.evaluate("""() => {
+                const icons = Array.from(document.querySelectorAll('.day-forecast-card .day-weather-icon')).map(el => el.textContent.trim());
+                const allSet = icons.length > 0 && icons.every(ic => ic.length > 0 && !ic.includes('<svg'));
+                const uniqueIcons = new Set(icons);
+                return {
+                    total: icons.length,
+                    allSet,
+                    uniqueCount: uniqueIcons.size,
+                    iconsSample: icons.slice(0, 5)
+                };
+            }""")
+            log_test("7.2c 100% aller Wetterkarten besitzen ein individuelles, valides Icon", icons_check.get("allSet") is True and icons_check.get("uniqueCount") >= 2, f"{icons_check.get('total')} Tage mit gesetzten Icons, {icons_check.get('uniqueCount')} unterschiedliche Icons: {icons_check.get('iconsSample')}")
 
             # Open 24h Hourly Forecast Modal
             page.locator(".day-forecast-card").first.click()

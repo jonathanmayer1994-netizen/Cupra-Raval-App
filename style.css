@@ -1432,14 +1432,14 @@ body {
 .day-stats-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   white-space: nowrap;
   line-height: 1.2;
 }
 
 .day-sun-stat {
-  font-size: 0.67rem;
+  font-size: 0.66rem;
   color: var(--accent-solar);
   font-weight: 700;
   white-space: nowrap;
@@ -1447,9 +1447,17 @@ body {
 }
 
 .day-rain-stat {
-  font-size: 0.64rem;
+  font-size: 0.63rem;
   color: var(--accent-cyan);
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.day-solar-stat {
+  font-size: 0.63rem;
+  color: #fbbf24;
+  font-weight: 700;
   white-space: nowrap;
   flex-shrink: 0;
 }

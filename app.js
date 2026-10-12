@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v5';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v6';
   const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
@@ -429,6 +429,8 @@
 
   function initWeatherCache() {
     try {
+      localStorage.removeItem('cupra_weather_cache_v5');
+      localStorage.removeItem('cupra_raval_weather_service_cache_v5');
       const cached = localStorage.getItem(WEATHER_CACHE_KEY);
       if (cached) weatherForecast14Days = JSON.parse(cached);
     } catch (_) {}
@@ -3972,13 +3974,13 @@ function createOutput(data, callback) {
           else if ((code >= 71 && code <= 77) || code === 85 || code === 86) icon = '🌨️';
           else if (rain >= 0.5) icon = '🌧️';
           else if (rain > 0) icon = '🌧️';
-          else if (code >= 45 && code <= 48) icon = FOG_ICON_HTML;
+          else if (code >= 45 && code <= 48) icon = '🌫️';
           else if (code === 3) icon = '☁️';
           else if (code === 2) icon = '☁️';
           else icon = '🌙';
         } else {
           const hInfo = determineAccurateWeatherIcon(sunHours > 0.5 ? 7 : (sunHours > 0.1 ? 3 : 0.5), rain, code);
-          icon = hInfo.icon;
+          icon = (hInfo && hInfo.icon) ? hInfo.icon : '☀️';
         }
 
         hours.push({
@@ -4088,88 +4090,91 @@ function createOutput(data, callback) {
     return list;
   }
 
-  const FOG_ICON_HTML = `<svg class="weather-icon-svg" viewBox="0 0 36 36" width="26" height="26"><defs><linearGradient id="fogCloudGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e2e8f0"/><stop offset="100%" stop-color="#94a3b8"/></linearGradient></defs><path fill="url(#fogCloudGrad)" d="M28.5 19a5.5 5.5 0 0 0-4.66-8.42A7.5 7.5 0 0 0 10 14a6 6 0 0 0-4 5.67C6 22.6 8.4 25 11.33 25h17.17A4.5 4.5 0 0 0 33 20.5 4.5 4.5 0 0 0 28.5 19z"/><path stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round" d="M7 28h22M11 32h14"/></svg>`;
-
   /**
-   * Präzise Icon- & Zustands-Bestimmung abgestimmt auf Sonnenstunden, Niederschlag und WMO-Code.
-   * Tage mit 6h+ Sonne zeigen NIEMALS ein reines Regen-, Wolken- oder Nebel-Icon!
-   * Nebel wird sauber als Vektor-Icon gerendert, niemals als weißer Kasten.
+   * Präzise Icon- & Wetterzustandsbestimmung (100% Emoji-basiert, niemals SVG-Artefakte).
+   * Garantiert individuelles, treffendes Icon für jede Wetterlage:
+   * - ☀️ Sehr sonnig / Sonnig (>= 6h Sonne, trocken)
+   * - 🌤️ Überwiegend sonnig / Heiter (4h bis < 6h Sonne)
+   * - ⛅ Teils wolkig (2h bis < 4h Sonne)
+   * - 🌥️ Überwiegend bewölkt
+   * - ☁️ Bedeckt / Dicht bewölkt (< 2h Sonne, trocken)
+   * - 🌦️ Sonne & Schauer (Sonne + Niederschlag kombiniert)
+   * - 🌧️ Regen / Regenschauer / Starkregen
+   * - ⛈️ Gewitter / Unwetter
+   * - 🌨️ Schnee / Schneeschauer
+   * - 🌫️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
    */
   function determineAccurateWeatherIcon(sunshineHours, rainMm, code) {
     const sun = Number(sunshineHours) || 0;
     const rain = Number(rainMm) || 0;
     const c = (code !== undefined && code !== null) ? Number(code) : 0;
 
-    // 1. Schwere Unwetter / Gewitter (WMO 95, 96, 99)
+    // 1. Gewitter & Unwetter (WMO 95, 96, 99)
     if (c >= 95) {
-      if (sun >= 4.0) {
-        return { icon: '⛈️', conditionText: 'Sonne & Gewitter' };
-      }
-      return { icon: '⛈️', conditionText: c >= 96 ? 'Gewitter mit Hagel' : 'Gewitter' };
+      if (c >= 96) return { icon: '⛈️', conditionText: 'Gewitter mit Hagel' };
+      if (sun >= 4.0) return { icon: '⛈️', conditionText: 'Sonne & Gewitter' };
+      return { icon: '⛈️', conditionText: 'Gewitter' };
     }
 
-    // 2. Schnee / Schneeschauer (WMO 71-77, 85-86, gefrierender Regen)
+    // 2. Schnee & Eis (WMO 71-77, 85-86, 56-57, 66-67)
     if ((c >= 71 && c <= 77) || c === 85 || c === 86 || c === 56 || c === 57 || c === 66 || c === 67) {
-      if (c === 77) return { icon: '🌨️', conditionText: 'Schneegriesel' };
       if (c === 85 || c === 86) return { icon: '🌨️', conditionText: 'Schneeschauer' };
+      if (c === 77) return { icon: '🌨️', conditionText: 'Schneegriesel' };
       if (c === 56 || c === 57 || c === 66 || c === 67) return { icon: '🌨️', conditionText: 'Gefrierender Regen' };
+      if (sun >= 3.5) return { icon: '🌨️', conditionText: 'Sonne & Schnee' };
       return { icon: '🌨️', conditionText: 'Schneefall' };
     }
 
-    // 3. Hohe Sonnenscheindauer (>= 6.0 Stunden) -> IMMER primär sonnig!
-    // Hinweis: Morgendlicher Frühnebel (Code 45/48) verzieht sich rasch – bei 6-10h Sonne ist der Tag sonnig!
+    // 3. Sehr viel Sonnenschein (>= 7.5 Stunden) -> IMMER sonniges Icon!
+    // Hinweis: Morgendlicher Frühnebel (Code 45/48) löst sich bei 7-10h Sonne vormittags komplett auf.
+    if (sun >= 7.5) {
+      if (rain >= 2.0) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (rain >= 0.5) return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
+      return { icon: '☀️', conditionText: 'Sehr sonnig' };
+    }
+
+    // 4. Viel Sonnenschein (6.0 bis < 7.5 Stunden)
     if (sun >= 6.0) {
-      if (rain >= 2.0) {
-        return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
-      }
-      if (rain >= 0.5) {
-        return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
-      }
+      if (rain >= 2.0) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (rain >= 0.5) return { icon: '🌤️', conditionText: 'Heiter, Schauer' };
       return { icon: '☀️', conditionText: 'Sonnig' };
     }
 
-    // 4. Mäßige Sonnenscheindauer (4.0 bis 5.9 Stunden)
+    // 5. Gute Sonnenscheindauer (4.0 bis < 6.0 Stunden)
     if (sun >= 4.0) {
-      if (rain >= 2.5) {
-        return { icon: '🌦️', conditionText: 'Regenschauer' };
-      }
-      if (rain >= 0.6) {
-        return { icon: '⛅', conditionText: 'Wechselhaft' };
-      }
-      return { icon: '🌤️', conditionText: 'Heiter' };
+      if (rain >= 2.5) return { icon: '🌧️', conditionText: 'Regenschauer' };
+      if (rain >= 0.6) return { icon: '🌦️', conditionText: 'Sonne & Schauer' };
+      if (c === 45 || c === 48) return { icon: '🌤️', conditionText: 'Morgennebel, heiter' };
+      if (c === 1 || c === 0) return { icon: '🌤️', conditionText: 'Überwiegend heiter' };
+      return { icon: '🌤️', conditionText: 'Überwiegend sonnig' };
     }
 
-    // 5. Teils Sonne (2.0 bis 3.9 Stunden)
+    // 6. Teils Sonne / Mäßig (2.0 bis < 4.0 Stunden)
     if (sun >= 2.0) {
-      if (rain >= 1.5) {
-        return { icon: '🌧️', conditionText: 'Regen' };
-      }
-      if (rain >= 0.4) {
-        return { icon: '🌦️', conditionText: 'Schauer' };
-      }
-      if (c === 45 || c === 48) {
-        return { icon: FOG_ICON_HTML, conditionText: 'Hochnebel' };
-      }
-      return { icon: '⛅', conditionText: 'Teils sonnig' };
+      if (rain >= 2.5) return { icon: '🌧️', conditionText: 'Regenschauer' };
+      if (rain >= 0.6) return { icon: '🌦️', conditionText: 'Wechselhaft mit Regen' };
+      if (rain >= 0.2) return { icon: '🌦️', conditionText: 'Kurze Schauer' };
+      if (c === 45 || c === 48) return { icon: '⛅', conditionText: 'Nebelauflösung' };
+      return { icon: '⛅', conditionText: 'Teils wolkig' };
     }
 
-    // 6. Sehr wenig Sonne (< 2.0 Stunden)
-    if (rain >= 2.5 || c === 65 || c === 82) {
-      return { icon: '🌧️', conditionText: 'Starkregen' };
+    // 7. Wenig Sonne (0.8 bis < 2.0 Stunden)
+    if (sun >= 0.8) {
+      if (rain >= 3.0) return { icon: '🌧️', conditionText: 'Starkregen' };
+      if (rain >= 0.6) return { icon: '🌧️', conditionText: 'Regnerisch' };
+      if (rain >= 0.2) return { icon: '🌧️', conditionText: 'Leichter Regen' };
+      if (c === 45 || c === 48) return { icon: '🌫️', conditionText: 'Hochnebel' };
+      if (c === 3) return { icon: '☁️', conditionText: 'Dicht bewölkt' };
+      return { icon: '🌥️', conditionText: 'Überwiegend bewölkt' };
     }
-    if (rain >= 0.5 || (c >= 61 && c <= 63) || (c >= 80 && c <= 81)) {
-      return { icon: '🌧️', conditionText: 'Regnerisch' };
-    }
-    if (rain > 0 || (c >= 51 && c <= 55)) {
-      return { icon: '🌧️', conditionText: 'Nieselregen' };
-    }
-    if (c === 45 || c === 48) {
-      return { icon: FOG_ICON_HTML, conditionText: 'Nebel' };
-    }
-    if (c === 3) {
-      return { icon: '☁️', conditionText: 'Dicht bewölkt' };
-    }
-    return { icon: '☁️', conditionText: 'Bedeckt' };
+
+    // 8. Kaum / Keine Sonne (< 0.8 Stunden)
+    if (rain >= 3.0 || c === 65 || c === 82) return { icon: '🌧️', conditionText: 'Starkregen' };
+    if (rain >= 0.8 || (c >= 61 && c <= 63) || (c >= 80 && c <= 81)) return { icon: '🌧️', conditionText: 'Regen' };
+    if (rain > 0 || (c >= 51 && c <= 55)) return { icon: '🌧️', conditionText: 'Nieselregen' };
+    if (c === 45 || c === 48) return { icon: '🌫️', conditionText: 'Nebel' };
+    if (c === 3) return { icon: '☁️', conditionText: 'Bedeckt' };
+    return { icon: '☁️', conditionText: 'Trüb & bedeckt' };
   }
 
   function renderWeatherViews() {
@@ -4211,6 +4216,13 @@ function createOutput(data, callback) {
     const highlightClass = isOffice ? 'highlight-office' : (isWeekendCharge ? 'highlight-weekend-charge' : '');
     const badgeClass = isOffice ? 'reco-tag-office' : (isWeekendCharge ? 'reco-tag-weekend-charge' : 'reco-tag-home');
 
+    // 100% Garantie: Immer valides, individuelles Icon & Zustand
+    const icon = item.icon || '☀️';
+    const conditionText = item.conditionText || 'Sonnig';
+    const rainProbText = (item.rainMm > 0 || (item.rainProbMax && item.rainProbMax >= 25))
+      ? ` (${item.rainProbMax}%)`
+      : '';
+
     return `
       <div class="swift-glass-card day-forecast-card ${highlightClass}" data-dayindex="${item.dateIndex}">
         <div class="day-left-meta">
@@ -4219,18 +4231,18 @@ function createOutput(data, callback) {
         </div>
 
         <div class="day-weather-icon-box">
-          <span class="day-weather-icon">${item.icon}</span>
+          <span class="day-weather-icon">${icon}</span>
         </div>
 
         <div class="day-mid-weather">
           <div class="day-temp-row">
             <span class="day-temps">${item.tMax}° / ${item.tMin}°</span>
-            <span class="day-condition-label">• ${item.conditionText || 'Sonnig'}</span>
+            <span class="day-condition-label">• ${conditionText}</span>
           </div>
           <div class="day-stats-row">
             <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
-            <span class="day-rain-stat">💧 ${item.rainMm} l/m²${item.rainProbMax ? ` (${item.rainProbMax}%)` : ''}</span>
-            ${item.solarYield && item.solarYield.estimatedPvKwh > 0 ? `<span class="day-solar-stat" style="color:#fbbf24; font-size:0.64rem; font-weight:700;">⚡️ ${item.solarYield.estimatedPvKwh} kWh</span>` : ''}
+            <span class="day-rain-stat">💧 ${item.rainMm} l/m²${rainProbText}</span>
+            ${item.solarYield && item.solarYield.estimatedPvKwh > 0 ? `<span class="day-solar-stat" style="color:#fbbf24; font-size:0.64rem; font-weight:700; white-space:nowrap; flex-shrink:0;">⚡️ ${item.solarYield.estimatedPvKwh} kWh</span>` : ''}
           </div>
         </div>
 
