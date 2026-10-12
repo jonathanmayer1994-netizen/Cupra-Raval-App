@@ -3314,6 +3314,8 @@ function createOutput(data, callback) {
   function renderLocationFilterRail() {
     if (!DOM.chargingFilterRail) return;
 
+    if (activeChargingFilter === 'pv') activeChargingFilter = 'all';
+
     const locs = appData.settings.locations || [];
     let html = `<button class="chip-filter ${activeChargingFilter === 'all' ? 'active' : ''}" data-filter="all">Alle</button>`;
 
@@ -3322,7 +3324,6 @@ function createOutput(data, callback) {
       html += `<button class="chip-filter ${isAct ? 'active' : ''}" data-filter="${escapeHtml(loc.name)}">${loc.icon || '📍'} ${escapeHtml(loc.name)}</button>`;
     });
 
-    html += `<button class="chip-filter chip-pv ${activeChargingFilter === 'pv' ? 'active' : ''}" data-filter="pv">☀️ Nur PV</button>`;
     DOM.chargingFilterRail.innerHTML = html;
 
     DOM.chargingFilterRail.querySelectorAll('.chip-filter').forEach(chip => {
@@ -3340,8 +3341,7 @@ function createOutput(data, callback) {
 
     let list = [...appData.sessions];
     if (activeChargingFilter !== 'all') {
-      if (activeChargingFilter === 'pv') list = list.filter(s => s.pvSurplus);
-      else list = list.filter(s => s.location === activeChargingFilter);
+      list = list.filter(s => s.location === activeChargingFilter);
     }
 
     if (list.length === 0) {

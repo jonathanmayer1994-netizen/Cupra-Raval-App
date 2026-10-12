@@ -260,11 +260,17 @@ def run_tests():
             stream_cards_count = page.locator(".session-swift-card").count()
             log_test("5.1 Ladehistorie Stream Items gerendert", stream_cards_count > 0, f"{stream_cards_count} Ladekarten in der Historie")
 
-            # Test Filter Chips
-            page.locator('.chip-filter[data-filter="pv"]').click()
-            time.sleep(0.3)
-            pv_filtered = page.locator('.chip-filter[data-filter="pv"]').evaluate("el => el.classList.contains('active')")
-            log_test("5.2 Filterchip 'Nur PV' aktivierbar", pv_filtered, "Aktive Filterklasse gesetzt")
+            # Test Filter Chips (Nur Ladeorte & Alle, kein 'Nur PV')
+            pv_chip_count = page.locator('.chip-filter[data-filter="pv"]').count()
+            log_test("5.2 Filterchip 'Nur PV' entfernt", pv_chip_count == 0, f"PV-Chip Count: {pv_chip_count}")
+
+            bayrhofs_chip = page.locator('.chip-filter[data-filter="Bayrhofs"]')
+            bayrhofs_chip_exists = bayrhofs_chip.count() > 0
+            if bayrhofs_chip_exists:
+                bayrhofs_chip.click()
+                time.sleep(0.3)
+                loc_filtered = bayrhofs_chip.evaluate("el => el.classList.contains('active')")
+                log_test("5.2b Ladeort-Filter aktivierbar (Bayrhofs)", loc_filtered, "Aktive Filterklasse auf Ladeort gesetzt")
 
             page.locator('.chip-filter[data-filter="all"]').click()
             time.sleep(0.3)
