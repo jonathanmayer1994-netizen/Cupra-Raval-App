@@ -601,11 +601,16 @@
       function cleanup() {
         clearTimeout(timer);
         if (script.parentNode) script.parentNode.removeChild(script);
-        delete window[callbackName];
+        // Schutz vor unhandled ReferenceError bei verspäteter Google-Antwort:
+        window[callbackName] = () => {
+          try { delete window[callbackName]; } catch (_) {}
+        };
       }
 
       window[callbackName] = (data) => {
-        cleanup();
+        clearTimeout(timer);
+        if (script.parentNode) script.parentNode.removeChild(script);
+        try { delete window[callbackName]; } catch (_) {}
         resolve(data);
       };
 
@@ -3994,8 +3999,11 @@ function createOutput(data, callback) {
     const day = weatherForecast14Days && weatherForecast14Days[dayIndex];
     if (!day) return;
 
+    // Nur der relevante Tageszeitraum: 06:00 bis 22:00 Uhr (vom Nutzer gewünscht)
+    const displayHours = (day.hourlyData || []).filter(h => h.hour >= 6 && h.hour <= 22);
+
     DOM.hourlyModalTitle.textContent = `${day.dayName}, ${day.dateDisplay}`;
-    DOM.hourlyModalSub.textContent = `${day.conditionText || 'Prognose'} • 24-Stunden Verlauf für Bayrhofs`;
+    DOM.hourlyModalSub.textContent = `${day.conditionText || 'Prognose'} • Verlauf von 06:00 bis 22:00 Uhr`;
 
     DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
     DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
@@ -4034,14 +4042,14 @@ function createOutput(data, callback) {
     // Modal FIRST öffnen damit Canvas echte Pixelmaße hat
     DOM.modalHourlyWeather.classList.add('open');
 
-    // Stündlichen Chart.js Graph zeichnen mit dynamischer Sonnenaufgang/untergang Markerlinie
-    renderHourlyWeatherChart(day.hourlyData, day.sunrise, day.sunset);
+    // Stündlichen Chart.js Graph zeichnen mit dynamischer Sonnenaufgang/untergang Markerlinie (6:00 - 22:00 Uhr)
+    renderHourlyWeatherChart(displayHours, day.sunrise, day.sunset);
 
-    // Stündliche Kapseln rendern
+    // Stündliche Kapseln rendern (6:00 - 22:00 Uhr)
     const sunriseHour = day.sunrise ? parseInt(day.sunrise.split(':')[0], 10) : -1;
     const sunsetHour = day.sunset ? parseInt(day.sunset.split(':')[0], 10) : -1;
 
-    DOM.hourlyHoursScroll.innerHTML = day.hourlyData.map(h => {
+    DOM.hourlyHoursScroll.innerHTML = displayHours.map(h => {
       const isRise = (h.hour === sunriseHour);
       const isSet = (h.hour === sunsetHour);
       let sunEventBadge = '';
@@ -4098,15 +4106,22 @@ function createOutput(data, callback) {
         if (!chartArea || !x) return;
         const { top, bottom, left, right } = chartArea;
 
+        const startHour = (hours.length > 0 && hours[0].hour !== undefined) ? hours[0].hour : 6;
+        const endHour = (hours.length > 0 && hours[hours.length - 1].hour !== undefined) ? hours[hours.length - 1].hour : 22;
+
         const parseTimeToX = (timeStr) => {
           if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return null;
           const parts = timeStr.split(':');
           const h = parseInt(parts[0], 10);
           const m = parseInt(parts[1], 10);
           if (isNaN(h) || isNaN(m)) return null;
-          const frac = Math.max(0, Math.min(23, h + (m / 60)));
+
+          const fracHours = h + (m / 60);
+          if (fracHours < startHour || fracHours > endHour) return null;
+
+          const frac = fracHours - startHour;
           const fIdx = Math.floor(frac);
-          const cIdx = Math.min(23, Math.ceil(frac));
+          const cIdx = Math.min(hours.length - 1, Math.ceil(frac));
           const pFloor = x.getPixelForValue(fIdx);
           const pCeil = x.getPixelForValue(cIdx);
           return pFloor + (pCeil - pFloor) * (frac - fIdx);
