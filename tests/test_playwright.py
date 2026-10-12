@@ -518,6 +518,153 @@ def run_tests():
                 f"Monats-kWh: {final_month_kwh} (Vorher: {prev_kwh})"
             )
 
+            # =====================================================================
+            # SUITE 11: PULL-DOWN-TO-REFRESH (LADEN & WETTER)
+            # =====================================================================
+            print("\n--- SUITE 11: iOS Pull-down-to-refresh (Laden & Wetter) ---")
+
+            # 11.1: Tab 2 (Laden) öffnen & Ruhezustand prüfen
+            page.locator('.dock-tab-btn[data-tab="charging"]').click()
+            time.sleep(0.4)
+            ptr_charging_present = page.locator("#ptrCharging").count() == 1
+            ptr_charging_hidden = page.evaluate("""() => {
+                const el = document.getElementById('ptrCharging');
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                return style.display === 'none' || parseFloat(style.height) === 0;
+            }""")
+            log_test(
+                "11.1 Tab 2 (Laden): Pull-to-Refresh Banner vorhanden & im Ruhezustand eingeklappt",
+                ptr_charging_present and ptr_charging_hidden,
+                f"Present: {ptr_charging_present}, Eingeklappt: {ptr_charging_hidden}"
+            )
+
+            # 11.2: Touch-Geste nach unten simulieren auf Tab 2
+            tab_charging_box = page.locator("#tab-charging").bounding_box()
+            touch_x = tab_charging_box["x"] + (tab_charging_box["width"] / 2.0)
+            touch_start_y = 100.0
+
+            # Touchstart -> Touchmove (Herunterziehen um 95px für Schwellenwert-Überschreitung)
+            page.evaluate("""({x, startY}) => {
+                const target = document.getElementById('tab-charging');
+                const tStart = new Touch({ identifier: 1, target: target, clientX: x, clientY: startY });
+                window.dispatchEvent(new TouchEvent('touchstart', { touches: [tStart], changedTouches: [tStart], bubbles: true }));
+                const tMove = new Touch({ identifier: 1, target: target, clientX: x, clientY: startY + 95 });
+                window.dispatchEvent(new TouchEvent('touchmove', { touches: [tMove], changedTouches: [tMove], bubbles: true, cancelable: true }));
+            }""", {"x": touch_x, "startY": touch_start_y})
+            time.sleep(0.2)
+
+            pulling_state = page.evaluate("""() => {
+                const el = document.getElementById('ptrCharging');
+                return {
+                    visible: el.classList.contains('ptr-visible'),
+                    threshold: el.classList.contains('ptr-threshold'),
+                    height: parseFloat(el.style.height || 0)
+                };
+            }""")
+            log_test(
+                "11.2 Tab 2 (Laden): Touch-Pull nach unten aktiviert Rubber-Banding & Threshold",
+                pulling_state["visible"] and pulling_state["threshold"] and pulling_state["height"] >= 50,
+                f"Visible: {pulling_state['visible']}, Threshold: {pulling_state['threshold']}, Höhe: {pulling_state['height']:.1f}px"
+            )
+
+            # Finger wieder loslassen -> Löst Refresh aus
+            page.evaluate("""() => {
+                window.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [], bubbles: true }));
+            }""")
+            time.sleep(0.3)
+            refresh_started = page.evaluate("""() => {
+                const el = document.getElementById('ptrCharging');
+                return el.classList.contains('ptr-refreshing') || el.classList.contains('ptr-success');
+            }""")
+
+            # Warten bis Google Sheets Sync vollständig beendet und eingeklappt ist (bis zu 7s für echten Cloud-Call)
+            reset_state = False
+            for _ in range(35):
+                time.sleep(0.2)
+                reset_state = page.evaluate("""() => {
+                    const el = document.getElementById('ptrCharging');
+                    return !el.classList.contains('ptr-visible') &&
+                           !el.classList.contains('ptr-refreshing') &&
+                           !el.classList.contains('ptr-success') &&
+                           !el.classList.contains('ptr-collapsing');
+                }""")
+                if reset_state:
+                    break
+
+            log_test(
+                "11.3 Tab 2 (Laden): Pull-to-Refresh synchronisiert & federt sauber zurück",
+                refresh_started and reset_state,
+                f"Refresh gestartet: {refresh_started}, Zurückgefedert: {reset_state}"
+            )
+
+            # 11.4: Tab 3 (Wetter) öffnen & Banner prüfen
+            page.locator('.dock-tab-btn[data-tab="weather"]').click()
+            time.sleep(0.5)
+            ptr_weather_present = page.locator("#ptrWeather").count() == 1
+            log_test(
+                "11.4 Tab 3 (Wetter): Pull-to-Refresh Banner vorhanden",
+                ptr_weather_present,
+                f"Present: {ptr_weather_present}"
+            )
+
+            # 11.5: Touch-Pull auf Tab 3 (Wetter)
+            page.evaluate("() => window.scrollTo(0, 0)")
+            tab_weather_box = page.locator("#tab-weather").bounding_box()
+            w_touch_x = tab_weather_box["x"] + (tab_weather_box["width"] / 2.0)
+            w_touch_start_y = 100.0
+
+            page.evaluate("""({x, startY}) => {
+                const target = document.getElementById('tab-weather');
+                const tStart = new Touch({ identifier: 2, target: target, clientX: x, clientY: startY });
+                window.dispatchEvent(new TouchEvent('touchstart', { touches: [tStart], changedTouches: [tStart], bubbles: true }));
+                const tMove = new Touch({ identifier: 2, target: target, clientX: x, clientY: startY + 95 });
+                window.dispatchEvent(new TouchEvent('touchmove', { touches: [tMove], changedTouches: [tMove], bubbles: true, cancelable: true }));
+            }""", {"x": w_touch_x, "startY": w_touch_start_y})
+            time.sleep(0.2)
+
+            w_pulling_state = page.evaluate("""() => {
+                const el = document.getElementById('ptrWeather');
+                return {
+                    visible: el.classList.contains('ptr-visible'),
+                    threshold: el.classList.contains('ptr-threshold')
+                };
+            }""")
+            # Finger loslassen -> startet Wetter-Refresh
+            page.evaluate("""() => {
+                window.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [], bubbles: true }));
+            }""")
+            time.sleep(0.3)
+            weather_refreshing_active = page.evaluate("""() => {
+                const el = document.getElementById('ptrWeather');
+                return el.classList.contains('ptr-refreshing') || el.classList.contains('ptr-success');
+            }""")
+            log_test(
+                "11.5 Tab 3 (Wetter): Touch-Pull aktiviert Schwellenwert & startet Wetter-Refresh",
+                w_pulling_state["visible"] and w_pulling_state["threshold"] and weather_refreshing_active,
+                f"Threshold: {w_pulling_state['threshold']}, Refreshing: {weather_refreshing_active}"
+            )
+
+            # 11.6: Warten bis Wetter-Refresh fertiggestellt ist und Banner einklappt
+            weather_done_state = False
+            for _ in range(30):
+                time.sleep(0.2)
+                weather_done_state = page.evaluate("""() => {
+                    const el = document.getElementById('ptrWeather');
+                    return !el.classList.contains('ptr-visible') &&
+                           !el.classList.contains('ptr-refreshing') &&
+                           !el.classList.contains('ptr-success') &&
+                           !el.classList.contains('ptr-collapsing');
+                }""")
+                if weather_done_state:
+                    break
+
+            log_test(
+                "11.6 Tab 3 (Wetter): Wetterdaten aktualisiert & Banner wieder unsichtbar",
+                weather_done_state,
+                f"Abgeschlossen und eingeklappt: {weather_done_state}"
+            )
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:

@@ -76,6 +76,7 @@ body {
   display: flex;
   justify-content: center;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
 }
 
 .ambient-glow {
@@ -225,6 +226,150 @@ body {
 @keyframes tabFadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   PULL-DOWN-TO-REFRESH (NATIVE IOS LIQUID GLASS DESIGN)
+   ========================================================================== */
+.pull-refresh-banner {
+  display: none;
+  height: 0px;
+  overflow: hidden;
+  opacity: 0;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease;
+  will-change: height, opacity;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.pull-refresh-banner.ptr-visible {
+  display: flex;
+}
+
+.pull-refresh-banner.ptr-pulling {
+  transition: none; /* Sofortige Reaktion auf Fingergeste ohne Verzögerung */
+}
+
+.pull-refresh-banner.ptr-refreshing {
+  height: 52px;
+  opacity: 1;
+  transition: height 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
+}
+
+.pull-refresh-banner.ptr-success {
+  height: 52px;
+  opacity: 1;
+}
+
+.pull-refresh-banner.ptr-collapsing {
+  height: 0px !important;
+  opacity: 0 !important;
+  transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+}
+
+.ptr-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 18px;
+  background: rgba(14, 20, 28, 0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(192, 128, 81, 0.38);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(192, 128, 81, 0.2);
+  border-radius: var(--radius-full);
+  transform: translateY(0);
+}
+
+.ptr-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.ptr-icon-box {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ptr-icon-arrow {
+  color: var(--cupra-bronze-light);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.2s ease;
+}
+
+.pull-refresh-banner.ptr-threshold .ptr-icon-arrow {
+  transform: rotate(180deg);
+  color: var(--accent-solar);
+}
+
+.ptr-spinner-ring {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(192, 128, 81, 0.2);
+  border-top-color: var(--cupra-bronze-light);
+  border-right-color: var(--accent-solar);
+  animation: ptrSpin 0.75s linear infinite;
+}
+
+.pull-refresh-banner.ptr-refreshing .ptr-icon-arrow,
+.pull-refresh-banner.ptr-success .ptr-icon-arrow {
+  display: none;
+}
+
+.pull-refresh-banner.ptr-refreshing .ptr-spinner-ring {
+  display: block;
+}
+
+.ptr-icon-check {
+  display: none;
+  color: var(--accent-green);
+}
+
+.pull-refresh-banner.ptr-success .ptr-spinner-ring {
+  display: none;
+}
+
+.pull-refresh-banner.ptr-success .ptr-icon-check {
+  display: block;
+}
+
+.ptr-status-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.pull-refresh-banner.ptr-threshold .ptr-status-text {
+  color: #ffffff;
+}
+
+.pull-refresh-banner.ptr-refreshing .ptr-status-text {
+  color: var(--cupra-bronze-bright);
+}
+
+.pull-refresh-banner.ptr-success .ptr-status-text {
+  color: var(--accent-green);
+}
+
+@keyframes ptrSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .swift-glass-card {

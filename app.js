@@ -171,6 +171,8 @@
     DOM.chargingSubViews = document.querySelectorAll('.charging-sub-view');
     DOM.chargingFilterRail = document.getElementById('chargingFilterRail');
     DOM.chargesStreamContainer = document.getElementById('chargesStreamContainer');
+    DOM.ptrCharging = document.getElementById('ptrCharging');
+    DOM.ptrChargingStatus = document.getElementById('ptrChargingStatus');
 
     // Analytics
     DOM.periodPills = document.querySelectorAll('.period-pill');
@@ -184,6 +186,8 @@
     // Weather Tab
     DOM.weatherDisplayLocation = document.getElementById('weatherDisplayLocation');
     DOM.btnRefreshWeather = document.getElementById('btnRefreshWeather');
+    DOM.ptrWeather = document.getElementById('ptrWeather');
+    DOM.ptrWeatherStatus = document.getElementById('ptrWeatherStatus');
     DOM.pvSummaryRecommendationText = document.getElementById('pvSummaryRecommendationText');
     DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
     DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
@@ -1501,6 +1505,7 @@ function createOutput(data, callback) {
   // =========================================================================
   function switchMainTab(tabId) {
     activeTab = tabId;
+    window.scrollTo(0, 0);
 
     DOM.dockTabBtns.forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
@@ -1801,6 +1806,242 @@ function createOutput(data, callback) {
         fetchCloudSessions(false);
       }
     }, 60000);
+
+    // Pull-down-to-refresh initialisieren (Tab 2: Laden & Tab 3: Wetter)
+    setupPullToRefresh();
+  }
+
+  // =========================================================================
+  // PULL-DOWN-TO-REFRESH (IOS NATIVE LIQUID GLASS)
+  // Unterstützt Tab 2 (Laden -> Google Sheets Sync) & Tab 3 (Wetter -> Open-Meteo / GPS)
+  // =========================================================================
+  function setupPullToRefresh() {
+    let startY = 0;
+    let startX = 0;
+    let isPullCandidate = false;
+    let isPulling = false;
+    let isRefreshing = false;
+    let hasTriggeredHaptic = false;
+    let bannerEl = null;
+    let statusEl = null;
+
+    const PULL_THRESHOLD = 50;
+
+    function getPullConfig() {
+      if (activeTab === 'charging') {
+        return {
+          banner: DOM.ptrCharging,
+          status: DOM.ptrChargingStatus,
+          idleText: 'Zum Synchronisieren nach unten ziehen',
+          releaseText: 'Loslassen zum Synchronisieren',
+          refreshingText: 'Synchronisiere mit Google Sheets...',
+          successText: 'Synchronisiert ✓',
+          action: () => fetchCloudSessions(true)
+        };
+      } else if (activeTab === 'weather') {
+        return {
+          banner: DOM.ptrWeather,
+          status: DOM.ptrWeatherStatus,
+          idleText: 'Zum Aktualisieren nach unten ziehen',
+          releaseText: 'Loslassen zum Aktualisieren',
+          refreshingText: 'Wetterdaten werden aktualisiert...',
+          successText: 'Wetter aktualisiert ✓',
+          action: () => autoRequestGpsAndFetchWeather(true)
+        };
+      }
+      return null;
+    }
+
+    // Programmatischer Trigger für automatisierte Tests (z. B. Playwright E2E)
+    window.triggerPullToRefresh = async function(tabId) {
+      if (isRefreshing) return;
+      const targetTab = tabId || activeTab;
+      if (targetTab !== 'charging' && targetTab !== 'weather') return;
+
+      const config = (targetTab === 'charging')
+        ? {
+            banner: DOM.ptrCharging,
+            status: DOM.ptrChargingStatus,
+            idleText: 'Zum Synchronisieren nach unten ziehen',
+            refreshingText: 'Synchronisiere mit Google Sheets...',
+            successText: 'Synchronisiert ✓',
+            action: () => fetchCloudSessions(true)
+          }
+        : {
+            banner: DOM.ptrWeather,
+            status: DOM.ptrWeatherStatus,
+            idleText: 'Zum Aktualisieren nach unten ziehen',
+            refreshingText: 'Wetterdaten werden aktualisiert...',
+            successText: 'Wetter aktualisiert ✓',
+            action: () => autoRequestGpsAndFetchWeather(true)
+          };
+
+      if (!config.banner) return;
+      isRefreshing = true;
+      config.banner.classList.add('ptr-visible', 'ptr-refreshing');
+      config.banner.classList.remove('ptr-pulling', 'ptr-threshold', 'ptr-success', 'ptr-collapsing');
+      config.banner.style.height = '52px';
+      config.banner.style.opacity = '1';
+      if (config.status) config.status.textContent = config.refreshingText;
+      triggerHaptic();
+
+      try {
+        await config.action();
+      } catch (err) {
+        console.warn('Pull-to-refresh Action Fehler:', err);
+      }
+
+      if (config.status) config.status.textContent = config.successText;
+      config.banner.classList.add('ptr-success');
+      config.banner.classList.remove('ptr-refreshing');
+
+      await new Promise(r => setTimeout(r, 650));
+      config.banner.classList.add('ptr-collapsing');
+      config.banner.style.height = '0px';
+      config.banner.style.opacity = '0';
+
+      await new Promise(r => setTimeout(r, 380));
+      config.banner.className = 'pull-refresh-banner';
+      config.banner.style.height = '';
+      config.banner.style.opacity = '';
+      if (config.status) config.status.textContent = config.idleText;
+      isRefreshing = false;
+    };
+
+    function onTouchStart(e) {
+      if (isRefreshing) return;
+      // Nur zulässig ganz oben an der Seite (window.scrollY <= 2)
+      if (window.scrollY > 2) return;
+      // Nicht auslösen bei geöffnetem Modal oder aktiven Eingaben
+      if (document.querySelector('.swift-modal.active, .swift-modal.open')) return;
+
+      const cfg = getPullConfig();
+      if (!cfg || !cfg.banner) return;
+
+      const touch = e.touches[0];
+      startY = touch.clientY;
+      startX = touch.clientX;
+      isPullCandidate = true;
+      isPulling = false;
+      hasTriggeredHaptic = false;
+      bannerEl = cfg.banner;
+      statusEl = cfg.status;
+    }
+
+    function onTouchMove(e) {
+      if (!isPullCandidate || isRefreshing || !bannerEl) return;
+
+      const touch = e.touches[0];
+      const diffY = touch.clientY - startY;
+      const diffX = touch.clientX - startX;
+
+      // Abbrechen, falls nach oben gescrollt wird oder horizontale Bewegung überwiegt
+      if (!isPulling) {
+        if (diffY < 0 || Math.abs(diffX) > Math.abs(diffY)) {
+          isPullCandidate = false;
+          return;
+        }
+        if (window.scrollY > 2) {
+          isPullCandidate = false;
+          return;
+        }
+        if (diffY > 8) {
+          isPulling = true;
+          bannerEl.classList.add('ptr-visible', 'ptr-pulling');
+          bannerEl.classList.remove('ptr-collapsing', 'ptr-success', 'ptr-refreshing');
+        }
+      }
+
+      if (isPulling) {
+        if (e.cancelable) e.preventDefault();
+
+        // Progressive iOS Rubber-Band Dämpfung
+        const pullDistance = Math.min(85, Math.pow(Math.max(0, diffY), 0.82) * 1.5);
+        bannerEl.style.height = `${pullDistance}px`;
+        bannerEl.style.opacity = Math.min(1, pullDistance / 24).toString();
+
+        const cfg = getPullConfig();
+        if (pullDistance >= PULL_THRESHOLD) {
+          bannerEl.classList.add('ptr-threshold');
+          if (statusEl && cfg) statusEl.textContent = cfg.releaseText;
+          if (!hasTriggeredHaptic) {
+            triggerHaptic();
+            hasTriggeredHaptic = true;
+          }
+        } else {
+          bannerEl.classList.remove('ptr-threshold');
+          if (statusEl && cfg) statusEl.textContent = cfg.idleText;
+          hasTriggeredHaptic = false;
+        }
+      }
+    }
+
+    async function onTouchEnd() {
+      if (!isPulling || isRefreshing || !bannerEl) {
+        isPullCandidate = false;
+        isPulling = false;
+        return;
+      }
+
+      const cfg = getPullConfig();
+      const currentHeight = parseFloat(bannerEl.style.height) || 0;
+      isPullCandidate = false;
+      isPulling = false;
+
+      if (currentHeight >= PULL_THRESHOLD && cfg) {
+        // Schwellenwert erreicht -> Refresh auslösen!
+        isRefreshing = true;
+        bannerEl.classList.remove('ptr-pulling', 'ptr-threshold');
+        bannerEl.classList.add('ptr-refreshing');
+        bannerEl.style.height = '52px';
+        bannerEl.style.opacity = '1';
+        if (statusEl) statusEl.textContent = cfg.refreshingText;
+        triggerHaptic();
+
+        try {
+          await cfg.action();
+        } catch (err) {
+          console.warn('PTR Refresh Fehler:', err);
+        }
+
+        // Bestätigung anzeigen
+        if (statusEl) statusEl.textContent = cfg.successText;
+        bannerEl.classList.add('ptr-success');
+        bannerEl.classList.remove('ptr-refreshing');
+
+        await new Promise(r => setTimeout(r, 650));
+        // Sanft einklappen
+        bannerEl.classList.add('ptr-collapsing');
+        bannerEl.style.height = '0px';
+        bannerEl.style.opacity = '0';
+
+        await new Promise(r => setTimeout(r, 380));
+        bannerEl.className = 'pull-refresh-banner';
+        bannerEl.style.height = '';
+        bannerEl.style.opacity = '';
+        if (statusEl && cfg) statusEl.textContent = cfg.idleText;
+        isRefreshing = false;
+      } else {
+        // Nicht weit genug gezogen -> sanft zurückfedern
+        bannerEl.classList.add('ptr-collapsing');
+        bannerEl.classList.remove('ptr-pulling', 'ptr-threshold');
+        bannerEl.style.height = '0px';
+        bannerEl.style.opacity = '0';
+
+        setTimeout(() => {
+          bannerEl.className = 'pull-refresh-banner';
+          bannerEl.style.height = '';
+          bannerEl.style.opacity = '';
+          if (statusEl && cfg) statusEl.textContent = cfg.idleText;
+        }, 350);
+      }
+    }
+
+    // Window Touch-Events mit e.preventDefault() Schutz
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: true });
   }
 
   // =========================================================================
@@ -3517,23 +3758,31 @@ function createOutput(data, callback) {
   // TAB 3: WETTER & BAYRHOFS BÜRO PROGNOSE (EXAKTE ICONS & L/M² EINHEIT)
   // =========================================================================
   function autoRequestGpsAndFetchWeather(forceNotification = false) {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          appData.settings.weatherGps.lat = Number(pos.coords.latitude.toFixed(4));
-          appData.settings.weatherGps.lon = Number(pos.coords.longitude.toFixed(4));
-          appData.settings.weatherGps.name = "GPS: Bayrhofs Umgebung";
-          saveData();
-          fetchWeatherCluster(forceNotification);
-        },
-        () => {
-          fetchWeatherCluster(forceNotification);
-        },
-        { timeout: 5000 }
-      );
-    } else {
-      fetchWeatherCluster(forceNotification);
-    }
+    return new Promise((resolve) => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              appData.settings.weatherGps.lat = Number(pos.coords.latitude.toFixed(4));
+              appData.settings.weatherGps.lon = Number(pos.coords.longitude.toFixed(4));
+              appData.settings.weatherGps.name = "GPS: Bayrhofs Umgebung";
+              saveData();
+              await fetchWeatherCluster(forceNotification);
+            } catch (_) {}
+            resolve();
+          },
+          async () => {
+            try {
+              await fetchWeatherCluster(forceNotification);
+            } catch (_) {}
+            resolve();
+          },
+          { timeout: 5000 }
+        );
+      } else {
+        fetchWeatherCluster(forceNotification).then(resolve).catch(resolve);
+      }
+    });
   }
 
   async function fetchWeatherCluster(showFeedback = false) {
