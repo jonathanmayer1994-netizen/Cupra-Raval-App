@@ -61,6 +61,35 @@
   let isLocationsEditMode = false;
   let currentSyncState = 'synced';
 
+  const DELETED_IDS_STORAGE_KEY = 'cupra_raval_deleted_ids';
+
+  function getDeletedIds() {
+    try {
+      const raw = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  function addDeletedId(id) {
+    if (!id) return;
+    try {
+      const set = getDeletedIds();
+      set.add(String(id).trim());
+      localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(Array.from(set).slice(-100)));
+    } catch (_) {}
+  }
+
+  function removeDeletedId(id) {
+    if (!id) return;
+    try {
+      const set = getDeletedIds();
+      set.delete(String(id).trim());
+      localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(Array.from(set)));
+    } catch (_) {}
+  }
+
   // Chart Instanzen
   let chartMain = null;
   let chartLocDonut = null;
@@ -483,7 +512,7 @@
   }
 
   function extractSessionsFromPayload(parsed) {
-    if (!parsed) return [];
+    if (!parsed) return null;
     let list = null;
 
     if (Array.isArray(parsed)) {
@@ -497,45 +526,52 @@
         }).filter(isValidSession);
       }
       list = parsed;
-    } else if (parsed && Array.isArray(parsed.data)) {
-      list = parsed.data;
-    } else if (parsed && Array.isArray(parsed.sessions)) {
-      list = parsed.sessions;
-    } else if (parsed && Array.isArray(parsed.rows)) {
-      list = parsed.rows;
-    } else if (parsed && Array.isArray(parsed.items)) {
-      list = parsed.items;
+    } else if (parsed && typeof parsed === 'object') {
+      if (parsed.status === 'error') {
+        return null;
+      }
+      if (Array.isArray(parsed.data)) {
+        list = parsed.data;
+      } else if (Array.isArray(parsed.sessions)) {
+        list = parsed.sessions;
+      } else if (Array.isArray(parsed.rows)) {
+        list = parsed.rows;
+      } else if (Array.isArray(parsed.items)) {
+        list = parsed.items;
+      }
     }
 
-    if (!list || !Array.isArray(list)) return [];
+    if (!list || !Array.isArray(list)) return null;
     return list.map((s, idx) => mapRawSession(s, idx)).filter(isValidSession);
   }
 
   function mergeSessions(cloudSessions) {
-    if (!cloudSessions) return false;
+    if (!cloudSessions || !Array.isArray(cloudSessions)) return false;
 
-    // Nur gültige Cloud-Sessions berücksichtigen (keine 0 kWh Dummy-Zeilen)
-    const validCloud = cloudSessions.filter(isValidSession);
+    const deletedIds = getDeletedIds();
+    // Nur gültige Cloud-Sessions berücksichtigen (keine 0 kWh Dummy-Zeilen, keine lokal gelöschten)
+    const validCloud = cloudSessions.filter(cs => !deletedIds.has(String(cs.id || cs.ID || '').trim()) && isValidSession(cs));
 
     // Identifiziere lokale Sessions, die noch in der Offline-Queue liegen und noch nicht hochgeladen wurden
     const pendingIds = new Set(
-      (appData.pendingSyncQueue || []).map(item => item.id || item.ID || (item.session && (item.session.id || item.session.ID))).filter(Boolean)
+      (appData.pendingSyncQueue || []).map(item => String(item.id || item.ID || (item.session && (item.session.id || item.session.ID)) || '').trim()).filter(Boolean)
     );
 
-    const pendingLocal = (appData.sessions || []).filter(s => pendingIds.has(s.id) && isValidSession(s));
+    const pendingLocal = (appData.sessions || []).filter(s => pendingIds.has(String(s.id).trim()) && isValidSession(s));
 
     // Die Cloud-Sessions sind die alleinige Referenz ("Single Source of Truth")
     // Alle iPhones haben exakt denselben Datenbestand!
     const map = new Map();
 
     validCloud.forEach(cs => {
-      map.set(cs.id, cs);
+      map.set(String(cs.id || cs.ID).trim(), cs);
     });
 
     // Noch ungesendete lokale Einträge behalten
     pendingLocal.forEach(ps => {
-      if (!map.has(ps.id)) {
-        map.set(ps.id, ps);
+      const psId = String(ps.id || ps.ID).trim();
+      if (!map.has(psId)) {
+        map.set(psId, ps);
       }
     });
 
@@ -681,28 +717,37 @@
 
     // 3. Auswertung und Speicherung
     if (rawData) {
+      if (rawData.status === 'error') {
+        throw new Error(rawData.message || 'Google Sheets Serverfehler');
+      }
+
       const parsedList = extractSessionsFromPayload(rawData);
+      if (parsedList === null) {
+        throw new Error('Ungültiges Antwortformat von Google Sheets');
+      }
+
+      // Single Source of Truth:
+      // Auch wenn die Cloud 0 Ladevorgänge meldet (z. B. nach dem Löschen der letzten Ladung),
+      // wird der lokale Datenbestand aller Geräte synchronisiert!
+      mergeSessions(parsedList);
+      setSyncStatus('synced');
+      flushPendingSyncQueue();
 
       if (parsedList.length > 0) {
-        mergeSessions(parsedList);
-        setSyncStatus('synced');
         showCloudDiag('success', '✅', `Google Sheets verbunden: <strong>${parsedList.length} Ladevorgänge</strong> synchronisiert.`);
         if (isManual) {
           triggerHaptic();
           showToast(`☁️ ${parsedList.length} Ladevorgänge synchronisiert ✓`);
         }
-        flushPendingSyncQueue();
-        return;
       } else {
-        // Tabelle ist online, aber noch leer
-        setSyncStatus('synced');
-        showCloudDiag('success', '✅', 'Google Sheets ist verbunden (Tabelle ist noch leer). Tippe auf "Lokale Daten hochladen", um bestehende Ladungen zu übertragen.');
+        // Tabelle ist online und leer (z. B. nach Löschen des letzten Ladevorgangs)
+        showCloudDiag('success', '✅', 'Google Sheets verbunden (Tabelle leer: 0 Ladevorgänge synchronisiert).');
         if (isManual) {
-          showToast('☁️ Google Sheets verbunden (Tabelle leer)');
+          triggerHaptic();
+          showToast('☁️ Google Sheets synchronisiert (Tabelle leer)');
         }
-        flushPendingSyncQueue();
-        return;
       }
+      return;
     }
 
     // 4. Diagnose & Fehlermeldung
@@ -780,14 +825,16 @@
 
   async function deleteCloudSession(id) {
     if (!id) return;
+    const cleanId = String(id).trim();
+    addDeletedId(cleanId);
     setSyncStatus('saving');
     const apiUrl = getCloudApiUrl();
 
     // Reiner Lösch-Befehl: niemals kWh, Ort oder 0-Werte mitsenden!
     const payload = {
       action: 'delete',
-      id: String(id),
-      ID: String(id),
+      id: cleanId,
+      ID: cleanId,
       timestamp: new Date().toISOString()
     };
 
@@ -795,7 +842,7 @@
     if (appData.pendingSyncQueue && appData.pendingSyncQueue.length > 0) {
       appData.pendingSyncQueue = appData.pendingSyncQueue.filter(item => {
         const itemId = item.id || item.ID || (item.session && (item.session.id || item.session.ID));
-        return itemId !== id;
+        return String(itemId).trim() !== cleanId;
       });
       saveData();
     }
@@ -814,7 +861,7 @@
 
     // 2. Sekundär / Verstärkung: GET (wird von Google Apps Script garantiert ohne CORS-Probleme verarbeitet)
     try {
-      const getUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=delete&id=${encodeURIComponent(id)}`;
+      const getUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=delete&id=${encodeURIComponent(cleanId)}`;
       await fetchWithJsonp(getUrl, 4000);
     } catch (_) {
       // Ignoriere JSONP Timeout bei erfolgreichem POST
@@ -825,7 +872,7 @@
     // Nach dem Löschen: Aktualisiere synchron den Datenstand von Google Sheets
     setTimeout(() => {
       fetchCloudSessions(false);
-    }, 600);
+    }, 1200);
   }
 
   async function cleanCloudSheet() {
@@ -3125,14 +3172,29 @@ function createOutput(data, callback) {
 
   function handleDeleteCharge(id) {
     if (!confirm('Diesen Ladevorgang wirklich löschen?')) return;
-    appData.sessions = appData.sessions.filter(s => s.id !== id);
+    const cleanId = String(id).trim();
+
+    // In persistentem Storage als gelöscht vormerken, damit verzögerte Cloud-Antworten ihn nicht wiederbeleben
+    addDeletedId(cleanId);
+
+    // Sofort lokal aus sessions entfernen
+    appData.sessions = (appData.sessions || []).filter(s => String(s.id).trim() !== cleanId);
+
+    // Auch aus Offline-Queue entfernen
+    if (appData.pendingSyncQueue && appData.pendingSyncQueue.length > 0) {
+      appData.pendingSyncQueue = appData.pendingSyncQueue.filter(item => {
+        const itemId = item.id || item.ID || (item.session && (item.session.id || item.session.ID));
+        return String(itemId).trim() !== cleanId;
+      });
+    }
+
     saveData();
     renderAll();
     triggerHaptic();
     showToast('Ladevorgang gelöscht');
 
     // Cloud-Sync: Löscht nur exakt dieses Ereignis aus Google Sheets
-    deleteCloudSession(id);
+    deleteCloudSession(cleanId);
   }
 
   // =========================================================================
@@ -4489,9 +4551,10 @@ function createOutput(data, callback) {
     const defaultLoc = appData.settings.locations[0] || DEFAULT_LOCATIONS[0];
 
     if (editId) {
-      const s = appData.sessions.find(x => x.id === editId);
+      const cleanEditId = String(editId).trim();
+      const s = appData.sessions.find(x => String(x.id).trim() === cleanEditId);
       if (s) {
-        DOM.entryEditId.value = s.id;
+        DOM.entryEditId.value = cleanEditId;
         DOM.modalChargeTitle.textContent = "Ladung bearbeiten";
         DOM.entryDateTime.value = formatDateTimeLocal(new Date(s.date));
         DOM.entryKwh.value = s.kwh;
@@ -4532,8 +4595,9 @@ function createOutput(data, callback) {
     const curOdo = parseInt(DOM.entryOdometer.value, 10);
     const editId = DOM.entryEditId.value;
 
+    const cleanEditId = String(editId).trim();
     let base = 0;
-    const sorted = [...appData.sessions].filter(s => s.id !== editId).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sorted = [...appData.sessions].filter(s => String(s.id).trim() !== cleanEditId).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (sorted.length > 0 && sorted[0].odometer) base = sorted[0].odometer;
     else base = appData.vehicle.currentOdo || 0;
 
@@ -4575,10 +4639,11 @@ function createOutput(data, callback) {
 
     let savedSession = null;
     if (editId) {
-      const idx = appData.sessions.findIndex(s => s.id === editId);
+      const cleanEditId = String(editId).trim();
+      const idx = appData.sessions.findIndex(s => String(s.id).trim() === cleanEditId);
       if (idx !== -1) {
         appData.sessions[idx] = {
-          id: editId,
+          id: cleanEditId,
           date: new Date(dt).toISOString(),
           kwh,
           odometer: odo,
@@ -4589,6 +4654,7 @@ function createOutput(data, callback) {
           notes
         };
         savedSession = appData.sessions[idx];
+        removeDeletedId(cleanEditId);
       }
     } else {
       savedSession = {
@@ -4602,6 +4668,7 @@ function createOutput(data, callback) {
         pvSurplus: isPv,
         notes
       };
+      removeDeletedId(savedSession.id);
       appData.sessions.push(savedSession);
     }
 
