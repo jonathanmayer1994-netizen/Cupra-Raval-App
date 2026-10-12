@@ -1,8 +1,9 @@
-const CACHE_NAME = 'raval-charge-v23';
+const CACHE_NAME = 'raval-charge-v24';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
+  './weatherService.js',
   './app.js',
   './manifest.json',
   './icon.svg',

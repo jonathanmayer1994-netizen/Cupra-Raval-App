@@ -1081,6 +1081,126 @@ body {
 
 .btn-swift-gps:active { transform: scale(0.94); background: var(--cupra-bronze); color: #fff; }
 
+.weather-sources-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.source-chip {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+}
+
+.source-chip.active {
+  background: rgba(192, 128, 81, 0.15);
+  border-color: rgba(192, 128, 81, 0.35);
+  color: var(--cupra-bronze-bright);
+}
+
+.dwd-alerts-card {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(45, 15, 10, 0.75);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  box-shadow: 0 4px 18px rgba(239, 68, 68, 0.15);
+}
+
+.dwd-alert-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dwd-alert-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dwd-alert-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: #f87171;
+}
+
+.dwd-alert-badge.severity-minor { color: #facc15; }
+.dwd-alert-badge.severity-moderate { color: #fb923c; }
+.dwd-alert-badge.severity-severe { color: #f87171; }
+.dwd-alert-badge.severity-extreme { color: #c084fc; }
+
+.dwd-alert-time {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.dwd-alert-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.dwd-alert-desc {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.weather-meta-badges-rail {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.weather-meta-badges-rail::-webkit-scrollbar { display: none; }
+
+.meta-badge-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  background: rgba(14, 20, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.meta-badge-item.highlight-solar {
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.meta-badge-item.highlight-alpine {
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
 .pv-summary-banner {
   padding: 12px 14px;
   display: flex;

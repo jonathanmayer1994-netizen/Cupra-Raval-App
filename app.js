@@ -57,6 +57,10 @@
   let activeAnalyticsPeriod = 'month';
 
   let weatherForecast14Days = null;
+  let currentDwdAlerts = [];
+  let currentAlpineData = null;
+  let currentSolarSummary = null;
+  let currentSourcesStatus = null;
   let isWeatherExpanded = false;
   let isLocationsEditMode = false;
   let currentSyncState = 'synced';
@@ -188,6 +192,9 @@
     DOM.btnRefreshWeather = document.getElementById('btnRefreshWeather');
     DOM.ptrWeather = document.getElementById('ptrWeather');
     DOM.ptrWeatherStatus = document.getElementById('ptrWeatherStatus');
+    DOM.weatherSourcesStatus = document.getElementById('weatherSourcesStatus');
+    DOM.dwdAlertsBanner = document.getElementById('dwdAlertsBanner');
+    DOM.weatherMetaBadgesRail = document.getElementById('weatherMetaBadgesRail');
     DOM.pvSummaryRecommendationText = document.getElementById('pvSummaryRecommendationText');
     DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
     DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
@@ -3787,10 +3794,34 @@ function createOutput(data, callback) {
 
   async function fetchWeatherCluster(showFeedback = false) {
     const loc = appData.settings.weatherGps || DEFAULT_DATA.settings.weatherGps;
-    DOM.weatherDisplayLocation.textContent = `📍 ${loc.name}`;
+    if (DOM.weatherDisplayLocation) DOM.weatherDisplayLocation.textContent = `📍 ${loc.name}`;
 
-    // Abfrage mit daily (inkl. sunrise, sunset, precipitation_sum in mm = l/m²) und hourly für Stundengraphen!
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
+    // 1. Primär: Zentrale Multi-Model & Solar Engine mit den 5 Open-Source-Diensten
+    try {
+      if (typeof WeatherService !== 'undefined' && WeatherService.fetchConsensus) {
+        const threshold = appData.settings.pvThresholdSunshineHours || 4.5;
+        const res = await WeatherService.fetchConsensus(loc.lat, loc.lon, showFeedback, { pvThreshold: threshold });
+        if (res && res.forecast14Days && res.forecast14Days.length > 0) {
+          weatherForecast14Days = res.forecast14Days;
+          currentDwdAlerts = res.dwdAlerts || [];
+          currentAlpineData = res.alpineData || null;
+          currentSolarSummary = res.solarSummary || null;
+          currentSourcesStatus = res.sourcesStatus || null;
+
+          saveWeatherCache(weatherForecast14Days);
+          renderWeatherViews();
+          updateDashboardPvDecisionWidget();
+          renderWeatherExtraMeta();
+          if (showFeedback) showToast('Wetter & Solarprognose aktualisiert ☀️');
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[App] WeatherService Consensus Fehler, prüfe Direktabfrage:', err);
+    }
+
+    // 2. Sekundär: Direkte Open-Meteo Abfrage mit GHI Solarstrahlung & Regenwahrscheinlichkeit
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
 
     try {
       const resp = await fetch(url);
@@ -3802,6 +3833,7 @@ function createOutput(data, callback) {
         saveWeatherCache(weatherForecast14Days);
         renderWeatherViews();
         updateDashboardPvDecisionWidget();
+        renderWeatherExtraMeta();
         if (showFeedback) showToast('Wetterdaten aktualisiert ☀️');
         return;
       }
@@ -3809,12 +3841,14 @@ function createOutput(data, callback) {
       console.warn('Wetterabfrage fehlgeschlagen, nutze Cache oder Simulation:', err);
     }
 
+    // 3. Fallback: Synthetische Daten
     if (!weatherForecast14Days) {
       weatherForecast14Days = generateSynthetic14Days();
       saveWeatherCache(weatherForecast14Days);
     }
     renderWeatherViews();
     updateDashboardPvDecisionWidget();
+    renderWeatherExtraMeta();
   }
 
   function getFallbackSunTimes(dateObj) {
@@ -4195,7 +4229,8 @@ function createOutput(data, callback) {
           </div>
           <div class="day-stats-row">
             <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
-            <span class="day-rain-stat">💧 ${item.rainMm} l/m²</span>
+            <span class="day-rain-stat">💧 ${item.rainMm} l/m²${item.rainProbMax ? ` (${item.rainProbMax}%)` : ''}</span>
+            ${item.solarYield && item.solarYield.estimatedPvKwh > 0 ? `<span class="day-solar-stat" style="color:#fbbf24; font-size:0.64rem; font-weight:700;">⚡️ ${item.solarYield.estimatedPvKwh} kWh</span>` : ''}
           </div>
         </div>
 
@@ -4204,6 +4239,88 @@ function createOutput(data, callback) {
         </div>
       </div>
     `;
+  }
+
+  function renderWeatherExtraMeta() {
+    // 1. DWD Unwetterwarnungen Banner
+    if (DOM.dwdAlertsBanner) {
+      if (currentDwdAlerts && currentDwdAlerts.length > 0) {
+        DOM.dwdAlertsBanner.style.display = 'flex';
+        DOM.dwdAlertsBanner.innerHTML = currentDwdAlerts.map(alert => {
+          const sevClass = `severity-${(alert.severity || 'minor').toLowerCase()}`;
+          const expireTime = alert.expires ? new Date(alert.expires).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+          return `
+            <div class="dwd-alert-item">
+              <div class="dwd-alert-header">
+                <span class="dwd-alert-badge ${sevClass}">⚠️ DWD: ${alert.event}</span>
+                <span class="dwd-alert-time">${expireTime ? `bis ${expireTime} Uhr` : alert.area}</span>
+              </div>
+              <div class="dwd-alert-title">${alert.headline}</div>
+              <div class="dwd-alert-desc">${alert.description || alert.instruction || ''}</div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        DOM.dwdAlertsBanner.style.display = 'none';
+        DOM.dwdAlertsBanner.innerHTML = '';
+      }
+    }
+
+    // 2. Alpine & Solar Meta Badges Rail
+    if (DOM.weatherMetaBadgesRail) {
+      const today = weatherForecast14Days && weatherForecast14Days[0];
+      const badges = [];
+
+      // Solar GHI
+      if (today && today.solarYield) {
+        badges.push(`
+          <div class="meta-badge-item highlight-solar">
+            <span>☀️ Solar-GHI: <strong>${today.solarYield.maxGhiWatts} W/m²</strong></span>
+            <span>• ~${today.solarYield.estimatedPvKwh} kWh PV</span>
+          </div>
+        `);
+      }
+
+      // GeoSphere Alpen
+      if (currentAlpineData && currentAlpineData.snowLimitMeters) {
+        badges.push(`
+          <div class="meta-badge-item highlight-alpine">
+            <span>🏔️ GeoSphere: Schneefallgrenze <strong>${currentAlpineData.snowLimitMeters.toLocaleString('de-DE')} m</strong></span>
+          </div>
+        `);
+      } else {
+        badges.push(`
+          <div class="meta-badge-item highlight-alpine">
+            <span>🏔️ GeoSphere: INCA/AROME Bergwetter</span>
+          </div>
+        `);
+      }
+
+      // 5 Quellen Konsens
+      badges.push(`
+        <div class="meta-badge-item">
+          <span>🇪🇺 5 Open-Source Quellen aktiv</span>
+        </div>
+      `);
+
+      DOM.weatherMetaBadgesRail.innerHTML = badges.join('');
+    }
+
+    // 3. Status der 5 Quellen in der Leiste aktualisieren
+    if (DOM.weatherSourcesStatus && currentSourcesStatus) {
+      const chips = [
+        { key: 'openMeteo', icon: '☀️', name: 'Open-Meteo' },
+        { key: 'brightSky', icon: '📡', name: 'Bright Sky' },
+        { key: 'dwdAlerts', icon: '⚠️', name: 'DWD Warnungen' },
+        { key: 'geoSphere', icon: '🏔️', name: 'GeoSphere' },
+        { key: 'metNorway', icon: '🇳🇴', name: 'MET Norway' }
+      ];
+
+      DOM.weatherSourcesStatus.innerHTML = chips.map(c => {
+        const isOk = currentSourcesStatus[c.key]?.ok !== false;
+        return `<span class="source-chip ${isOk ? 'active' : ''}">${c.icon} ${c.name}</span>`;
+      }).join('');
+    }
   }
 
   function bindDayCardClickEvents() {
@@ -4312,7 +4429,8 @@ function createOutput(data, callback) {
           <span class="hh-icon">${h.icon}</span>
           <span class="hh-temp">${h.temp}°</span>
           <span class="hh-solar">☀️ ${(h.sunHours * 60).toFixed(0)}m</span>
-          <span class="hh-rain">${h.rain > 0 ? `💧 ${h.rain}l` : '-'}</span>
+          ${h.ghi && h.ghi > 0 ? `<span class="hh-ghi-val" style="font-size:0.56rem; color:#f59e0b; font-weight:700;">⚡️ ${h.ghi}W</span>` : ''}
+          <span class="hh-rain">${h.rain > 0 ? `💧 ${h.rain}l${h.rainProb ? ` (${h.rainProb}%)` : ''}` : (h.rainProb > 20 ? `<span style="font-size:0.56rem; color:#38bdf8;">☔️ ${h.rainProb}%</span>` : '-')}</span>
         </div>
       `;
     }).join('');

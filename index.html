@@ -330,14 +330,14 @@
           </div>
         </div>
 
-        <!-- Konsolidierte Wetter-Kopfzeile (Cluster aus 5 europäischen/deutschen Wettermodellen) -->
+        <!-- Konsolidierte Wetter-Kopfzeile (Cluster aus 5 Open-Source Wetterdiensten) -->
         <div class="swift-glass-card weather-header-card">
           <div class="weather-top-meta">
             <div>
               <div class="weather-location-label" id="weatherDisplayLocation">📍 GPS-Standort (Bayrhofs / Kempten)</div>
               <div class="weather-cluster-label">
-                <span class="cluster-pill">🇪🇺 5-Modell Konsens</span>
-                <span class="cluster-sub">DWD ICON • DWD-EU • ECMWF • Météo-France • Ensemble</span>
+                <span class="cluster-pill">🇪🇺 5 Open-Source Wetterdienste & Solar</span>
+                <span class="cluster-sub" id="weatherSourcesSub">Open-Meteo (ICON/ECMWF) • Bright Sky (DWD) • DWD Warnungen • GeoSphere (AROME) • MET Norway (Yr)</span>
               </div>
             </div>
             <button class="btn-swift-gps" id="btnRefreshWeather" title="Standort via GPS aktualisieren">
@@ -345,6 +345,24 @@
               <span>GPS Refresh</span>
             </button>
           </div>
+          <!-- Quellen-Statusleiste (5 Indikatoren) -->
+          <div class="weather-sources-pills-row" id="weatherSourcesStatus">
+            <span class="source-chip active" title="DWD ICON-D2 & ECMWF IFS (Globalstrahlung & Regenrisiko)">☀️ Open-Meteo</span>
+            <span class="source-chip active" title="DWD MOSMIX Stationsdaten (Deutscher Wetterdienst)">📡 Bright Sky</span>
+            <span class="source-chip active" title="Amtliche Unwetterwarnungen des Deutschen Wetterdienstes">⚠️ DWD Warnungen</span>
+            <span class="source-chip active" title="GeoSphere Austria (AROME 2.5km Alpenprognose & Schneefallgrenze)">🏔️ GeoSphere</span>
+            <span class="source-chip active" title="MET Norway / Yr.no Europäisches Niederschlagsmodell">🇳🇴 MET Norway</span>
+          </div>
+        </div>
+
+        <!-- Amtliche DWD Wetterwarnungen (Landkreisebene) -->
+        <div class="swift-glass-card dwd-alerts-card" id="dwdAlertsBanner" style="display: none;">
+          <!-- Dynamisch durch Weather Engine gerendert -->
+        </div>
+
+        <!-- Alpine & Solar Insights Leiste -->
+        <div class="weather-meta-badges-rail" id="weatherMetaBadgesRail">
+          <!-- Dynamisch befüllt mit GHI Solarstrahlung & Alpen Bergwetter -->
         </div>
 
         <!-- Bayrhofs Büro & PV-Ladeentscheidung Banner -->
@@ -975,7 +993,9 @@
     <span class="toast-text" id="swiftToastMsg">Erfolgreich gespeichert</span>
   </div>
 
+  <!-- Weather Service Module -->
+  <script src="./weatherService.js?v=24"></script>
   <!-- App Script -->
-  <script src="./app.js?v=23"></script>
+  <script src="./app.js?v=24"></script>
 </body>
 </html>

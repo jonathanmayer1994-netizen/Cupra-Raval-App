@@ -317,8 +317,51 @@ def run_tests():
             weather_loc_text = page.locator("#weatherDisplayLocation").inner_text()
             log_test("7.1 Wetterstandort-Anzeige", "Bayrhofs" in weather_loc_text or "Kempten" in weather_loc_text or "GPS" in weather_loc_text, f"Text: '{weather_loc_text}'")
 
+            # 7.1b: WeatherService API & 5 Open-Source Services vorhanden
+            ws_check = page.evaluate("""() => {
+                if (typeof window.WeatherService === 'undefined') return { ok: false, reason: 'WeatherService undefined' };
+                const s = window.WeatherService;
+                const hasMethods = typeof s.fetchConsensus === 'function' &&
+                                   typeof s.fetchOpenMeteo === 'function' &&
+                                   typeof s.fetchBrightSky === 'function' &&
+                                   typeof s.fetchDwdAlerts === 'function' &&
+                                   typeof s.fetchGeoSphereAustria === 'function' &&
+                                   typeof s.fetchMetNorway === 'function';
+                return {
+                    ok: hasMethods,
+                    ttl: s.CACHE_TTL_MS,
+                    cacheKey: s.CACHE_KEY
+                };
+            }""")
+            log_test("7.1b WeatherService Modul mit 5 Open-Source Diensten verfügbar", ws_check.get("ok") is True, f"Methoden vorhanden, TTL: {ws_check.get('ttl')}ms")
+
+            # 7.1c: 5-Minuten Caching in localStorage
+            cache_check = page.evaluate("""() => {
+                const ttl = window.WeatherService?.CACHE_TTL_MS;
+                const raw = localStorage.getItem('cupra_raval_weather_service_cache_v5');
+                const parsed = raw ? JSON.parse(raw) : null;
+                return {
+                    ttlMatches5Min: ttl === 300000,
+                    hasCachedData: !!(parsed && parsed.data && parsed.data.forecast14Days)
+                };
+            }""")
+            log_test("7.1c 5-Minuten Cache im localStorage aktiv", cache_check.get("ttlMatches5Min") is True and cache_check.get("hasCachedData") is True, f"TTL: 5 Min (300.000 ms), Cached: {cache_check.get('hasCachedData')}")
+
+            # 7.1d: 5 Quellen Status Chips
+            chips_count = page.locator("#weatherSourcesStatus .source-chip").count()
+            chips_text = page.locator("#weatherSourcesStatus").inner_text()
+            log_test("7.1d 5 Open-Source Dienste Status Chips sichtbar", chips_count == 5, f"{chips_count} Chips: {chips_text}")
+
+            # 7.1e: Alpine & Solar Meta Badges Rail
+            rail_badges = page.locator("#weatherMetaBadgesRail .meta-badge-item").count()
+            rail_text = page.locator("#weatherMetaBadgesRail").inner_text()
+            log_test("7.1e Solar-GHI & Alpine Meta Badges gerendert", rail_badges >= 2, f"{rail_badges} Badges: '{rail_text}'")
+
             day_cards_count = page.locator(".day-forecast-card").count()
             log_test("7.2 14-Tage Wetterprognose-Karten gerendert", day_cards_count >= 10, f"{day_cards_count} Tage in der Vorhersage")
+
+            solar_stat_count = page.locator(".day-forecast-card .day-solar-stat").count()
+            log_test("7.2b Solar-PV Ertragskennzeichnung auf Tageskarten", solar_stat_count > 0, f"{solar_stat_count} Tage mit PV-Ertragsanzeige")
 
             # Open 24h Hourly Forecast Modal
             page.locator(".day-forecast-card").first.click()
@@ -346,6 +389,10 @@ def run_tests():
 
             sun_event_badges = page.locator(".hourly-hour-card.sun-event-hour").count()
             log_test("7.7 Stündliche Kapseln markieren Sonnenaufgang & -untergang", sun_event_badges >= 2, f"{sun_event_badges} Kapseln hervorgehoben")
+
+            hourly_cards_count = page.locator(".hourly-hour-card").count()
+            has_solar_ghi_chips = page.locator(".hourly-hour-card .hh-ghi-val").count() > 0
+            log_test("7.7b Stündliche Detailkapseln mit 6-22h Bereich und Solarstrahlung (GHI)", hourly_cards_count == 17 and has_solar_ghi_chips, f"Kapseln: {hourly_cards_count} (6-22h = 17h), GHI-Werte vorhanden: {has_solar_ghi_chips}")
 
             page.locator("#btnCloseHourlyModal").click()
             time.sleep(0.3)
