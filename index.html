@@ -367,32 +367,82 @@
             <div class="variable-feedback-text" id="weatherVariableFeedback"></div>
           </div>
 
-          <!-- Quellen-Statusleiste (5 Indikatoren) -->
-          <div class="weather-sources-pills-row" id="weatherSourcesStatus">
-            <span class="source-chip active" title="DWD ICON-D2 & ECMWF IFS (Globalstrahlung & Regenrisiko)">☀️ Open-Meteo</span>
-            <span class="source-chip active" title="DWD MOSMIX Stationsdaten (Deutscher Wetterdienst)">📡 Bright Sky</span>
-            <span class="source-chip active" title="Amtliche Unwetterwarnungen des Deutschen Wetterdienstes">⚠️ DWD Warnungen</span>
-            <span class="source-chip active" title="GeoSphere Austria (AROME 2.5km Alpenprognose & Schneefallgrenze)">🏔️ GeoSphere</span>
-            <span class="source-chip active" title="MET Norway / Yr.no Europäisches Niederschlagsmodell">🇳🇴 MET Norway</span>
-          </div>
         </div>
 
-        <!-- Amtliche DWD Wetterwarnungen (Landkreisebene) -->
+        <!-- Amtliche DWD Wetterwarnungen (Landkreisebene, nur bei aktivem Unwetter sichtbar) -->
         <div class="swift-glass-card dwd-alerts-card" id="dwdAlertsBanner" style="display: none;">
           <!-- Dynamisch durch Weather Engine gerendert -->
         </div>
 
-        <!-- Alpine & Solar Insights Leiste -->
-        <div class="weather-meta-badges-rail" id="weatherMetaBadgesRail">
-          <!-- Dynamisch befüllt mit GHI Solarstrahlung & Alpen Bergwetter -->
-        </div>
+        <!-- ======================================================= -->
+        <!-- INTELLIGENTE LADE-EMPFEHLUNG (SMART CHARGE AI)           -->
+        <!-- ======================================================= -->
+        <div class="swift-glass-card smart-charge-card" id="smartChargeCard">
+          <div class="smart-reco-top-bar">
+            <div class="smart-reco-heading">
+              <div class="smart-reco-icon-glow">⚡️</div>
+              <div class="smart-reco-title-group">
+                <span class="smart-reco-main-title">Intelligente Lade-Empfehlung</span>
+                <span class="smart-reco-subtitle" id="smartRecoSubModel">Cupra Raval • NMC-Zellen (52.0 kWh)</span>
+              </div>
+            </div>
+            <span class="smart-reco-badge-pill" id="smartRecoBadge">🎯 Berechne...</span>
+          </div>
 
-        <!-- Bayrhofs Büro & PV-Ladeentscheidung Banner -->
-        <div class="swift-glass-card pv-summary-banner">
-          <div class="pv-summary-icon">🏢</div>
-          <div class="pv-summary-text">
-            <strong>Büro Bayrhofs Lade-Empfehlung:</strong>
-            <span id="pvSummaryRecommendationText">Berechne PV-Überschuss bei Bayrhofs...</span>
+          <!-- Hero Highlight Slot Box -->
+          <div class="smart-reco-hero-box" id="smartRecoHeroBox">
+            <div class="reco-hero-when-row">
+              <span class="reco-hero-label">EMPFOHLENER LADEZEITPUNKT</span>
+              <span class="reco-hero-savings-pill" id="smartRecoSavingsPill">⚡️ Berechne Ersparnis</span>
+            </div>
+            <div class="reco-hero-time-val" id="smartRecoTimeVal">Berechne besten Ladeslot...</div>
+            <div class="reco-hero-meta-row">
+              <span class="reco-hero-loc" id="smartRecoLocVal">🏢 Ladeort wird ermittelt</span>
+              <span class="reco-hero-kwh" id="smartRecoKwhVal">-- kWh (Ziel: 80% SoC)</span>
+            </div>
+          </div>
+
+          <!-- Intelligente Begründung -->
+          <div class="smart-reco-reasoning-box">
+            <div class="reco-reasoning-icon">💡</div>
+            <div class="reco-reasoning-text" id="smartRecoReasoningText">
+              Analysiere historische Ladedaten, NMC-Temperaturkurve &amp; 14-Tage Solarprognose...
+            </div>
+          </div>
+
+          <!-- 4 Metriken-Gitter (Live Telemetrie & Modell) -->
+          <div class="smart-reco-metrics-grid">
+            <div class="reco-metric-cell">
+              <span class="rm-label">🔋 AKKU &amp; REICHWEITE</span>
+              <span class="rm-value" id="smartMetricBattery">--% • -- km</span>
+              <span class="rm-sub" id="smartMetricBatterySub">Aktuelle Schätzung</span>
+            </div>
+
+            <div class="reco-metric-cell">
+              <span class="rm-label">🌡️ NMC-EFFIZIENZ</span>
+              <span class="rm-value" id="smartMetricNmc">--% @ --°C</span>
+              <span class="rm-sub" id="smartMetricNmcSub">Witterungsfaktor</span>
+            </div>
+
+            <div class="reco-metric-cell">
+              <span class="rm-label">🚗 FAHRPROFIL</span>
+              <span class="rm-value" id="smartMetricDriving">-- kWh • -- km/d</span>
+              <span class="rm-sub" id="smartMetricDrivingSub">Aus Fahrhistorie</span>
+            </div>
+
+            <div class="reco-metric-cell">
+              <span class="rm-label">☀️ BESTES PV-FENSTER</span>
+              <span class="rm-value" id="smartMetricSolar">-- • -- kWh</span>
+              <span class="rm-sub" id="smartMetricSolarSub">Solarprognose</span>
+            </div>
+          </div>
+
+          <!-- Fußzeile: NMC-Zellchemie Hinweis -->
+          <div class="smart-reco-nmc-footer" id="smartRecoNmcFooter">
+            <span class="nmc-footer-icon">ℹ️</span>
+            <span class="nmc-footer-text" id="smartRecoNmcFooterText">
+              <strong>NMC-Zellchemie (Nickel-Mangan-Kobalt):</strong> Optimaler Wirkungsgrad bei 20–24°C. Bei kühlen Temperaturen optimiert die KI den Ladeslot auf das Temperatur-Maximum am Tag, um Vorheizverluste zu minimieren und den Akku zu schonen.
+            </span>
           </div>
         </div>
 

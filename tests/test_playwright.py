@@ -355,15 +355,19 @@ def run_tests():
             }""")
             log_test("7.1c 5-Minuten Cache im localStorage aktiv", cache_check.get("ttlMatches5Min") is True and cache_check.get("hasCachedData") is True, f"TTL: 5 Min (300.000 ms), Cached: {cache_check.get('hasCachedData')}")
 
-            # 7.1d: 5 Quellen Status Chips
-            chips_count = page.locator("#weatherSourcesStatus .source-chip").count()
-            chips_text = page.locator("#weatherSourcesStatus").inner_text()
-            log_test("7.1d 5 Open-Source Dienste Status Chips sichtbar", chips_count == 5, f"{chips_count} Chips: {chips_text}")
+            # 7.1d: Intelligente Lade-Empfehlung Card gerendert mit Cupra Raval NMC-Modell
+            smart_card_visible = page.locator("#smartChargeCard").is_visible()
+            smart_reco_title = page.locator(".smart-reco-main-title").inner_text()
+            smart_time_val = page.locator("#smartRecoTimeVal").inner_text()
+            log_test("7.1d Intelligente Lade-Empfehlung Card gerendert mit Cupra Raval NMC-Modell", smart_card_visible and len(smart_reco_title) > 0 and len(smart_time_val) > 0, f"Card sichtbar: {smart_card_visible}, Titel: '{smart_reco_title}', Slot: '{smart_time_val}'")
 
-            # 7.1e: Alpine & Solar Meta Badges Rail
-            rail_badges = page.locator("#weatherMetaBadgesRail .meta-badge-item").count()
-            rail_text = page.locator("#weatherMetaBadgesRail").inner_text()
-            log_test("7.1e Solar-GHI & Alpine Meta Badges gerendert", rail_badges >= 2, f"{rail_badges} Badges: '{rail_text}'")
+            # 7.1e: 4 NMC Telemetrie-Metriken aktiv (Akku, NMC-Effizienz, Fahrprofil, PV-Fenster)
+            metric_bat = page.locator("#smartMetricBattery").inner_text()
+            metric_nmc = page.locator("#smartMetricNmc").inner_text()
+            metric_drv = page.locator("#smartMetricDriving").inner_text()
+            metric_sol = page.locator("#smartMetricSolar").inner_text()
+            has_metrics = "%" in metric_bat and "@" in metric_nmc and "kWh" in metric_drv and len(metric_sol) > 0
+            log_test("7.1e 4 NMC Telemetrie-Metriken aktiv (Akku, NMC-Effizienz, Fahrprofil, PV-Fenster)", has_metrics, f"Akku: {metric_bat}, NMC: {metric_nmc}, Fahrprofil: {metric_drv}, Solar: {metric_sol}")
 
             # 7.1f: Standort-Filterleiste mit GPS als Default vorhanden
             loc_chips_count = page.locator("#weatherLocationFilterRail .weather-loc-chip").count()
@@ -456,6 +460,13 @@ def run_tests():
             hourly_cards_count = page.locator(".hourly-hour-card").count()
             has_solar_ghi_chips = page.locator(".hourly-hour-card .hh-ghi-val").count() > 0
             log_test("7.7b Stündliche Detailkapseln mit 6-22h Bereich und Solarstrahlung (GHI)", hourly_cards_count == 17 and has_solar_ghi_chips, f"Kapseln: {hourly_cards_count} (6-22h = 17h), GHI-Werte vorhanden: {has_solar_ghi_chips}")
+
+            # 7.7c: Aktuelle Uhrzeit-Markierung (JETZT) beim aktuellen Tag im Stundengraph
+            modal_sub_text = page.locator("#hourlyModalSub").inner_text()
+            has_now_legend = page.locator("#hourlyChartLegendBox").inner_text()
+            now_badges_count = page.locator(".hourly-hour-card.is-current-hour").count()
+            is_now_marked = "Aktuell" in modal_sub_text and "Jetzt" in has_now_legend and now_badges_count >= 1
+            log_test("7.7c Stündlicher Wetterchart zeigt aktuelle Uhrzeit-Markierung (JETZT) beim aktuellen Tag", is_now_marked, f"Sub: '{modal_sub_text}', Jetzt im Chart/Legende: True, Aktuelle Stunde aktiv: {now_badges_count}")
 
             page.locator("#btnCloseHourlyModal").click()
             time.sleep(0.3)

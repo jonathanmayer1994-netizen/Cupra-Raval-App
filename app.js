@@ -246,6 +246,27 @@
     DOM.dwdAlertsBanner = document.getElementById('dwdAlertsBanner');
     DOM.weatherMetaBadgesRail = document.getElementById('weatherMetaBadgesRail');
     DOM.pvSummaryRecommendationText = document.getElementById('pvSummaryRecommendationText');
+
+    // Smart Charge AI Empfehlung
+    DOM.smartChargeCard = document.getElementById('smartChargeCard');
+    DOM.smartRecoBadge = document.getElementById('smartRecoBadge');
+    DOM.smartRecoSubModel = document.getElementById('smartRecoSubModel');
+    DOM.smartRecoHeroBox = document.getElementById('smartRecoHeroBox');
+    DOM.smartRecoSavingsPill = document.getElementById('smartRecoSavingsPill');
+    DOM.smartRecoTimeVal = document.getElementById('smartRecoTimeVal');
+    DOM.smartRecoLocVal = document.getElementById('smartRecoLocVal');
+    DOM.smartRecoKwhVal = document.getElementById('smartRecoKwhVal');
+    DOM.smartRecoReasoningText = document.getElementById('smartRecoReasoningText');
+    DOM.smartMetricBattery = document.getElementById('smartMetricBattery');
+    DOM.smartMetricBatterySub = document.getElementById('smartMetricBatterySub');
+    DOM.smartMetricNmc = document.getElementById('smartMetricNmc');
+    DOM.smartMetricNmcSub = document.getElementById('smartMetricNmcSub');
+    DOM.smartMetricDriving = document.getElementById('smartMetricDriving');
+    DOM.smartMetricDrivingSub = document.getElementById('smartMetricDrivingSub');
+    DOM.smartMetricSolar = document.getElementById('smartMetricSolar');
+    DOM.smartMetricSolarSub = document.getElementById('smartMetricSolarSub');
+    DOM.smartRecoNmcFooterText = document.getElementById('smartRecoNmcFooterText');
+
     DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
     DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
     DOM.btnToggleExtendedForecast = document.getElementById('btnToggleExtendedForecast');
@@ -2181,6 +2202,9 @@ function createOutput(data, callback) {
     renderChargesStream();
     renderSettingsForms();
     renderLocationsManageList();
+    if (weatherForecast14Days && weatherForecast14Days.length > 0) {
+      renderWeatherViews();
+    }
   }
 
   // =========================================================================
@@ -4529,6 +4553,296 @@ function createOutput(data, callback) {
     return { icon: '☁️', conditionText: 'Trüb & bedeckt' };
   }
 
+  // =========================================================================
+  // INTELLIGENTE LADE-EMPFEHLUNG (NMC-BATTERIE-ENGINE & MULTI-METRIK-ANALYSE)
+  // =========================================================================
+
+  /**
+   * Physikalisch kalibrierter Effizienzfaktor für NMC (Nickel-Mangan-Kobalt)
+   * Zellen des Cupra Raval (MEB Entry Plattform, 52 kWh nutzbar).
+   *
+   * Chemische & thermische Eigenschaften von NMC-Zellen:
+   * - Optimaler elektrochemischer Bereich: 20°C bis 24°C (Faktor 1.0 = 100%)
+   * - Bei Kälte sinkt die Ionen-Diffusionsgeschwindigkeit im Elektrolyten,
+   *   der Innenwiderstand (Ri) steigt, und die Kabinen- & Batterieheizung
+   *   (PTC-Heizer / Wärmepumpe) zieht erhebliche Leistung (1.5 - 3.5 kW).
+   * - Bei Frost (< 0°C) verliert der NMC-Akku bis zu 25-35% Realreichweite.
+   * - Bei Hitze (> 24°C) fordert die aktive Akkukühlung (Chiller) zusätzliche Energie.
+   */
+  function getNmcTemperatureEfficiency(tempC) {
+    const t = (typeof tempC === 'number' && !isNaN(tempC)) ? tempC : 14;
+    if (t >= 20 && t <= 24) {
+      return 1.0;
+    }
+    if (t > 24) {
+      // Aktive Akkukühlung & Kabinenklima: ~1.2% Verlust je Grad über 24°C
+      return Math.max(0.88, 1.0 - (t - 24) * 0.012);
+    }
+    if (t >= 10) {
+      // 10°C bis 19°C: Leichter Innenwiderstand, mäßige Heizung (0.90 bis 0.99)
+      return 0.90 + ((t - 10) / 10) * 0.095;
+    }
+    if (t >= 0) {
+      // 0°C bis 9°C: Deutlicher Heizbedarf, Kälteeinfluss (0.78 bis 0.89)
+      return 0.78 + (t / 10) * 0.115;
+    }
+    if (t >= -10) {
+      // -10°C bis -1°C: Winterbetrieb, hohe Viskosität des Elektrolyts (0.65 bis 0.77)
+      return 0.65 + ((t + 10) / 10) * 0.125;
+    }
+    // Tiefwinter unter -10°C
+    return Math.max(0.52, 0.65 + ((t + 10) / 10) * 0.10);
+  }
+
+  function updateSmartChargingRecommendation() {
+    if (!DOM.smartChargeCard) return;
+    if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
+
+    const v = (appData && appData.vehicle) || {};
+    const batteryCapacity = Number(v.batteryKwh) || 52.0;
+    const currentOdo = Number(v.currentOdo) || 0;
+    const sessions = (appData && Array.isArray(appData.sessions)) ? appData.sessions : [];
+
+    // 1. Fahrprofil & Verbrauch aus Historie (oder NMC-Referenz)
+    const consData = calcConsumption(sessions);
+    const hasConsHistory = consData && consData.hasData;
+    const baseConsumption = hasConsHistory ? Number(consData.avgCons.toFixed(1)) : 14.5; // kWh/100km bei idealen 20-22°C
+
+    const distStats = calcDistanceStats(sessions, currentOdo);
+    const dailyKm = (distStats && distStats.avgKmPerDay >= 5) ? Math.round(distStats.avgKmPerDay) : 32;
+
+    // 2. Aktuelles Tageswetter & NMC-Zellchemie Temperaturfaktor
+    const today = weatherForecast14Days[0];
+    const todayTemp = today ? Math.round((today.tMax + today.tMin) / 2) : 12;
+    const todayNmcFactor = getNmcTemperatureEfficiency(todayTemp);
+    const todayEffectiveCons = Number((baseConsumption / todayNmcFactor).toFixed(1));
+    const nmcLossPct = Math.max(0, Math.round((1 - todayNmcFactor) * 100));
+
+    // 3. Akku SoC & Restreichweite ermitteln
+    let currentRemainingKwh, currentSocPct, currentRangeKm, kmSinceLastCharge;
+    const hasRealHistory = (sessions.length > 0);
+
+    if (hasRealHistory) {
+      const lastSession = sessions[0];
+      const lastOdo = Number(lastSession.odometer) || 0;
+      kmSinceLastCharge = Math.max(0, currentOdo - lastOdo);
+      const energyConsumed = (kmSinceLastCharge * todayEffectiveCons) / 100;
+      const startingEnergy = Math.min(batteryCapacity, Math.max(batteryCapacity * 0.85, (Number(lastSession.kwh) || 30) + 12));
+      currentRemainingKwh = Math.max(batteryCapacity * 0.12, Math.min(batteryCapacity, startingEnergy - energyConsumed));
+      currentSocPct = Math.round((currentRemainingKwh / batteryCapacity) * 100);
+      currentRangeKm = Math.round((currentRemainingKwh / todayEffectiveCons) * 100);
+    } else {
+      kmSinceLastCharge = 0;
+      currentSocPct = 68; // Solide Ausgangsbasis für Erstnutzung
+      currentRemainingKwh = Number((batteryCapacity * 0.68).toFixed(1));
+      currentRangeKm = Math.round((currentRemainingKwh / todayEffectiveCons) * 100);
+    }
+
+    // 4. Intelligente 7-Tage-Projektion & Suche nach dem besten Ladefenster
+    const candidateDays = [];
+    let cumEnergyNeeded = 0;
+
+    for (let i = 0; i < Math.min(7, weatherForecast14Days.length); i++) {
+      const d = weatherForecast14Days[i];
+      const dAvgTemp = Math.round((d.tMax + d.tMin) / 2);
+      const dNmcFactor = getNmcTemperatureEfficiency(dAvgTemp);
+      const dEffectiveCons = baseConsumption / dNmcFactor;
+      const dEnergyNeeded = (dailyKm * dEffectiveCons) / 100;
+
+      const projEnergyAtStartOfDay = Math.max(0, currentRemainingKwh - cumEnergyNeeded);
+      const projSocPct = Math.round((projEnergyAtStartOfDay / batteryCapacity) * 100);
+
+      cumEnergyNeeded += dEnergyNeeded;
+
+      const pvYield = (d.solarYield && d.solarYield.estimatedPvKwh) ? d.solarYield.estimatedPvKwh : 0;
+      const sunHours = d.sunshineHours || 0;
+      const maxGhi = (d.solarYield && d.solarYield.maxGhiWatts) ? d.solarYield.maxGhiWatts : 0;
+      const rainMm = d.rainMm || 0;
+
+      const dDate = new Date(d.dateStr);
+      const dayOfWeek = dDate.getDay();
+      const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
+
+      // Scoring-Modell:
+      // - Solarertrag / GHI: Höchste Priorität für sauberes & günstiges PV-Laden
+      // - NMC-Temperatur: Warme Mittagsstunden schonen die Zellen & vermeiden Vorheizstrom
+      // - SoC-Puffer: Ladebedarf wird dringlicher bei < 30% SoC, kritisch bei <= 20%
+      // - Niederschlag: Trockene Tage bevorzugt
+      let score = 0;
+      score += pvYield * 3.2;
+      score += sunHours * 1.8;
+      if (d.tMax >= 15) score += 7;
+      else if (d.tMax >= 10) score += 3;
+      else if (d.tMax < 4) score -= 6; // Kalter Akku ohne Vorwärmung
+
+      if (rainMm >= 3) score -= 4;
+
+      if (projSocPct <= 22) score += 40; // Akku muss zwingend geladen werden!
+      else if (projSocPct <= 35) score += 18; // Ideales 20-80% NMC-Zyklenfenster
+      else if (projSocPct >= 65 && i > 0) score -= 14; // Akku noch zu voll
+
+      if (isWorkday && (d.hasPvSurplus || pvYield >= 8)) score += 8;
+
+      candidateDays.push({
+        dayIndex: i,
+        day: d,
+        projEnergyAtStartOfDay,
+        projSocPct,
+        pvYield,
+        sunHours,
+        maxGhi,
+        score,
+        isWorkday,
+        dAvgTemp
+      });
+    }
+
+    // Sortierung nach Score, unter Berücksichtigung von Reichweiten-Dringlichkeit
+    candidateDays.sort((a, b) => b.score - a.score);
+    const bestCandidate = candidateDays[0] || {
+      dayIndex: 0,
+      day: today,
+      projEnergyAtStartOfDay: currentRemainingKwh,
+      projSocPct: currentSocPct,
+      pvYield: today?.solarYield?.estimatedPvKwh || 0,
+      sunHours: today?.sunshineHours || 0,
+      score: 50
+    };
+
+    const bDay = bestCandidate.day;
+    const isTodaySlot = (bestCandidate.dayIndex === 0);
+    const isTomorrowSlot = (bestCandidate.dayIndex === 1);
+    const slotDayLabel = isTodaySlot ? 'Heute' : (isTomorrowSlot ? 'Morgen' : `${bDay.dayName}, ${bDay.dateDisplay}`);
+
+    // Zeitfenster abhängig von PV & Tageshöchsttemperatur (NMC-Wohlfühltemperatur)
+    let timeWindow = '11:30 – 15:30 Uhr';
+    if (bDay.sunshineHours >= 3.5 || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 8)) {
+      timeWindow = '11:30 – 15:30 Uhr';
+    } else if (bDay.tMax >= 12) {
+      timeWindow = '13:00 – 16:30 Uhr';
+    } else {
+      timeWindow = '12:00 – 15:00 Uhr';
+    }
+
+    // Standort-Empfehlung
+    const activeLoc = getActiveWeatherLocation();
+    let bestLocationText = '🏢 Bayrhofs (PV-Überschuss)';
+    let kwhTariff = 0.15;
+    if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 8)) {
+      bestLocationText = '🏢 Bayrhofs (PV-Überschuss)';
+      kwhTariff = 0.15;
+    } else if (activeLoc.id === 'loc_zuhause') {
+      bestLocationText = '🏠 Zuhause (Günstiger Tarif)';
+      kwhTariff = 0.30;
+    } else {
+      bestLocationText = `${activeLoc.icon || '📍'} ${activeLoc.name || 'Empfohlener Ladeort'}`;
+      kwhTariff = 0.25;
+    }
+
+    // Empfohlene Lademenge (Ziel: 80-85% SoC für NMC-Zellgesundheit)
+    const targetEnergyKwh = batteryCapacity * 0.82;
+    const chargeKwhNeeded = Math.max(12, Math.min(batteryCapacity, Math.round(targetEnergyKwh - bestCandidate.projEnergyAtStartOfDay)));
+    const savingsEur = Number((chargeKwhNeeded * Math.max(0.15, 0.59 - kwhTariff)).toFixed(2));
+
+    // UI Aktualisierung
+    if (DOM.smartRecoSubModel) {
+      DOM.smartRecoSubModel.textContent = `${v.model || 'Cupra Raval'} • NMC-Zellen (${batteryCapacity.toFixed(1)} kWh)`;
+    }
+
+    if (DOM.smartRecoTimeVal) {
+      DOM.smartRecoTimeVal.textContent = `${slotDayLabel} • ${timeWindow}`;
+    }
+
+    if (DOM.smartRecoLocVal) {
+      DOM.smartRecoLocVal.textContent = bestLocationText;
+    }
+
+    if (DOM.smartRecoKwhVal) {
+      DOM.smartRecoKwhVal.textContent = `+${chargeKwhNeeded} kWh (Ziel: 80% SoC)`;
+    }
+
+    if (DOM.smartRecoSavingsPill) {
+      DOM.smartRecoSavingsPill.textContent = `⚡️ ~${savingsEur.toFixed(2).replace('.', ',')} € Ersparnis`;
+    }
+
+    // Intelligente Begründung formulieren
+    let reasoning = ``;
+    if (isTodaySlot) {
+      reasoning = `<strong>Heute direkt nutzen:</strong> Hoher PV-Ertrag (${bDay.sunshineHours}h Sonne, ca. ${bDay.solarYield?.estimatedPvKwh || 0} kWh Solar) und ${bDay.tMax}°C. `;
+    } else {
+      reasoning = `<strong>${slotDayLabel} ist das beste Ladefenster:</strong> Bei <strong>${bDay.sunshineHours}h Sonne</strong> und <strong>~${bDay.solarYield?.estimatedPvKwh || 0} kWh PV-Ertrag</strong> erzielst du maximalen Solarüberschuss. `;
+    }
+
+    reasoning += `Dein aktueller Akkustand (~${currentSocPct}% SoC / ${currentRangeKm} km) reicht bei deinem Fahrprofil (~${dailyKm} km/Tag) bis ${slotDayLabel} sicher aus. `;
+
+    if (todayTemp <= 14) {
+      reasoning += `Witterungsbedingt sinkt die NMC-Reichweite bei aktuellen ${todayTemp}°C um <strong>${nmcLossPct}%</strong> (${todayEffectiveCons.toFixed(1).replace('.', ',')} statt ${baseConsumption.toFixed(1).replace('.', ',')} kWh/100km). `;
+      reasoning += `Das empfohlene Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), wodurch der Innenwiderstand der NMC-Zellen minimiert und verlustreiches Akku-Vorheizen vermieden wird.`;
+    } else {
+      reasoning += `Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Arbeitsfenster für schonendes Laden.`;
+    }
+
+    if (!hasRealHistory) {
+      reasoning += `<br><span style="color:var(--text-muted); font-size:0.68rem; margin-top:4px; display:inline-block;">ℹ️ Berechnet auf Basis des Raval NMC-Referenzprofils. Sobald du eigene Ladevorgänge speicherst, lernt die KI deine realen Verbräuche.</span>`;
+    }
+
+    if (DOM.smartRecoReasoningText) {
+      DOM.smartRecoReasoningText.innerHTML = reasoning;
+    }
+
+    // Dynamic Badge Pill
+    if (DOM.smartRecoBadge) {
+      if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 10)) {
+        DOM.smartRecoBadge.textContent = '☀️ PV-Priorität';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
+      } else if (todayTemp < 6) {
+        DOM.smartRecoBadge.textContent = '❄️ Kälteschutz';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill cold';
+      } else if (!hasRealHistory) {
+        DOM.smartRecoBadge.textContent = '💡 Modell-Prognose';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill baseline';
+      } else {
+        DOM.smartRecoBadge.textContent = '🎯 Optimaler Slot';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill';
+      }
+    }
+
+    // 4 Metriken Kacheln
+    if (DOM.smartMetricBattery) {
+      DOM.smartMetricBattery.textContent = `~${currentSocPct}% • ${currentRangeKm} km`;
+    }
+    if (DOM.smartMetricBatterySub) {
+      DOM.smartMetricBatterySub.textContent = hasRealHistory
+        ? `${(batteryCapacity - currentRemainingKwh).toFixed(1)} kWh verbraucht (${kmSinceLastCharge} km)`
+        : `Basis-Puffer (${currentRemainingKwh.toFixed(1)} kWh)`;
+    }
+
+    if (DOM.smartMetricNmc) {
+      DOM.smartMetricNmc.textContent = `${Math.round(todayNmcFactor * 100)}% @ ${todayTemp}°C`;
+    }
+    if (DOM.smartMetricNmcSub) {
+      DOM.smartMetricNmcSub.textContent = (todayNmcFactor < 0.98)
+        ? `-${nmcLossPct}% Kälteeinfluss`
+        : `Optimal (20–24°C)`;
+    }
+
+    if (DOM.smartMetricDriving) {
+      DOM.smartMetricDriving.textContent = `${baseConsumption.toFixed(1).replace('.', ',')} kWh • ${dailyKm} km/d`;
+    }
+    if (DOM.smartMetricDrivingSub) {
+      DOM.smartMetricDrivingSub.textContent = hasConsHistory
+        ? `Realer Ø Verbrauch`
+        : `NMC-Referenzwert`;
+    }
+
+    if (DOM.smartMetricSolar) {
+      DOM.smartMetricSolar.textContent = `${bDay.dayName} • ~${bDay.solarYield?.estimatedPvKwh || 0} kWh`;
+    }
+    if (DOM.smartMetricSolarSub) {
+      DOM.smartMetricSolarSub.textContent = `${bDay.sunshineHours}h Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
+    }
+  }
+
   function renderWeatherViews() {
     if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
 
@@ -4554,7 +4868,12 @@ function createOutput(data, callback) {
     } else {
       summaryText = `Wetterprognose für <strong>${escapeHtml(loc.name)}</strong>: An <strong>${pvDays.length} Tagen sonnige Bedingungen</strong> für hohe Effizienz und Reichweite.`;
     }
-    DOM.pvSummaryRecommendationText.innerHTML = summaryText;
+    if (DOM.pvSummaryRecommendationText) {
+      DOM.pvSummaryRecommendationText.innerHTML = summaryText;
+    }
+
+    // Intelligente Lade-Empfehlung mit NMC-Physik berechnen & anzeigen
+    updateSmartChargingRecommendation();
 
     // 4 Tage Default
     const primary4 = weatherForecast14Days.slice(0, 4);
@@ -4735,11 +5054,21 @@ function createOutput(data, callback) {
     const day = weatherForecast14Days && weatherForecast14Days[dayIndex];
     if (!day) return;
 
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const isToday = (dayIndex === 0) || (day.dateStr === todayStr);
+
+    const curHours = String(now.getHours()).padStart(2, '0');
+    const curMins = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeStr = isToday ? `${curHours}:${curMins}` : null;
+
     // Nur der relevante Tageszeitraum: 06:00 bis 22:00 Uhr (vom Nutzer gewünscht)
     const displayHours = (day.hourlyData || []).filter(h => h.hour >= 6 && h.hour <= 22);
 
     DOM.hourlyModalTitle.textContent = `${day.dayName}, ${day.dateDisplay}`;
-    DOM.hourlyModalSub.textContent = `${day.conditionText || 'Prognose'} • Verlauf von 06:00 bis 22:00 Uhr`;
+    DOM.hourlyModalSub.textContent = isToday
+      ? `Heute • ${day.conditionText || 'Prognose'} • Aktuell: ${currentTimeStr} Uhr`
+      : `${day.conditionText || 'Prognose'} • Verlauf von 06:00 bis 22:00 Uhr`;
 
     DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
     DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
@@ -4757,6 +5086,12 @@ function createOutput(data, callback) {
           <span class="legend-indicator dot-cyan" style="width: 7px; height: 7px; border-radius: 2px;"></span>
           <span>Niederschlag</span>
         </span>
+        ${isToday ? `
+        <span class="subtle-leg-item">
+          <span class="legend-indicator dot-now" style="width: 10px; height: 3px; border-radius: 2px; background: #00e5ff; box-shadow: 0 0 6px #00e5ff;"></span>
+          <span style="color: #00e5ff; font-weight: 700;">Jetzt (${currentTimeStr})</span>
+        </span>
+        ` : ''}
       `;
     }
 
@@ -4778,22 +5113,26 @@ function createOutput(data, callback) {
     // Modal FIRST öffnen damit Canvas echte Pixelmaße hat
     DOM.modalHourlyWeather.classList.add('open');
 
-    // Stündlichen Chart.js Graph zeichnen mit dynamischer Sonnenaufgang/untergang Markerlinie (6:00 - 22:00 Uhr)
-    renderHourlyWeatherChart(displayHours, day.sunrise, day.sunset);
+    // Stündlichen Chart.js Graph zeichnen mit dynamischer Sonnenaufgang/untergang Markerlinie & aktueller Uhrzeit
+    renderHourlyWeatherChart(displayHours, day.sunrise, day.sunset, currentTimeStr);
 
     // Stündliche Kapseln rendern (6:00 - 22:00 Uhr)
     const sunriseHour = day.sunrise ? parseInt(day.sunrise.split(':')[0], 10) : -1;
     const sunsetHour = day.sunset ? parseInt(day.sunset.split(':')[0], 10) : -1;
+    const curHourNum = isToday ? now.getHours() : -1;
 
     DOM.hourlyHoursScroll.innerHTML = displayHours.map(h => {
       const isRise = (h.hour === sunriseHour);
       const isSet = (h.hour === sunsetHour);
+      const isCurrentHour = (h.hour === curHourNum);
+
       let sunEventBadge = '';
-      if (isRise) sunEventBadge = `<span style="font-size:0.58rem; color:#f59e0b; font-weight:800;">🌅 ${day.sunrise}</span>`;
+      if (isCurrentHour) sunEventBadge = `<span class="hh-now-tag">📍 JETZT</span>`;
+      else if (isRise) sunEventBadge = `<span style="font-size:0.58rem; color:#f59e0b; font-weight:800;">🌅 ${day.sunrise}</span>`;
       else if (isSet) sunEventBadge = `<span style="font-size:0.58rem; color:#f97316; font-weight:800;">🌇 ${day.sunset}</span>`;
 
       return `
-        <div class="hourly-hour-card ${isRise || isSet ? 'sun-event-hour' : ''}">
+        <div class="hourly-hour-card ${isCurrentHour ? 'is-current-hour' : ''} ${isRise || isSet ? 'sun-event-hour' : ''}" data-hour="${h.hour}">
           <span class="hh-time">${h.time}</span>
           ${sunEventBadge}
           <span class="hh-icon">${h.icon}</span>
@@ -4804,6 +5143,15 @@ function createOutput(data, callback) {
         </div>
       `;
     }).join('');
+
+    if (isToday) {
+      setTimeout(() => {
+        const curEl = DOM.hourlyHoursScroll?.querySelector('.is-current-hour');
+        if (curEl) {
+          curEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+      }, 120);
+    }
 
     requestAnimationFrame(() => {
       if (chartHourly) chartHourly.resize();
@@ -4822,7 +5170,7 @@ function createOutput(data, callback) {
     DOM.modalHourlyWeather.classList.remove('open');
   }
 
-  function renderHourlyWeatherChart(hours, sunriseTime, sunsetTime) {
+  function renderHourlyWeatherChart(hours, sunriseTime, sunsetTime, currentTimeStr) {
     if (!DOM.canvasHourlyChart || typeof Chart === 'undefined') return;
     if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
 
@@ -4854,7 +5202,8 @@ function createOutput(data, callback) {
           if (isNaN(h) || isNaN(m)) return null;
 
           const fracHours = h + (m / 60);
-          if (fracHours < startHour || fracHours > endHour) return null;
+          if (fracHours < startHour) return left + 2;
+          if (fracHours > endHour) return right - 2;
 
           const frac = fracHours - startHour;
           const fIdx = Math.floor(frac);
@@ -4866,6 +5215,7 @@ function createOutput(data, callback) {
 
         const xSunrise = parseTimeToX(sunriseTime);
         const xSunset = parseTimeToX(sunsetTime);
+        const xCurrent = parseTimeToX(currentTimeStr);
 
         const drawMarker = (xPos, label, color) => {
           if (xPos === null || isNaN(xPos) || xPos < left || xPos > right) return;
@@ -4918,8 +5268,70 @@ function createOutput(data, callback) {
           c.restore();
         };
 
+        const drawCurrentTimeMarker = (xPos, timeStr) => {
+          if (xPos === null || isNaN(xPos) || xPos < left || xPos > right) return;
+
+          c.save();
+
+          // 1. Neon Glow Schein
+          c.shadowColor = 'rgba(0, 229, 255, 0.75)';
+          c.shadowBlur = 8;
+
+          // 2. Vertikale cyan Linie
+          c.beginPath();
+          c.setLineDash([4, 2]);
+          c.lineWidth = 2.0;
+          c.strokeStyle = '#00e5ff';
+          c.moveTo(xPos, top + 18);
+          c.lineTo(xPos, bottom);
+          c.stroke();
+
+          // 3. Leuchtender Punkt mit Halo am Fuße
+          c.beginPath();
+          c.setLineDash([]);
+          c.arc(xPos, bottom - 1, 6, 0, Math.PI * 2);
+          c.fillStyle = 'rgba(0, 229, 255, 0.35)';
+          c.fill();
+
+          c.beginPath();
+          c.arc(xPos, bottom - 1, 3.5, 0, Math.PI * 2);
+          c.fillStyle = '#00e5ff';
+          c.fill();
+
+          // 4. Oberer Pill-Badge: "📍 JETZT 10:14"
+          c.shadowBlur = 0;
+          c.font = 'bold 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          const text = `📍 JETZT ${timeStr}`;
+          const textWidth = c.measureText(text).width;
+          const badgeW = textWidth + 10;
+          const badgeH = 17;
+          const badgeX = Math.max(left + 2, Math.min(right - badgeW - 2, xPos - (badgeW / 2)));
+          const badgeY = top + 1;
+
+          c.beginPath();
+          const r = 4.5;
+          if (c.roundRect) {
+            c.roundRect(badgeX, badgeY, badgeW, badgeH, r);
+          } else {
+            c.rect(badgeX, badgeY, badgeW, badgeH);
+          }
+          c.fillStyle = 'rgba(6, 18, 30, 0.96)';
+          c.fill();
+          c.lineWidth = 1.4;
+          c.strokeStyle = '#00e5ff';
+          c.stroke();
+
+          c.fillStyle = '#ffffff';
+          c.textAlign = 'center';
+          c.textBaseline = 'middle';
+          c.fillText(text, badgeX + (badgeW / 2), badgeY + (badgeH / 2) + 0.5);
+
+          c.restore();
+        };
+
         if (sunriseTime) drawMarker(xSunrise, `🌅 ${sunriseTime}`, '#f59e0b');
         if (sunsetTime) drawMarker(xSunset, `🌇 ${sunsetTime}`, '#f97316');
+        if (currentTimeStr) drawCurrentTimeMarker(xCurrent, currentTimeStr);
       }
     };
 
