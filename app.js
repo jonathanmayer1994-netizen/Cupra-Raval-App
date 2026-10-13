@@ -2270,6 +2270,10 @@ function createOutput(data, callback) {
     renderChargesStream();
     renderSettingsForms();
     renderLocationsManageList();
+    if (appData && appData.settings && appData.settings.locations && appData.settings.locations.length > 0) {
+      const curLocId = (DOM.entryLocationId && DOM.entryLocationId.value) || appData.settings.locations[0].id;
+      selectLocationForEntry(curLocId, !DOM.entryEditId || !DOM.entryEditId.value);
+    }
     if (weatherForecast14Days && weatherForecast14Days.length > 0) {
       renderWeatherViews();
     }
@@ -4776,17 +4780,20 @@ function createOutput(data, callback) {
 
     // Standort-Empfehlung
     const activeLoc = getActiveWeatherLocation();
-    let bestLocationText = '🏢 Bayrhofs (PV-Überschuss)';
-    let kwhTariff = 0.15;
+    const bayrhofsLoc = (appData.settings && appData.settings.locations && appData.settings.locations.find(l => l.id === 'loc_bayrhofs' || l.name.toLowerCase().includes('bayrhof'))) || DEFAULT_LOCATIONS[0];
+    const zuhauseLoc = (appData.settings && appData.settings.locations && appData.settings.locations.find(l => l.id === 'loc_zuhause' || l.name.toLowerCase().includes('zuhause'))) || DEFAULT_LOCATIONS[1];
+
+    let bestLocationText = `${bayrhofsLoc.icon || '🏢'} ${bayrhofsLoc.name} (PV-Überschuss)`;
+    let kwhTariff = Number(bayrhofsLoc.kwhPrice) || 0.15;
     if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 8)) {
-      bestLocationText = '🏢 Bayrhofs (PV-Überschuss)';
-      kwhTariff = 0.15;
+      bestLocationText = `${bayrhofsLoc.icon || '🏢'} ${bayrhofsLoc.name} (PV-Überschuss)`;
+      kwhTariff = Number(bayrhofsLoc.kwhPrice) || 0.15;
     } else if (activeLoc.id === 'loc_zuhause') {
-      bestLocationText = '🏠 Zuhause (Günstiger Tarif)';
-      kwhTariff = 0.30;
+      bestLocationText = `${zuhauseLoc.icon || '🏠'} ${zuhauseLoc.name} (Günstiger Tarif)`;
+      kwhTariff = Number(zuhauseLoc.kwhPrice) || 0.32;
     } else {
       bestLocationText = `${activeLoc.icon || '📍'} ${activeLoc.name || 'Empfohlener Ladeort'}`;
-      kwhTariff = 0.25;
+      kwhTariff = Number(activeLoc.kwhPrice) || 0.25;
     }
 
     // Empfohlene Lademenge (Ziel: 80% SoC für NMC-Zellgesundheit)
@@ -5775,6 +5782,11 @@ function createOutput(data, callback) {
     renderLocationsManageList();
     renderLocationFilterRail();
     renderWeatherLocationFilterRail();
+    updateSmartChargingRecommendation();
+    const curLocId = (DOM.entryLocationId && DOM.entryLocationId.value) || (appData.settings.locations[0] && appData.settings.locations[0].id);
+    if (curLocId) {
+      selectLocationForEntry(curLocId, !DOM.entryEditId || !DOM.entryEditId.value);
+    }
     triggerHaptic();
     showToast(`Standort "${name}" gespeichert ✓`);
   }
@@ -5821,16 +5833,21 @@ function createOutput(data, callback) {
     DOM.modalLocationPickerSheet.classList.remove('open');
   }
 
-  function selectLocationForEntry(locId) {
-    const loc = appData.settings.locations.find(l => l.id === locId) || appData.settings.locations[0];
+  function selectLocationForEntry(locId, overridePrice = true) {
+    const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
+    const loc = locs.find(l => l.id === locId) || locs[0] || DEFAULT_LOCATIONS[0];
     if (!loc) return;
 
-    DOM.entryLocationId.value = loc.id;
-    DOM.pickerSelectedIcon.textContent = loc.icon || '🏢';
-    DOM.pickerSelectedTitle.textContent = loc.name;
-    DOM.pickerSelectedSub = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh`;
+    if (DOM.entryLocationId) DOM.entryLocationId.value = loc.id;
+    if (DOM.pickerSelectedIcon) DOM.pickerSelectedIcon.textContent = loc.icon || '🏢';
+    if (DOM.pickerSelectedTitle) DOM.pickerSelectedTitle.textContent = loc.name;
+    if (DOM.pickerSelectedSub) {
+      DOM.pickerSelectedSub.textContent = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh`;
+    }
 
-    DOM.entryPrice.value = loc.kwhPrice.toFixed(2);
+    if (overridePrice && DOM.entryPrice) {
+      DOM.entryPrice.value = Number(loc.kwhPrice).toFixed(2);
+    }
     calculateModalCost();
   }
 
@@ -5842,7 +5859,7 @@ function createOutput(data, callback) {
     DOM.entryEditId.value = '';
 
     const latestOdo = getLatestOdometer();
-    const defaultLoc = appData.settings.locations[0] || DEFAULT_LOCATIONS[0];
+    const defaultLoc = (appData.settings && appData.settings.locations && appData.settings.locations[0]) || DEFAULT_LOCATIONS[0];
 
     if (editId) {
       const cleanEditId = String(editId).trim();
@@ -5853,15 +5870,15 @@ function createOutput(data, callback) {
         DOM.entryDateTime.value = formatDateTimeLocal(new Date(s.date));
         DOM.entryKwh.value = s.kwh;
         DOM.entryOdometer.value = s.odometer || '';
-        DOM.entryPrice.value = s.pricePerKwh;
+        DOM.entryPrice.value = Number(s.pricePerKwh).toFixed(2);
         DOM.entryTotalCost.value = s.totalCost.toFixed(2);
         DOM.entryNotes.value = s.notes || '';
         if (DOM.entryBatterySoc) {
           DOM.entryBatterySoc.value = (s.soc !== undefined && s.soc !== null) ? s.soc : '';
         }
 
-        const matchingLoc = appData.settings.locations.find(l => l.name === s.location) || defaultLoc;
-        selectLocationForEntry(matchingLoc.id);
+        const matchingLoc = (appData.settings.locations || []).find(l => l.name === s.location) || defaultLoc;
+        selectLocationForEntry(matchingLoc.id, false);
       }
     } else {
       DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
@@ -5871,7 +5888,7 @@ function createOutput(data, callback) {
         DOM.entryBatterySoc.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
       }
 
-      selectLocationForEntry(defaultLoc.id);
+      selectLocationForEntry(defaultLoc.id, true);
     }
 
     calculateModalOdoDelta();

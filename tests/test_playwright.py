@@ -216,6 +216,12 @@ def run_tests():
             picker_sheet_closed = page.locator("#modalLocationPickerSheet").evaluate("el => !el.classList.contains('open')")
             log_test("4.3 Standort gewählt & Sheet schließt sich", picker_sheet_closed, "Erster Standort gewählt")
 
+            # 4.3b: Verifiziere, dass nach Standortwahl Button-Untertitel und Preis exakt synchron sind mit dem Settings-Preis
+            selected_sub = page.locator("#pickerSelectedSub").inner_text()
+            entry_price_val = page.locator("#entryPrice").input_value()
+            price_sync = (entry_price_val in selected_sub.replace(',', '.'))
+            log_test("4.3b Ladeort Preis-Synchronisation: Button & Eingabefeld identisch", price_sync, f"Sub: '{selected_sub}', Input: '{entry_price_val}'")
+
             # Fill inputs
             page.locator("#entryKwh").fill("42.5")
             page.locator("#entryOdometer").fill("12680")
