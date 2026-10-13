@@ -344,6 +344,29 @@
               <span>GPS Refresh</span>
             </button>
           </div>
+
+          <!-- Standort-Filter Rail (Horizontale Apple-Chips) -->
+          <div class="weather-filter-section">
+            <div class="weather-filter-header">
+              <span class="filter-header-title">STANDORT FILTER</span>
+              <span class="filter-active-badge" id="weatherActiveLocBadge">📍 GPS aktiv</span>
+            </div>
+            <div class="weather-loc-chips-rail" id="weatherLocationFilterRail" role="tablist" aria-label="Wetter Standort Filter">
+              <!-- Dynamisch mit Buttons befüllt -->
+            </div>
+          </div>
+
+          <!-- Variables Suchfeld (nur aktiv wenn 'Öffentlich' gewählt) -->
+          <div class="weather-variable-box" id="weatherVariableBox" style="display: none;">
+            <div class="variable-input-row">
+              <span class="var-icon">🔍</span>
+              <input type="text" id="inputWeatherVariableSearch" class="variable-search-field" placeholder="Ort oder Adresse eingeben (z.B. München, Füssen, Lindau)..." autocomplete="off" />
+              <button type="button" class="btn-variable-search" id="btnWeatherVariableSearch">Suchen</button>
+              <button type="button" class="btn-variable-gps" id="btnWeatherVariableGps" title="Aktuellen GPS-Standort verwenden">📍 GPS</button>
+            </div>
+            <div class="variable-feedback-text" id="weatherVariableFeedback"></div>
+          </div>
+
           <!-- Quellen-Statusleiste (5 Indikatoren) -->
           <div class="weather-sources-pills-row" id="weatherSourcesStatus">
             <span class="source-chip active" title="DWD ICON-D2 & ECMWF IFS (Globalstrahlung & Regenrisiko)">☀️ Open-Meteo</span>
@@ -825,6 +848,13 @@
         <div class="form-touch-row">
           <label class="form-touch-label" for="locEditName">Standort-Name</label>
           <input type="text" id="locEditName" class="form-touch-input" placeholder="z.B. Bayrhofs, Zuhause, Büro..." required>
+        </div>
+
+        <!-- Adresse / Ort (für standortgenaues Wetter) -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="locEditAddress">Adresse / Ort (für Wetterprognose)</label>
+          <input type="text" id="locEditAddress" class="form-touch-input" placeholder="z.B. Unterwang 18, 87439 Kempten">
+          <span class="form-touch-hint" style="font-size:0.62rem; color:var(--text-muted); margin-top:3px; display:block;">Wird für standortgenaues Wetter & Solarprognose verwendet</span>
         </div>
 
         <!-- Icon Picker Grid -->

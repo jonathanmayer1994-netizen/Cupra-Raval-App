@@ -16,10 +16,45 @@
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
   const DEFAULT_LOCATIONS = [
-    { id: "loc_bayrhofs", name: "Bayrhofs", icon: "🏢", powerType: "pv", kwhPrice: 0.15 },
-    { id: "loc_arbeit", name: "Arbeit", icon: "💼", powerType: "grid", kwhPrice: 0.20 },
-    { id: "loc_zuhause", name: "Zuhause", icon: "🏠", powerType: "grid", kwhPrice: 0.32 },
-    { id: "loc_oeffentlich", name: "Öffentlich", icon: "⚡️", powerType: "grid", kwhPrice: 0.59 }
+    {
+      id: "loc_bayrhofs",
+      name: "Bayrhofs",
+      icon: "🏢",
+      powerType: "pv",
+      kwhPrice: 0.15,
+      address: "Unterwang 18, 87439 Kempten",
+      lat: 47.7468,
+      lon: 10.3094
+    },
+    {
+      id: "loc_zuhause",
+      name: "Zuhause",
+      icon: "🏠",
+      powerType: "grid",
+      kwhPrice: 0.32,
+      address: "Rubihornweg 1, 87471 Durach",
+      lat: 47.6971,
+      lon: 10.3542
+    },
+    {
+      id: "loc_arbeit",
+      name: "Arbeit",
+      icon: "💼",
+      powerType: "grid",
+      kwhPrice: 0.20,
+      address: "Thomas-Dachser-Straße 2, 87439 Kempten",
+      lat: 47.7476,
+      lon: 10.3038
+    },
+    {
+      id: "loc_oeffentlich",
+      name: "Öffentlich",
+      icon: "⚡️",
+      powerType: "grid",
+      kwhPrice: 0.59,
+      address: "Variabel (Aktueller Standort)",
+      isVariable: true
+    }
   ];
 
   const DEFAULT_DATA = {
@@ -36,7 +71,14 @@
       locations: JSON.parse(JSON.stringify(DEFAULT_LOCATIONS)),
       googleSheetsUrl: DEFAULT_GOOGLE_SHEETS_API_URL,
       weatherGps: {
-        name: "GPS: Bayrhofs / Kempten",
+        name: "GPS: Aktueller Standort",
+        lat: 47.72,
+        lon: 10.31
+      },
+      activeWeatherLocationId: 'gps',
+      variableLocation: {
+        name: "Öffentlich (Variabel)",
+        query: "",
         lat: 47.72,
         lon: 10.31
       },
@@ -55,6 +97,7 @@
   let activeSettingsSub = 'car';
   let activeChargingFilter = 'all';
   let activeAnalyticsPeriod = 'month';
+  let activeWeatherLocationId = 'gps';
 
   let weatherForecast14Days = null;
   let currentDwdAlerts = [];
@@ -190,6 +233,13 @@
     // Weather Tab
     DOM.weatherDisplayLocation = document.getElementById('weatherDisplayLocation');
     DOM.btnRefreshWeather = document.getElementById('btnRefreshWeather');
+    DOM.weatherLocationFilterRail = document.getElementById('weatherLocationFilterRail');
+    DOM.weatherActiveLocBadge = document.getElementById('weatherActiveLocBadge');
+    DOM.weatherVariableBox = document.getElementById('weatherVariableBox');
+    DOM.inputWeatherVariableSearch = document.getElementById('inputWeatherVariableSearch');
+    DOM.btnWeatherVariableSearch = document.getElementById('btnWeatherVariableSearch');
+    DOM.btnWeatherVariableGps = document.getElementById('btnWeatherVariableGps');
+    DOM.weatherVariableFeedback = document.getElementById('weatherVariableFeedback');
     DOM.ptrWeather = document.getElementById('ptrWeather');
     DOM.ptrWeatherStatus = document.getElementById('ptrWeatherStatus');
     DOM.weatherSourcesStatus = document.getElementById('weatherSourcesStatus');
@@ -255,6 +305,7 @@
     DOM.formLocationEditor = document.getElementById('formLocationEditor');
     DOM.locEditId = document.getElementById('locEditId');
     DOM.locEditName = document.getElementById('locEditName');
+    DOM.locEditAddress = document.getElementById('locEditAddress');
     DOM.iconPickerGrid = document.getElementById('iconPickerGrid');
     DOM.locEditIcon = document.getElementById('locEditIcon');
     DOM.locPowerTypePicker = document.getElementById('locPowerTypePicker');
@@ -345,28 +396,72 @@
           lat: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lat) ?? DEFAULT_DATA.settings.weatherGps.lat),
           lon: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lon) ?? DEFAULT_DATA.settings.weatherGps.lon)
         },
+        activeWeatherLocationId: (data.settings && data.settings.activeWeatherLocationId) || 'gps',
+        variableLocation: (data.settings && data.settings.variableLocation) || {
+          name: "Öffentlich (Variabel)",
+          query: "",
+          lat: 47.72,
+          lon: 10.31
+        },
         pvThresholdSunshineHours: Number((data.settings && data.settings.pvThresholdSunshineHours) ?? DEFAULT_DATA.settings.pvThresholdSunshineHours)
       },
       sessions: Array.isArray(data.sessions) ? data.sessions : [],
       pendingSyncQueue: Array.isArray(data.pendingSyncQueue) ? data.pendingSyncQueue : []
     };
 
-    // Locations Migration
+    // Locations Migration (mit Adressen & Geo-Koordinaten für Bayrhofs, Zuhause, Arbeit & Öffentlich)
     if (data.settings && Array.isArray(data.settings.locations) && data.settings.locations.length > 0) {
       res.settings.locations = data.settings.locations.map((item, idx) => {
-        if (typeof item === 'string') {
-          const isPv = item.toLowerCase().includes('bayrhofs');
-          const price = isPv ? 0.15 : (item.toLowerCase().includes('arbeit') ? 0.20 : (item.toLowerCase().includes('zuhause') ? 0.32 : 0.59));
-          const icon = item.toLowerCase().includes('bayrhofs') ? '🏢' : (item.toLowerCase().includes('arbeit') ? '💼' : (item.toLowerCase().includes('zuhause') ? '🏠' : '⚡️'));
-          return { id: `loc_${idx}_${Date.now()}`, name: item, icon, powerType: isPv ? 'pv' : 'grid', kwhPrice: price };
+        let name = typeof item === 'string' ? item : (item.name || `Standort ${idx + 1}`);
+        let icon = (item && item.icon) || '🏢';
+        let powerType = (item && item.powerType) || 'grid';
+        let kwhPrice = Number(item && item.kwhPrice) || 0.30;
+        let id = (item && item.id) || `loc_${idx}_${Date.now()}`;
+        let address = (item && item.address) || '';
+        let lat = (item && typeof item.lat === 'number') ? item.lat : null;
+        let lon = (item && typeof item.lon === 'number') ? item.lon : null;
+        let isVariable = item && item.isVariable === true;
+
+        const nLower = name.toLowerCase();
+        if (nLower.includes('bayrhof')) {
+          address = address || "Unterwang 18, 87439 Kempten";
+          lat = lat ?? 47.7468;
+          lon = lon ?? 10.3094;
+          powerType = 'pv';
+          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.15;
+          icon = icon || '🏢';
+        } else if (nLower.includes('zuhause') || nLower.includes('durach')) {
+          address = address || "Rubihornweg 1, 87471 Durach";
+          lat = lat ?? 47.6971;
+          lon = lon ?? 10.3542;
+          powerType = 'grid';
+          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.32;
+          icon = icon || '🏠';
+        } else if (nLower.includes('arbeit') || nLower.includes('dachser')) {
+          address = address || "Thomas-Dachser-Straße 2, 87439 Kempten";
+          lat = lat ?? 47.7476;
+          lon = lon ?? 10.3038;
+          powerType = 'grid';
+          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.20;
+          icon = icon || '💼';
+        } else if (nLower.includes('öffentlich') || nLower.includes('oeffentlich')) {
+          address = address || "Variabel";
+          isVariable = true;
+          powerType = 'grid';
+          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.59;
+          icon = icon || '⚡️';
         }
-        const isArbeit = item.name && item.name.toLowerCase() === 'arbeit';
+
         return {
-          id: item.id || `loc_${idx}_${Date.now()}`,
-          name: item.name || `Standort ${idx + 1}`,
-          icon: item.icon || '🏢',
-          powerType: isArbeit ? 'grid' : (item.powerType === 'pv' ? 'pv' : 'grid'),
-          kwhPrice: Number(item.kwhPrice) || 0.30
+          id,
+          name,
+          icon,
+          powerType,
+          kwhPrice,
+          address,
+          lat,
+          lon,
+          isVariable
         };
       });
     } else {
@@ -1623,6 +1718,29 @@ function createOutput(data, callback) {
       triggerHaptic();
     });
 
+    // Variable Wetter-Standort Suche & GPS
+    if (DOM.btnWeatherVariableSearch) {
+      DOM.btnWeatherVariableSearch.addEventListener('click', () => {
+        handleSearchVariableLocation();
+        triggerHaptic();
+      });
+    }
+    if (DOM.inputWeatherVariableSearch) {
+      DOM.inputWeatherVariableSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleSearchVariableLocation();
+          triggerHaptic();
+        }
+      });
+    }
+    if (DOM.btnWeatherVariableGps) {
+      DOM.btnWeatherVariableGps.addEventListener('click', () => {
+        handleUseGpsForVariable();
+        triggerHaptic();
+      });
+    }
+
     // 14-Tage Toggle
     DOM.btnToggleExtendedForecast.addEventListener('click', () => {
       isWeatherExpanded = !isWeatherExpanded;
@@ -1855,7 +1973,7 @@ function createOutput(data, callback) {
           releaseText: 'Loslassen zum Aktualisieren',
           refreshingText: 'Wetterdaten werden aktualisiert...',
           successText: 'Wetter aktualisiert ✓',
-          action: () => autoRequestGpsAndFetchWeather(true)
+          action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true) : fetchWeatherCluster(true))
         };
       }
       return null;
@@ -1882,7 +2000,7 @@ function createOutput(data, callback) {
             idleText: 'Zum Aktualisieren nach unten ziehen',
             refreshingText: 'Wetterdaten werden aktualisiert...',
             successText: 'Wetter aktualisiert ✓',
-            action: () => autoRequestGpsAndFetchWeather(true)
+            action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true) : fetchWeatherCluster(true))
           };
 
       if (!config.banner) return;
@@ -2059,6 +2177,7 @@ function createOutput(data, callback) {
   function renderAll() {
     renderDashboard();
     renderLocationFilterRail();
+    renderWeatherLocationFilterRail();
     renderChargesStream();
     renderSettingsForms();
     renderLocationsManageList();
@@ -3764,8 +3883,216 @@ function createOutput(data, callback) {
   }
 
   // =========================================================================
-  // TAB 3: WETTER & BAYRHOFS BÜRO PROGNOSE (EXAKTE ICONS & L/M² EINHEIT)
+  // TAB 3: WETTER & STANDORT-FILTERUNG (BAYRHOFS, ZUHAUSE, ARBEIT, ÖFFENTLICH & GPS)
   // =========================================================================
+  function getActiveWeatherLocation() {
+    const activeId = activeWeatherLocationId || (appData && appData.settings && appData.settings.activeWeatherLocationId) || 'gps';
+
+    if (activeId === 'gps') {
+      const gps = (appData && appData.settings && appData.settings.weatherGps) || DEFAULT_DATA.settings.weatherGps;
+      return {
+        id: 'gps',
+        name: 'Aktueller GPS-Standort',
+        icon: '📍',
+        address: 'GPS: Bayrhofs / Kempten',
+        lat: Number(gps.lat) || 47.72,
+        lon: Number(gps.lon) || 10.31,
+        isGps: true,
+        powerType: 'pv'
+      };
+    }
+
+    if (activeId === 'loc_oeffentlich') {
+      const varLoc = (appData && appData.settings && appData.settings.variableLocation) || {
+        name: "Öffentlich (Variabel)",
+        lat: 47.72,
+        lon: 10.31
+      };
+      return {
+        id: 'loc_oeffentlich',
+        name: 'Öffentlich',
+        icon: '⚡️',
+        address: varLoc.name || 'Variabler Standort',
+        lat: Number(varLoc.lat) || 47.72,
+        lon: Number(varLoc.lon) || 10.31,
+        isVariable: true,
+        powerType: 'grid'
+      };
+    }
+
+    const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
+    const found = locs.find(l => l.id === activeId || l.name === activeId);
+    if (found) {
+      return {
+        id: found.id,
+        name: found.name,
+        icon: found.icon || '🏢',
+        address: found.address || '',
+        lat: typeof found.lat === 'number' ? found.lat : 47.7468,
+        lon: typeof found.lon === 'number' ? found.lon : 10.3094,
+        powerType: found.powerType || 'grid',
+        isPv: found.powerType === 'pv'
+      };
+    }
+
+    return {
+      id: 'gps',
+      name: 'Aktueller GPS-Standort',
+      icon: '📍',
+      address: 'GPS: Bayrhofs / Kempten',
+      lat: 47.72,
+      lon: 10.31,
+      isGps: true,
+      powerType: 'pv'
+    };
+  }
+
+  function renderWeatherLocationFilterRail() {
+    if (!DOM.weatherLocationFilterRail) return;
+
+    const activeId = activeWeatherLocationId || (appData && appData.settings && appData.settings.activeWeatherLocationId) || 'gps';
+
+    // 1. GPS (Per Default immer zuerst)
+    const items = [
+      { id: 'gps', name: 'Aktueller GPS', icon: '📍', tag: 'GPS' }
+    ];
+
+    // 2. Alle konfigurierten Standorte
+    const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
+    locs.forEach(l => {
+      const isBayrhofs = l.id === 'loc_bayrhofs' || l.name.toLowerCase().includes('bayrhof');
+      const isZuhause = l.id === 'loc_zuhause' || l.name.toLowerCase().includes('zuhause');
+      const isArbeit = l.id === 'loc_arbeit' || l.name.toLowerCase().includes('arbeit');
+      const isOeffentlich = l.id === 'loc_oeffentlich' || l.name.toLowerCase().includes('öffentlich');
+
+      let tag = '';
+      if (isZuhause) tag = 'Durach';
+      else if (isArbeit) tag = 'Dachser';
+      else if (isBayrhofs) tag = 'PV';
+      else if (isOeffentlich) tag = 'Variabel';
+      else if (l.powerType === 'pv') tag = 'PV';
+
+      items.push({
+        id: l.id,
+        name: l.name,
+        icon: l.icon || '🏢',
+        tag
+      });
+    });
+
+    DOM.weatherLocationFilterRail.innerHTML = items.map(item => {
+      const isAct = item.id === activeId;
+      return `
+        <button type="button" class="weather-loc-chip ${isAct ? 'active' : ''}" data-loc-id="${item.id}" role="tab" aria-selected="${isAct}">
+          <span class="chip-loc-icon">${item.icon}</span>
+          <span class="chip-loc-name">${escapeHtml(item.name)}</span>
+          ${item.tag ? `<span class="chip-loc-tag">${escapeHtml(item.tag)}</span>` : ''}
+        </button>
+      `;
+    }).join('');
+
+    // Klick Event
+    DOM.weatherLocationFilterRail.querySelectorAll('.weather-loc-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-loc-id');
+        selectWeatherLocation(id);
+      });
+    });
+
+    // Badge aktualisieren
+    if (DOM.weatherActiveLocBadge) {
+      const cur = items.find(i => i.id === activeId) || items[0];
+      DOM.weatherActiveLocBadge.textContent = `${cur.icon} ${cur.name} ${cur.tag ? `(${cur.tag})` : ''}`.trim();
+    }
+  }
+
+  async function selectWeatherLocation(locId, forceRefresh = false) {
+    activeWeatherLocationId = locId;
+    if (appData && appData.settings) {
+      appData.settings.activeWeatherLocationId = locId;
+      saveData();
+    }
+
+    renderWeatherLocationFilterRail();
+    triggerHaptic();
+
+    if (locId === 'gps') {
+      showToast('Wetter für aktuellen GPS-Standort wird geladen 📍');
+      await autoRequestGpsAndFetchWeather(false);
+    } else {
+      const loc = getActiveWeatherLocation();
+      showToast(`Wetter für ${loc.name} wird geladen ${loc.icon || '☀️'}`);
+      await fetchWeatherCluster(forceRefresh);
+    }
+  }
+
+  async function handleSearchVariableLocation() {
+    const query = DOM.inputWeatherVariableSearch ? DOM.inputWeatherVariableSearch.value.trim() : '';
+    if (!query) {
+      showToast('⚠️ Bitte einen Ort oder Adresse eingeben');
+      return;
+    }
+
+    if (DOM.weatherVariableFeedback) {
+      DOM.weatherVariableFeedback.textContent = `Suche nach "${query}"...`;
+    }
+
+    try {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=de&format=json`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+
+      if (json && Array.isArray(json.results) && json.results.length > 0) {
+        const r = json.results[0];
+        const dispName = `${r.name}${r.admin1 ? `, ${r.admin1}` : ''}${r.country ? ` (${r.country})` : ''}`;
+
+        appData.settings.variableLocation = {
+          name: dispName,
+          query,
+          lat: Number(r.latitude.toFixed(4)),
+          lon: Number(r.longitude.toFixed(4))
+        };
+        saveData();
+
+        if (DOM.weatherVariableFeedback) {
+          DOM.weatherVariableFeedback.textContent = `Gefunden: ${dispName} (${r.latitude.toFixed(2)}°, ${r.longitude.toFixed(2)}°)`;
+        }
+
+        showToast(`Standort "${r.name}" übernommen 📍`);
+        await fetchWeatherCluster(true);
+      } else {
+        if (DOM.weatherVariableFeedback) {
+          DOM.weatherVariableFeedback.textContent = `Kein Ort zu "${query}" gefunden. Bitte Schreibweise prüfen.`;
+        }
+        showToast(`Ort "${query}" nicht gefunden`);
+      }
+    } catch (e) {
+      console.warn('Geocoding Fehler:', e);
+      if (DOM.weatherVariableFeedback) {
+        DOM.weatherVariableFeedback.textContent = 'Suche fehlgeschlagen. Bitte Verbindung prüfen.';
+      }
+      showToast('Suche fehlgeschlagen');
+    }
+  }
+
+  function handleUseGpsForVariable() {
+    const gps = appData.settings.weatherGps || DEFAULT_DATA.settings.weatherGps;
+    appData.settings.variableLocation = {
+      name: "Aktueller GPS-Standort",
+      query: "GPS",
+      lat: Number(gps.lat),
+      lon: Number(gps.lon)
+    };
+    saveData();
+    if (DOM.inputWeatherVariableSearch) DOM.inputWeatherVariableSearch.value = 'Aktueller GPS-Standort';
+    if (DOM.weatherVariableFeedback) {
+      DOM.weatherVariableFeedback.textContent = `GPS übernommen (${gps.lat}°, ${gps.lon}°)`;
+    }
+    showToast('GPS für variable Position übernommen 📍');
+    fetchWeatherCluster(true);
+  }
+
   function autoRequestGpsAndFetchWeather(forceNotification = false) {
     return new Promise((resolve) => {
       if (navigator.geolocation) {
@@ -3795,14 +4122,39 @@ function createOutput(data, callback) {
   }
 
   async function fetchWeatherCluster(showFeedback = false) {
-    const loc = appData.settings.weatherGps || DEFAULT_DATA.settings.weatherGps;
-    if (DOM.weatherDisplayLocation) DOM.weatherDisplayLocation.textContent = `📍 ${loc.name}`;
+    const loc = getActiveWeatherLocation();
+
+    // 0. Kopfzeilen-Anzeige & Variablen-Box steuern
+    if (DOM.weatherDisplayLocation) {
+      if (loc.isGps) {
+        DOM.weatherDisplayLocation.textContent = `📍 Aktueller Standort (GPS: Bayrhofs / Kempten)`;
+      } else if (loc.isVariable) {
+        const varName = (appData.settings.variableLocation && appData.settings.variableLocation.name) || 'Variabler Standort';
+        DOM.weatherDisplayLocation.textContent = `⚡️ Öffentlich (Variabel: ${varName})`;
+      } else {
+        DOM.weatherDisplayLocation.textContent = `${loc.icon || '📍'} ${loc.name}${loc.address ? ` • ${loc.address}` : ''}`;
+      }
+    }
+
+    if (DOM.weatherVariableBox) {
+      DOM.weatherVariableBox.style.display = (loc.isVariable || loc.id === 'loc_oeffentlich') ? 'flex' : 'none';
+      if ((loc.isVariable || loc.id === 'loc_oeffentlich') && DOM.weatherVariableFeedback) {
+        const curName = appData.settings.variableLocation?.name || 'Variabler Standort';
+        DOM.weatherVariableFeedback.textContent = `Aktueller Zielort: ${curName} (${loc.lat.toFixed(2)}°, ${loc.lon.toFixed(2)}°)`;
+      }
+    }
+
+    renderWeatherLocationFilterRail();
 
     // 1. Primär: Zentrale Multi-Model & Solar Engine mit den 5 Open-Source-Diensten
     try {
       if (typeof WeatherService !== 'undefined' && WeatherService.fetchConsensus) {
         const threshold = appData.settings.pvThresholdSunshineHours || 4.5;
-        const res = await WeatherService.fetchConsensus(loc.lat, loc.lon, showFeedback, { pvThreshold: threshold });
+        const res = await WeatherService.fetchConsensus(loc.lat, loc.lon, showFeedback, {
+          pvThreshold: threshold,
+          locationName: loc.name,
+          powerType: loc.powerType
+        });
         if (res && res.forecast14Days && res.forecast14Days.length > 0) {
           weatherForecast14Days = res.forecast14Days;
           currentDwdAlerts = res.dwdAlerts || [];
@@ -3814,7 +4166,7 @@ function createOutput(data, callback) {
           renderWeatherViews();
           updateDashboardPvDecisionWidget();
           renderWeatherExtraMeta();
-          if (showFeedback) showToast('Wetter & Solarprognose aktualisiert ☀️');
+          if (showFeedback) showToast(`Wetter & Solarprognose für ${loc.name} aktualisiert ☀️`);
           return;
         }
       }
@@ -3836,7 +4188,7 @@ function createOutput(data, callback) {
         renderWeatherViews();
         updateDashboardPvDecisionWidget();
         renderWeatherExtraMeta();
-        if (showFeedback) showToast('Wetterdaten aktualisiert ☀️');
+        if (showFeedback) showToast(`Wetterdaten für ${loc.name} aktualisiert ☀️`);
         return;
       }
     } catch (err) {
@@ -4180,21 +4532,27 @@ function createOutput(data, callback) {
   function renderWeatherViews() {
     if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
 
+    const loc = getActiveWeatherLocation();
     const pvDays = weatherForecast14Days.filter(d => d.hasPvSurplus);
     const officeDays = weatherForecast14Days.filter(d => d.decision === 'office');
     const weekendDays = weatherForecast14Days.filter(d => d.decision === 'weekend_charge');
     
-    let summaryText = `In den kommenden 14 Tagen gibt es an <strong>${pvDays.length} Tagen PV-Überschuss</strong> bei Bayrhofs`;
-    if (officeDays.length > 0) {
-      summaryText += ` (${officeDays.length}x ideal mit Büro kombinierbar`;
-      if (weekendDays.length > 0) {
-        summaryText += `, ${weekendDays.length}x am Wochenende`;
+    let summaryText = ``;
+    if (loc.id === 'loc_bayrhofs' || (loc.powerType === 'pv' && loc.id !== 'gps')) {
+      summaryText = `In den kommenden 14 Tagen gibt es an <strong>${pvDays.length} Tagen PV-Überschuss</strong> bei Bayrhofs`;
+      if (officeDays.length > 0) {
+        summaryText += ` (${officeDays.length}x ideal mit Büro kombinierbar`;
+        if (weekendDays.length > 0) {
+          summaryText += `, ${weekendDays.length}x am Wochenende`;
+        }
+        summaryText += `).`;
+      } else if (weekendDays.length > 0) {
+        summaryText += ` (${weekendDays.length}x am Wochenende nutzbar).`;
+      } else {
+        summaryText += `.`;
       }
-      summaryText += `).`;
-    } else if (weekendDays.length > 0) {
-      summaryText += ` (${weekendDays.length}x am Wochenende nutzbar).`;
     } else {
-      summaryText += `.`;
+      summaryText = `Wetterprognose für <strong>${escapeHtml(loc.name)}</strong>: An <strong>${pvDays.length} Tagen sonnige Bedingungen</strong> für hohe Effizienz und Reichweite.`;
     }
     DOM.pvSummaryRecommendationText.innerHTML = summaryText;
 
@@ -4687,6 +5045,7 @@ function createOutput(data, callback) {
           <span class="loc-icon-bubble">${loc.icon || '🏢'}</span>
           <div class="loc-info-texts">
             <span class="loc-title-text">${escapeHtml(loc.name)}</span>
+            ${loc.address ? `<span class="loc-address-sub">📍 ${escapeHtml(loc.address)}</span>` : ''}
             <span class="loc-badges-sub">
               <span class="${loc.powerType === 'pv' ? 'badge-powertype-pv' : 'badge-powertype-grid'}">
                 ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'}
@@ -4741,6 +5100,7 @@ function createOutput(data, callback) {
           saveData();
           renderLocationsManageList();
           renderLocationFilterRail();
+          renderWeatherLocationFilterRail();
           triggerHaptic();
         }
       });
@@ -4756,6 +5116,7 @@ function createOutput(data, callback) {
           saveData();
           renderLocationsManageList();
           renderLocationFilterRail();
+          renderWeatherLocationFilterRail();
           triggerHaptic();
         }
       });
@@ -4771,9 +5132,14 @@ function createOutput(data, callback) {
     if (!confirm(`Standort "${loc?.name}" wirklich löschen?`)) return;
 
     appData.settings.locations = appData.settings.locations.filter(l => l.id !== id);
+    if (activeWeatherLocationId === id) {
+      activeWeatherLocationId = 'gps';
+      if (appData.settings) appData.settings.activeWeatherLocationId = 'gps';
+    }
     saveData();
     renderLocationsManageList();
     renderLocationFilterRail();
+    renderWeatherLocationFilterRail();
     triggerHaptic();
     showToast('Standort gelöscht');
   }
@@ -4790,6 +5156,7 @@ function createOutput(data, callback) {
         DOM.locEditId.value = loc.id;
         DOM.modalEditLocationTitle.textContent = "Standort anpassen";
         DOM.locEditName.value = loc.name;
+        if (DOM.locEditAddress) DOM.locEditAddress.value = loc.address || '';
         DOM.locEditIcon.value = loc.icon || '🏢';
         DOM.locEditPowerType.value = loc.powerType || 'pv';
         DOM.locEditPrice.value = loc.kwhPrice;
@@ -4801,6 +5168,7 @@ function createOutput(data, callback) {
       DOM.locEditId.value = '';
       DOM.modalEditLocationTitle.textContent = "Neuen Ladeort anlegen";
       DOM.locEditName.value = '';
+      if (DOM.locEditAddress) DOM.locEditAddress.value = '';
       DOM.locEditIcon.value = '🏢';
       DOM.locEditPowerType.value = 'pv';
       DOM.locEditPrice.value = '0.15';
@@ -4850,16 +5218,49 @@ function createOutput(data, callback) {
 
     const id = DOM.locEditId.value;
     const name = DOM.locEditName.value.trim();
+    const address = DOM.locEditAddress ? DOM.locEditAddress.value.trim() : '';
     const icon = DOM.locEditIcon.value || '🏢';
     const powerType = DOM.locEditPowerType.value || 'pv';
     const price = parseFloat(DOM.locEditPrice.value) || 0.15;
 
     if (!name) return;
 
+    let lat = null;
+    let lon = null;
+    let isVariable = false;
+
+    // Koordinaten ableiten
+    const nLower = name.toLowerCase();
+    const aLower = address.toLowerCase();
+    if (nLower.includes('bayrhof') || aLower.includes('unterwang')) {
+      lat = 47.7468;
+      lon = 10.3094;
+    } else if (nLower.includes('zuhause') || aLower.includes('rubihornweg') || aLower.includes('durach')) {
+      lat = 47.6971;
+      lon = 10.3542;
+    } else if (nLower.includes('arbeit') || aLower.includes('dachser') || aLower.includes('thomas-dachser')) {
+      lat = 47.7476;
+      lon = 10.3038;
+    } else if (nLower.includes('öffentlich') || nLower.includes('variabel')) {
+      isVariable = true;
+    }
+
     if (id) {
       const idx = appData.settings.locations.findIndex(l => l.id === id);
       if (idx !== -1) {
-        appData.settings.locations[idx] = { id, name, icon, powerType, kwhPrice: price };
+        const old = appData.settings.locations[idx];
+        appData.settings.locations[idx] = {
+          ...old,
+          id,
+          name,
+          icon,
+          powerType,
+          kwhPrice: price,
+          address: address || old.address || '',
+          lat: lat !== null ? lat : (old.lat || null),
+          lon: lon !== null ? lon : (old.lon || null),
+          isVariable: isVariable || old.isVariable || false
+        };
       }
     } else {
       appData.settings.locations.push({
@@ -4867,7 +5268,11 @@ function createOutput(data, callback) {
         name,
         icon,
         powerType,
-        kwhPrice: price
+        kwhPrice: price,
+        address,
+        lat,
+        lon,
+        isVariable
       });
     }
 
@@ -4875,6 +5280,7 @@ function createOutput(data, callback) {
     closeLocationEditorModal();
     renderLocationsManageList();
     renderLocationFilterRail();
+    renderWeatherLocationFilterRail();
     triggerHaptic();
     showToast(`Standort "${name}" gespeichert ✓`);
   }

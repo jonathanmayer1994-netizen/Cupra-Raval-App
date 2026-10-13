@@ -1081,6 +1081,205 @@ body {
 
 .btn-swift-gps:active { transform: scale(0.94); background: var(--cupra-bronze); color: #fff; }
 
+/* Weather Location Filter Rail */
+.weather-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.weather-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-header-title {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.filter-active-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cupra-bronze-bright);
+  background: rgba(192, 128, 81, 0.12);
+  border: 1px solid rgba(192, 128, 81, 0.3);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.weather-loc-chips-rail {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 2px 6px 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.weather-loc-chips-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.weather-loc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.22s var(--ease-swift);
+  user-select: none;
+}
+
+.weather-loc-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.weather-loc-chip:active {
+  transform: scale(0.95);
+}
+
+.weather-loc-chip.active {
+  background: linear-gradient(135deg, rgba(192, 128, 81, 0.32), rgba(140, 80, 45, 0.22));
+  border-color: rgba(220, 140, 90, 0.65);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(192, 128, 81, 0.25);
+  font-weight: 700;
+}
+
+.weather-loc-chip .chip-loc-icon {
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
+.weather-loc-chip .chip-loc-name {
+  letter-spacing: 0.15px;
+}
+
+.weather-loc-chip .chip-loc-tag {
+  font-size: 0.58rem;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+}
+
+.weather-loc-chip.active .chip-loc-tag {
+  background: rgba(192, 128, 81, 0.35);
+  color: var(--cupra-bronze-bright);
+}
+
+/* Variable Location Search Box */
+.weather-variable-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: rgba(16, 24, 38, 0.85);
+  border: 1px solid rgba(192, 128, 81, 0.3);
+  margin-top: 4px;
+  animation: fadeInVar 0.25s ease-out;
+}
+
+@keyframes fadeInVar {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.variable-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.var-icon {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.variable-search-field {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  color: #ffffff;
+  font-size: 0.76rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.variable-search-field:focus {
+  border-color: var(--cupra-bronze-bright);
+}
+
+.btn-variable-search,
+.btn-variable-gps {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  border: none;
+  transition: all 0.18s ease;
+}
+
+.btn-variable-search {
+  background: linear-gradient(135deg, var(--cupra-bronze-bright), var(--cupra-bronze));
+  color: #121820;
+}
+
+.btn-variable-search:active {
+  transform: scale(0.95);
+}
+
+.btn-variable-gps {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-secondary);
+}
+
+.btn-variable-gps:active {
+  background: rgba(192, 128, 81, 0.2);
+  color: #ffffff;
+}
+
+.variable-feedback-text {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+.loc-address-sub {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+
 .weather-sources-pills-row {
   display: flex;
   flex-wrap: wrap;

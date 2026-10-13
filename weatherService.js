@@ -54,24 +54,45 @@
       .finally(() => clearTimeout(id));
   }
 
-  // Cache-Verwaltung (5 Minuten)
+  // Cache-Verwaltung (5 Minuten pro Standort/Koordinaten-Bucket)
+  function getCoordBucketKey(lat, lon) {
+    return `${Number(lat).toFixed(2)}_${Number(lon).toFixed(2)}`;
+  }
+
   function getCachedForecast(lat, lon) {
     try {
       const raw = localStorage.getItem(CACHE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed || !parsed.timestamp || !parsed.data) return null;
+      if (!parsed) return null;
 
-      const age = Date.now() - parsed.timestamp;
-      if (age > CACHE_TTL_MS) return null;
+      const numLat = Number(lat);
+      const numLon = Number(lon);
+      const bucketKey = getCoordBucketKey(numLat, numLon);
 
-      // Koordinaten prüfen (Toleranz 0.05 Grad ~ 5km)
-      if (typeof parsed.lat === 'number' && typeof parsed.lon === 'number') {
-        if (Math.abs(parsed.lat - lat) > 0.06 || Math.abs(parsed.lon - lon) > 0.06) {
-          return null;
+      // 1. Zuerst im multi-location Map prüfen
+      if (parsed.byCoord && parsed.byCoord[bucketKey]) {
+        const entry = parsed.byCoord[bucketKey];
+        if (entry && entry.timestamp && entry.data) {
+          if (Date.now() - entry.timestamp <= CACHE_TTL_MS) {
+            return entry.data;
+          }
         }
       }
-      return parsed.data;
+
+      // 2. Fallback auf Root-Eintrag (präzise Toleranz 0.015 Grad ~ 1.5km)
+      if (parsed.timestamp && parsed.data) {
+        const age = Date.now() - parsed.timestamp;
+        if (age <= CACHE_TTL_MS) {
+          if (typeof parsed.lat === 'number' && typeof parsed.lon === 'number') {
+            if (Math.abs(parsed.lat - numLat) <= 0.015 && Math.abs(parsed.lon - numLon) <= 0.015) {
+              return parsed.data;
+            }
+          }
+        }
+      }
+
+      return null;
     } catch (e) {
       console.warn('[WeatherService] Cache-Lese-Fehler:', e);
       return null;
@@ -80,11 +101,34 @@
 
   function setCachedForecast(lat, lon, data) {
     try {
+      const numLat = Number(lat);
+      const numLon = Number(lon);
+      const bucketKey = getCoordBucketKey(numLat, numLon);
+
+      let existingMap = {};
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.byCoord && typeof parsed.byCoord === 'object') {
+            existingMap = parsed.byCoord;
+          }
+        }
+      } catch (_) {}
+
+      existingMap[bucketKey] = {
+        timestamp: Date.now(),
+        lat: numLat,
+        lon: numLon,
+        data
+      };
+
       const payload = {
         timestamp: Date.now(),
-        lat: Number(lat),
-        lon: Number(lon),
-        data
+        lat: numLat,
+        lon: numLon,
+        data,
+        byCoord: existingMap
       };
       localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
     } catch (e) {

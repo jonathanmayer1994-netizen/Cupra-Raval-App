@@ -365,6 +365,47 @@ def run_tests():
             rail_text = page.locator("#weatherMetaBadgesRail").inner_text()
             log_test("7.1e Solar-GHI & Alpine Meta Badges gerendert", rail_badges >= 2, f"{rail_badges} Badges: '{rail_text}'")
 
+            # 7.1f: Standort-Filterleiste mit GPS als Default vorhanden
+            loc_chips_count = page.locator("#weatherLocationFilterRail .weather-loc-chip").count()
+            gps_chip_active = page.locator('.weather-loc-chip[data-loc-id="gps"]').evaluate("el => el.classList.contains('active')")
+            log_test("7.1f Standort-Filterleiste mit GPS als Default vorhanden", loc_chips_count >= 4 and gps_chip_active, f"Chips: {loc_chips_count}, GPS aktiv: {gps_chip_active}")
+
+            # 7.1g: Standort-Filterung: Bayrhofs aktivierbar (Unterwang 18 Kempten)
+            page.locator('.weather-loc-chip[data-loc-id="loc_bayrhofs"]').click()
+            time.sleep(0.5)
+            bayrhofs_text = page.locator("#weatherDisplayLocation").inner_text()
+            bayrhofs_active = page.locator('.weather-loc-chip[data-loc-id="loc_bayrhofs"]').evaluate("el => el.classList.contains('active')")
+            log_test("7.1g Standort-Filterung: Bayrhofs aktivierbar (Unterwang 18 Kempten)", "Bayrhofs" in bayrhofs_text and "Unterwang" in bayrhofs_text and bayrhofs_active, f"Text: '{bayrhofs_text}'")
+
+            # 7.1h: Standort-Filterung: Zuhause aktivierbar (Rubihornweg 1 Durach)
+            page.locator('.weather-loc-chip[data-loc-id="loc_zuhause"]').click()
+            time.sleep(0.5)
+            zuhause_text = page.locator("#weatherDisplayLocation").inner_text()
+            zuhause_active = page.locator('.weather-loc-chip[data-loc-id="loc_zuhause"]').evaluate("el => el.classList.contains('active')")
+            log_test("7.1h Standort-Filterung: Zuhause aktivierbar (Rubihornweg 1 Durach)", "Zuhause" in zuhause_text and "Durach" in zuhause_text and zuhause_active, f"Text: '{zuhause_text}'")
+
+            # 7.1i: Standort-Filterung: Arbeit aktivierbar (Thomas-Dachser-Straße 2 Kempten)
+            page.locator('.weather-loc-chip[data-loc-id="loc_arbeit"]').click()
+            time.sleep(0.5)
+            arbeit_text = page.locator("#weatherDisplayLocation").inner_text()
+            arbeit_active = page.locator('.weather-loc-chip[data-loc-id="loc_arbeit"]').evaluate("el => el.classList.contains('active')")
+            log_test("7.1i Standort-Filterung: Arbeit aktivierbar (Thomas-Dachser-Straße 2 Kempten)", "Arbeit" in arbeit_text and ("Thomas-Dachser" in arbeit_text or "Kempten" in arbeit_text) and arbeit_active, f"Text: '{arbeit_text}'")
+
+            # 7.1j: Standort-Filterung: Öffentlich aktivierbar mit variablem Suchfeld
+            page.locator('.weather-loc-chip[data-loc-id="loc_oeffentlich"]').click()
+            time.sleep(0.5)
+            oeffentlich_text = page.locator("#weatherDisplayLocation").inner_text()
+            var_box_visible = page.locator("#weatherVariableBox").is_visible()
+            log_test("7.1j Standort-Filterung: Öffentlich aktivierbar mit variablem Suchfeld", "Öffentlich" in oeffentlich_text and var_box_visible, f"Text: '{oeffentlich_text}', Suchbox: {var_box_visible}")
+
+            # 7.1k: Zurück zu GPS umschalten
+            page.locator('.weather-loc-chip[data-loc-id="gps"]').click()
+            time.sleep(0.5)
+            gps_restored_text = page.locator("#weatherDisplayLocation").inner_text()
+            gps_restored_active = page.locator('.weather-loc-chip[data-loc-id="gps"]').evaluate("el => el.classList.contains('active')")
+            var_box_hidden = not page.locator("#weatherVariableBox").is_visible()
+            log_test("7.1k Standort-Filterung: Zurück zu GPS umschalten", "GPS" in gps_restored_text and gps_restored_active and var_box_hidden, f"Text: '{gps_restored_text}', GPS aktiv: {gps_restored_active}")
+
             day_cards_count = page.locator(".day-forecast-card").count()
             log_test("7.2 14-Tage Wetterprognose-Karten gerendert", day_cards_count >= 10, f"{day_cards_count} Tage in der Vorhersage")
 
@@ -457,11 +498,17 @@ def run_tests():
             edit_mode_btn.click()
             time.sleep(0.2)
 
+            # 8.2b: Ladeorte-Liste zeigt gespeicherte Adressen
+            loc_manage_text = page.locator("#locationsDragList").inner_text()
+            has_addresses = "Unterwang" in loc_manage_text and "Rubihornweg" in loc_manage_text and ("Thomas-Dachser" in loc_manage_text or "Dachser" in loc_manage_text)
+            log_test("8.2b Ladeorte-Liste zeigt Adressen (Unterwang, Rubihornweg, Dachser)", has_addresses, "Adressen in Standortzeilen sichtbar")
+
             # Open Neuer Standort Modal
             page.locator("#btnOpenNewLocationModal").click()
             time.sleep(0.3)
             loc_modal_open = page.locator("#modalEditLocation").evaluate("el => el.classList.contains('open')")
-            log_test("8.3 Neuer Standort Modal öffnet sich", loc_modal_open, "Modal geöffnet")
+            has_addr_input = page.locator("#locEditAddress").count() == 1
+            log_test("8.3 Neuer Standort Modal öffnet sich mit Adressfeld", loc_modal_open and has_addr_input, f"Modal geöffnet: {loc_modal_open}, Adressfeld: {has_addr_input}")
 
             page.locator("#locEditName").fill("Tesla Supercharger Kempten")
             page.locator("#locEditPrice").fill("0.49")
