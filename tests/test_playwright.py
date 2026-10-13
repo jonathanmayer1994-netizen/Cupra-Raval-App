@@ -220,6 +220,8 @@ def run_tests():
             page.locator("#entryKwh").fill("42.5")
             page.locator("#entryOdometer").fill("12680")
             page.locator("#entryNotes").fill("Playwright E2E Testladung")
+            if page.locator("#entryBatterySoc").is_visible():
+                page.locator("#entryBatterySoc").fill("82")
             time.sleep(0.2)
 
             # Submit charge entry form
@@ -483,6 +485,7 @@ def run_tests():
             initial_odo = page.locator("#cfgCurrentOdo").input_value()
             log_test("8.1 Fahrzeug-Einstellungsformular geladen", model_input_val == expected_title, f"Modellname: '{model_input_val}'")
             log_test("8.1b Kilometerstand im Formular editierbar", page.locator("#cfgCurrentOdo").is_visible(), f"Odo-Input Wert: '{initial_odo}'")
+            log_test("8.1b2 Akkustand (SoC) im Formular editierbar", page.locator("#cfgCurrentSoc").is_visible(), "Feld #cfgCurrentSoc vorhanden")
 
             # Test Kilometerstand editieren und speichern
             page.locator("#cfgCurrentOdo").fill("150")

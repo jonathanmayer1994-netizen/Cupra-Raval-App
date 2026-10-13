@@ -412,10 +412,10 @@
 
           <!-- 4 Metriken-Gitter (Live Telemetrie & Modell) -->
           <div class="smart-reco-metrics-grid">
-            <div class="reco-metric-cell">
+            <div class="reco-metric-cell interactive" id="smartMetricBatteryCell" title="Tippen, um aktuellen Akkustand anzupassen">
               <span class="rm-label">🔋 AKKU &amp; REICHWEITE</span>
-              <span class="rm-value" id="smartMetricBattery">--% • -- km</span>
-              <span class="rm-sub" id="smartMetricBatterySub">Aktuelle Schätzung</span>
+              <span class="rm-value" id="smartMetricBattery">-- % • -- km</span>
+              <span class="rm-sub" id="smartMetricBatterySub">Kein Akkustand hinterlegt (tippen)</span>
             </div>
 
             <div class="reco-metric-cell">
@@ -424,10 +424,10 @@
               <span class="rm-sub" id="smartMetricNmcSub">Witterungsfaktor</span>
             </div>
 
-            <div class="reco-metric-cell">
+            <div class="reco-metric-cell interactive" id="smartMetricDrivingCell" title="Tippen für Fahrprofil-Information">
               <span class="rm-label">🚗 FAHRPROFIL</span>
               <span class="rm-value" id="smartMetricDriving">-- kWh • -- km/d</span>
-              <span class="rm-sub" id="smartMetricDrivingSub">Aus Fahrhistorie</span>
+              <span class="rm-sub" id="smartMetricDrivingSub">Mind. 2 Ladungen erforderlich</span>
             </div>
 
             <div class="reco-metric-cell">
@@ -547,15 +547,30 @@
 
               </div>
 
-              <!-- Feld 4: Kilometerstand (Laufleistung) -->
-              <div class="specs-field-group">
-                <label class="specs-field-label" for="cfgCurrentOdo">
-                  <span class="specs-label-tag">KILOMETERSTAND</span>
-                </label>
-                <div class="specs-input-wrapper unit-attached">
-                  <span class="specs-field-icon">📍</span>
-                  <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
-                  <span class="specs-unit-badge">km</span>
+              <!-- 2-Spalten Grid: Kilometerstand & Aktueller Akkustand -->
+              <div class="specs-grid-two">
+                <!-- Feld 4: Kilometerstand (Laufleistung) -->
+                <div class="specs-field-group">
+                  <label class="specs-field-label" for="cfgCurrentOdo">
+                    <span class="specs-label-tag">KILOMETERSTAND</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">📍</span>
+                    <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
+                    <span class="specs-unit-badge">km</span>
+                  </div>
+                </div>
+
+                <!-- Feld 5: Aktueller Akkustand (optional für echte KI-Berechnung) -->
+                <div class="specs-field-group">
+                  <label class="specs-field-label" for="cfgCurrentSoc">
+                    <span class="specs-label-tag">AKKUSTAND (SoC)</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">⚡</span>
+                    <input type="number" id="cfgCurrentSoc" class="specs-input-control num-val" min="0" max="100" step="1" placeholder="z.B. 65">
+                    <span class="specs-unit-badge">%</span>
+                  </div>
                 </div>
               </div>
 
@@ -846,6 +861,15 @@
               <input type="number" id="entryTotalCost" class="form-touch-input bronze-highlight-input" placeholder="0.00" step="0.01" min="0" required>
               <span class="addon-suffix">€</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Akkustand nach Ladung (optional) -->
+        <div class="form-touch-row">
+          <label class="form-touch-label" for="entryBatterySoc">Akkustand nach Ladung (optional, % SoC)</label>
+          <div class="input-addon-box">
+            <input type="number" id="entryBatterySoc" class="form-touch-input" placeholder="z.B. 80" step="1" min="0" max="100">
+            <span class="addon-suffix">%</span>
           </div>
         </div>
 

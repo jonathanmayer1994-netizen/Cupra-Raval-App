@@ -64,7 +64,8 @@
       model: "Cupra Raval Endurance Edition Dynamic",
       batteryKwh: 52.0,
       powerPs: 211,
-      currentOdo: 0
+      currentOdo: 0,
+      currentSoc: null
     },
     settings: {
       currency: "€",
@@ -259,10 +260,12 @@
     DOM.smartRecoReasoningText = document.getElementById('smartRecoReasoningText');
     DOM.smartMetricBattery = document.getElementById('smartMetricBattery');
     DOM.smartMetricBatterySub = document.getElementById('smartMetricBatterySub');
+    DOM.smartMetricBatteryCell = document.getElementById('smartMetricBatteryCell');
     DOM.smartMetricNmc = document.getElementById('smartMetricNmc');
     DOM.smartMetricNmcSub = document.getElementById('smartMetricNmcSub');
     DOM.smartMetricDriving = document.getElementById('smartMetricDriving');
     DOM.smartMetricDrivingSub = document.getElementById('smartMetricDrivingSub');
+    DOM.smartMetricDrivingCell = document.getElementById('smartMetricDrivingCell');
     DOM.smartMetricSolar = document.getElementById('smartMetricSolar');
     DOM.smartMetricSolarSub = document.getElementById('smartMetricSolarSub');
     DOM.smartRecoNmcFooterText = document.getElementById('smartRecoNmcFooterText');
@@ -281,6 +284,7 @@
     DOM.cfgBatteryCap = document.getElementById('cfgBatteryCap');
     DOM.cfgPower = document.getElementById('cfgPower');
     DOM.cfgCurrentOdo = document.getElementById('cfgCurrentOdo');
+    DOM.cfgCurrentSoc = document.getElementById('cfgCurrentSoc');
     DOM.btnSaveVehicleSettings = document.getElementById('btnSaveVehicleSettings');
     DOM.btnToggleLocationEditMode = document.getElementById('btnToggleLocationEditMode');
     DOM.editModeIcon = document.getElementById('editModeIcon');
@@ -308,6 +312,7 @@
     DOM.entryLocationId = document.getElementById('entryLocationId');
     DOM.entryKwh = document.getElementById('entryKwh');
     DOM.entryOdometer = document.getElementById('entryOdometer');
+    DOM.entryBatterySoc = document.getElementById('entryBatterySoc');
     DOM.entryDeltaKmTag = document.getElementById('entryDeltaKmTag');
     DOM.entryPrice = document.getElementById('entryPrice');
     DOM.entryTotalCost = document.getElementById('entryTotalCost');
@@ -406,6 +411,13 @@
             : DEFAULT_DATA.vehicle.currentOdo;
           if (o === 12450) o = 0;
           return isNaN(o) ? 0 : Math.max(0, o);
+        })(),
+        currentSoc: (() => {
+          if (data.vehicle && data.vehicle.currentSoc !== undefined && data.vehicle.currentSoc !== null && data.vehicle.currentSoc !== '') {
+            const s = Number(data.vehicle.currentSoc);
+            if (!isNaN(s) && s >= 0 && s <= 100) return Math.round(s);
+          }
+          return null;
         })()
       },
       settings: {
@@ -1773,6 +1785,62 @@ function createOutput(data, callback) {
       DOM.forecastDaysCountBadge.textContent = isWeatherExpanded ? '14 Tage Trend' : '4 Tage Vorschau';
       triggerHaptic();
     });
+
+    // Interaktive Kacheln für Akkustand (SoC) und Fahrprofil
+    function promptAndUpdateSoc() {
+      const cur = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
+      const entered = window.prompt('Aktuellen Akkustand des Cupra Raval eingeben (0–100 % SoC):', cur);
+      if (entered !== null) {
+        const clean = entered.trim();
+        if (clean === '') {
+          appData.vehicle.currentSoc = null;
+          saveData();
+          renderSettingsForms();
+          updateSmartChargingRecommendation();
+          triggerHaptic();
+          showToast('Akkustand zurückgesetzt (Warte auf echte Daten)');
+        } else {
+          const num = parseInt(clean, 10);
+          if (!isNaN(num) && num >= 0 && num <= 100) {
+            appData.vehicle.currentSoc = num;
+            saveData();
+            renderSettingsForms();
+            updateSmartChargingRecommendation();
+            triggerHaptic();
+            showToast(`Akkustand auf ${num}% aktualisiert ⚡️`);
+          } else {
+            showToast('⚠️ Bitte einen gültigen Wert zwischen 0 und 100 eingeben');
+          }
+        }
+      }
+    }
+
+    if (DOM.smartMetricBatteryCell) {
+      DOM.smartMetricBatteryCell.addEventListener('click', () => {
+        promptAndUpdateSoc();
+      });
+    }
+
+    if (DOM.smartMetricDrivingCell) {
+      DOM.smartMetricDrivingCell.addEventListener('click', () => {
+        const consData = calcConsumption(appData.sessions);
+        if (consData && consData.hasData) {
+          showToast(`Reales Fahrprofil: Ø ${consData.avgCons.toFixed(1).replace('.', ',')} kWh/100km`);
+        } else {
+          showToast('ℹ️ Mindestens 2 Ladevorgänge mit Kilometerstand erfassen für echtes Fahrprofil.');
+        }
+      });
+    }
+
+    if (DOM.smartRecoReasoningText) {
+      DOM.smartRecoReasoningText.addEventListener('click', (e) => {
+        const link = e.target.closest('#linkSetSocPrompt');
+        if (link) {
+          e.preventDefault();
+          promptAndUpdateSoc();
+        }
+      });
+    }
 
     // Standorte Bearbeiten-Modus Umschalter (Minimaler Stift)
     DOM.btnToggleLocationEditMode.addEventListener('click', () => {
@@ -4603,40 +4671,26 @@ function createOutput(data, callback) {
     const currentOdo = Number(v.currentOdo) || 0;
     const sessions = (appData && Array.isArray(appData.sessions)) ? appData.sessions : [];
 
-    // 1. Fahrprofil & Verbrauch aus Historie (oder NMC-Referenz)
+    // 1. Fahrprofil & Verbrauch aus Historie (NUR echte Messwerte!)
     const consData = calcConsumption(sessions);
-    const hasConsHistory = consData && consData.hasData;
-    const baseConsumption = hasConsHistory ? Number(consData.avgCons.toFixed(1)) : 14.5; // kWh/100km bei idealen 20-22°C
-
+    const hasConsHistory = !!(consData && consData.hasData);
     const distStats = calcDistanceStats(sessions, currentOdo);
-    const dailyKm = (distStats && distStats.avgKmPerDay >= 5) ? Math.round(distStats.avgKmPerDay) : 32;
+
+    const baseConsumption = hasConsHistory ? Number(consData.avgCons.toFixed(1)) : null;
+    const dailyKm = (distStats && distStats.avgKmPerDay >= 1) ? Math.round(distStats.avgKmPerDay) : null;
 
     // 2. Aktuelles Tageswetter & NMC-Zellchemie Temperaturfaktor
     const today = weatherForecast14Days[0];
     const todayTemp = today ? Math.round((today.tMax + today.tMin) / 2) : 12;
     const todayNmcFactor = getNmcTemperatureEfficiency(todayTemp);
-    const todayEffectiveCons = Number((baseConsumption / todayNmcFactor).toFixed(1));
     const nmcLossPct = Math.max(0, Math.round((1 - todayNmcFactor) * 100));
+    const todayEffectiveCons = (baseConsumption && todayNmcFactor > 0) ? Number((baseConsumption / todayNmcFactor).toFixed(1)) : null;
 
-    // 3. Akku SoC & Restreichweite ermitteln
-    let currentRemainingKwh, currentSocPct, currentRangeKm, kmSinceLastCharge;
-    const hasRealHistory = (sessions.length > 0);
-
-    if (hasRealHistory) {
-      const lastSession = sessions[0];
-      const lastOdo = Number(lastSession.odometer) || 0;
-      kmSinceLastCharge = Math.max(0, currentOdo - lastOdo);
-      const energyConsumed = (kmSinceLastCharge * todayEffectiveCons) / 100;
-      const startingEnergy = Math.min(batteryCapacity, Math.max(batteryCapacity * 0.85, (Number(lastSession.kwh) || 30) + 12));
-      currentRemainingKwh = Math.max(batteryCapacity * 0.12, Math.min(batteryCapacity, startingEnergy - energyConsumed));
-      currentSocPct = Math.round((currentRemainingKwh / batteryCapacity) * 100);
-      currentRangeKm = Math.round((currentRemainingKwh / todayEffectiveCons) * 100);
-    } else {
-      kmSinceLastCharge = 0;
-      currentSocPct = 68; // Solide Ausgangsbasis für Erstnutzung
-      currentRemainingKwh = Number((batteryCapacity * 0.68).toFixed(1));
-      currentRangeKm = Math.round((currentRemainingKwh / todayEffectiveCons) * 100);
-    }
+    // 3. Akku SoC & Restreichweite (NUR echte Daten!)
+    const hasRealSoc = (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(Number(v.currentSoc)));
+    const currentSocPct = hasRealSoc ? Math.round(Number(v.currentSoc)) : null;
+    const currentRemainingKwh = hasRealSoc ? Number(((batteryCapacity * currentSocPct) / 100).toFixed(1)) : null;
+    const currentRangeKm = (hasRealSoc && todayEffectiveCons) ? Math.round((currentRemainingKwh / todayEffectiveCons) * 100) : null;
 
     // 4. Intelligente 7-Tage-Projektion & Suche nach dem besten Ladefenster
     const candidateDays = [];
@@ -4646,42 +4700,39 @@ function createOutput(data, callback) {
       const d = weatherForecast14Days[i];
       const dAvgTemp = Math.round((d.tMax + d.tMin) / 2);
       const dNmcFactor = getNmcTemperatureEfficiency(dAvgTemp);
-      const dEffectiveCons = baseConsumption / dNmcFactor;
-      const dEnergyNeeded = (dailyKm * dEffectiveCons) / 100;
-
-      const projEnergyAtStartOfDay = Math.max(0, currentRemainingKwh - cumEnergyNeeded);
-      const projSocPct = Math.round((projEnergyAtStartOfDay / batteryCapacity) * 100);
-
-      cumEnergyNeeded += dEnergyNeeded;
-
       const pvYield = (d.solarYield && d.solarYield.estimatedPvKwh) ? d.solarYield.estimatedPvKwh : 0;
       const sunHours = d.sunshineHours || 0;
-      const maxGhi = (d.solarYield && d.solarYield.maxGhiWatts) ? d.solarYield.maxGhiWatts : 0;
       const rainMm = d.rainMm || 0;
-
       const dDate = new Date(d.dateStr);
       const dayOfWeek = dDate.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
 
-      // Scoring-Modell:
-      // - Solarertrag / GHI: Höchste Priorität für sauberes & günstiges PV-Laden
-      // - NMC-Temperatur: Warme Mittagsstunden schonen die Zellen & vermeiden Vorheizstrom
-      // - SoC-Puffer: Ladebedarf wird dringlicher bei < 30% SoC, kritisch bei <= 20%
-      // - Niederschlag: Trockene Tage bevorzugt
+      let projEnergyAtStartOfDay = currentRemainingKwh;
+      let projSocPct = currentSocPct;
+
       let score = 0;
-      score += pvYield * 3.2;
-      score += sunHours * 1.8;
-      if (d.tMax >= 15) score += 7;
-      else if (d.tMax >= 10) score += 3;
+      score += pvYield * 3.5;
+      score += sunHours * 2.0;
+
+      if (d.tMax >= 15) score += 8;
+      else if (d.tMax >= 10) score += 4;
       else if (d.tMax < 4) score -= 6; // Kalter Akku ohne Vorwärmung
 
       if (rainMm >= 3) score -= 4;
+      if (isWorkday && (d.hasPvSurplus || pvYield >= 8)) score += 10;
 
-      if (projSocPct <= 22) score += 40; // Akku muss zwingend geladen werden!
-      else if (projSocPct <= 35) score += 18; // Ideales 20-80% NMC-Zyklenfenster
-      else if (projSocPct >= 65 && i > 0) score -= 14; // Akku noch zu voll
+      // Wenn echtes Fahrprofil und echter Akkustand existieren, simulieren wir die reale Entladung
+      if (hasRealSoc && hasConsHistory && baseConsumption && dailyKm) {
+        const dEffectiveCons = baseConsumption / dNmcFactor;
+        const dEnergyNeeded = (dailyKm * dEffectiveCons) / 100;
+        projEnergyAtStartOfDay = Math.max(0, currentRemainingKwh - cumEnergyNeeded);
+        projSocPct = Math.round((projEnergyAtStartOfDay / batteryCapacity) * 100);
+        cumEnergyNeeded += dEnergyNeeded;
 
-      if (isWorkday && (d.hasPvSurplus || pvYield >= 8)) score += 8;
+        if (projSocPct <= 22) score += 45; // Akku muss zwingend geladen werden!
+        else if (projSocPct <= 35) score += 20; // Ideales 20-80% NMC-Zyklenfenster
+        else if (projSocPct >= 65 && i > 0) score -= 15; // Akku noch zu voll
+      }
 
       candidateDays.push({
         dayIndex: i,
@@ -4690,14 +4741,13 @@ function createOutput(data, callback) {
         projSocPct,
         pvYield,
         sunHours,
-        maxGhi,
         score,
         isWorkday,
         dAvgTemp
       });
     }
 
-    // Sortierung nach Score, unter Berücksichtigung von Reichweiten-Dringlichkeit
+    // Sortierung nach Score (bester Ladeslot)
     candidateDays.sort((a, b) => b.score - a.score);
     const bestCandidate = candidateDays[0] || {
       dayIndex: 0,
@@ -4739,10 +4789,18 @@ function createOutput(data, callback) {
       kwhTariff = 0.25;
     }
 
-    // Empfohlene Lademenge (Ziel: 80-85% SoC für NMC-Zellgesundheit)
-    const targetEnergyKwh = batteryCapacity * 0.82;
-    const chargeKwhNeeded = Math.max(12, Math.min(batteryCapacity, Math.round(targetEnergyKwh - bestCandidate.projEnergyAtStartOfDay)));
-    const savingsEur = Number((chargeKwhNeeded * Math.max(0.15, 0.59 - kwhTariff)).toFixed(2));
+    // Empfohlene Lademenge (Ziel: 80% SoC für NMC-Zellgesundheit)
+    const targetEnergyKwh = batteryCapacity * 0.80;
+    let chargeKwhNeeded = null;
+    let savingsEur = null;
+
+    if (hasRealSoc && currentRemainingKwh !== null) {
+      const startingEnergy = (bestCandidate.projEnergyAtStartOfDay !== null && bestCandidate.projEnergyAtStartOfDay !== undefined)
+        ? bestCandidate.projEnergyAtStartOfDay
+        : currentRemainingKwh;
+      chargeKwhNeeded = Math.max(8, Math.min(batteryCapacity, Math.round(targetEnergyKwh - startingEnergy)));
+      savingsEur = Number((chargeKwhNeeded * Math.max(0.15, 0.59 - kwhTariff)).toFixed(2));
+    }
 
     // UI Aktualisierung
     if (DOM.smartRecoSubModel) {
@@ -4758,14 +4816,18 @@ function createOutput(data, callback) {
     }
 
     if (DOM.smartRecoKwhVal) {
-      DOM.smartRecoKwhVal.textContent = `+${chargeKwhNeeded} kWh (Ziel: 80% SoC)`;
+      DOM.smartRecoKwhVal.textContent = (chargeKwhNeeded !== null)
+        ? `+${chargeKwhNeeded} kWh (Ziel: 80% SoC)`
+        : `-- kWh (Akkustand fehlt)`;
     }
 
     if (DOM.smartRecoSavingsPill) {
-      DOM.smartRecoSavingsPill.textContent = `⚡️ ~${savingsEur.toFixed(2).replace('.', ',')} € Ersparnis`;
+      DOM.smartRecoSavingsPill.textContent = (savingsEur !== null)
+        ? `⚡️ ~${savingsEur.toFixed(2).replace('.', ',')} € Ersparnis`
+        : `☀️ Günstigster Solar-Slot`;
     }
 
-    // Intelligente Begründung formulieren
+    // Begründung mit klarer Trennung zwischen echten Daten und Wetterdaten
     let reasoning = ``;
     if (isTodaySlot) {
       reasoning = `<strong>Heute direkt nutzen:</strong> Hoher PV-Ertrag (${bDay.sunshineHours}h Sonne, ca. ${bDay.solarYield?.estimatedPvKwh || 0} kWh Solar) und ${bDay.tMax}°C. `;
@@ -4773,17 +4835,23 @@ function createOutput(data, callback) {
       reasoning = `<strong>${slotDayLabel} ist das beste Ladefenster:</strong> Bei <strong>${bDay.sunshineHours}h Sonne</strong> und <strong>~${bDay.solarYield?.estimatedPvKwh || 0} kWh PV-Ertrag</strong> erzielst du maximalen Solarüberschuss. `;
     }
 
-    reasoning += `Dein aktueller Akkustand (~${currentSocPct}% SoC / ${currentRangeKm} km) reicht bei deinem Fahrprofil (~${dailyKm} km/Tag) bis ${slotDayLabel} sicher aus. `;
-
     if (todayTemp <= 14) {
-      reasoning += `Witterungsbedingt sinkt die NMC-Reichweite bei aktuellen ${todayTemp}°C um <strong>${nmcLossPct}%</strong> (${todayEffectiveCons.toFixed(1).replace('.', ',')} statt ${baseConsumption.toFixed(1).replace('.', ',')} kWh/100km). `;
-      reasoning += `Das empfohlene Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), wodurch der Innenwiderstand der NMC-Zellen minimiert und verlustreiches Akku-Vorheizen vermieden wird.`;
+      reasoning += `Witterungsbedingt sinkt der NMC-Wirkungsgrad bei aktuellen ${todayTemp}°C um <strong>${nmcLossPct}%</strong>. `;
+      reasoning += `Das empfohlene Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), wodurch der Innenwiderstand der NMC-Zellen minimiert und Vorheizverluste vermieden werden. `;
     } else {
-      reasoning += `Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Arbeitsfenster für schonendes Laden.`;
+      reasoning += `Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Arbeitsfenster. `;
     }
 
-    if (!hasRealHistory) {
-      reasoning += `<br><span style="color:var(--text-muted); font-size:0.68rem; margin-top:4px; display:inline-block;">ℹ️ Berechnet auf Basis des Raval NMC-Referenzprofils. Sobald du eigene Ladevorgänge speicherst, lernt die KI deine realen Verbräuche.</span>`;
+    if (hasRealSoc && hasConsHistory) {
+      reasoning += `<br><br>Dein aktueller Akkustand (<strong>${currentSocPct}% SoC / ~${currentRangeKm} km</strong>) reicht bei deinem realen Fahrprofil (~${dailyKm} km/Tag) bis ${slotDayLabel} sicher aus.`;
+    } else if (hasRealSoc && !hasConsHistory) {
+      reasoning += `<br><br>Dein aktueller Akkustand: <strong>${currentSocPct}% SoC (${currentRemainingKwh.toFixed(1)} kWh)</strong>.<br>` +
+        `<div class="smart-reco-pending-note">📊 <strong>Warte auf Fahrprofil:</strong> Sobald mindestens 2 Ladevorgänge mit Kilometerstand erfasst sind, berechnet die KI deinen exakten Tagesverbrauch und Entladezeitpunkt.</div>`;
+    } else if (!hasRealSoc && hasConsHistory) {
+      reasoning += `<br><br>Dein reales Fahrprofil beträgt <strong>${baseConsumption.toFixed(1).replace('.', ',')} kWh/100km</strong> (~${dailyKm} km/Tag).<br>` +
+        `<div class="smart-reco-pending-note">🔋 <strong>Akkustand fehlt:</strong> Trage deinen aktuellen Akkustand ein (<a href="#" id="linkSetSocPrompt" style="color:var(--brand-primary); text-decoration:underline;">hier tippen</a> oder in Einstellungen), um die genaue Reichweite und Ladezeit zu berechnen.</div>`;
+    } else {
+      reasoning += `<br><div class="smart-reco-pending-note">📊 <strong>Warte auf echte Fahrzeugdaten:</strong> Eine individuelle Akku-Entladeprognose berechnet die App, sobald du deinen <a href="#" id="linkSetSocPrompt" style="color:var(--brand-primary); text-decoration:underline; font-weight:700;">Akkustand eingetragen hast</a> und mindestens <strong>2 Ladevorgänge mit Kilometerstand</strong> erfasst wurden.</div>`;
     }
 
     if (DOM.smartRecoReasoningText) {
@@ -4792,29 +4860,37 @@ function createOutput(data, callback) {
 
     // Dynamic Badge Pill
     if (DOM.smartRecoBadge) {
-      if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 10)) {
+      if (!hasRealSoc || !hasConsHistory) {
+        DOM.smartRecoBadge.textContent = '☀️ Solar-Vorschau';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
+      } else if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 10)) {
         DOM.smartRecoBadge.textContent = '☀️ PV-Priorität';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
       } else if (todayTemp < 6) {
         DOM.smartRecoBadge.textContent = '❄️ Kälteschutz';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill cold';
-      } else if (!hasRealHistory) {
-        DOM.smartRecoBadge.textContent = '💡 Modell-Prognose';
-        DOM.smartRecoBadge.className = 'smart-reco-badge-pill baseline';
       } else {
         DOM.smartRecoBadge.textContent = '🎯 Optimaler Slot';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill';
       }
     }
 
-    // 4 Metriken Kacheln
+    // 4 Metriken Kacheln (NUR echte Daten!)
     if (DOM.smartMetricBattery) {
-      DOM.smartMetricBattery.textContent = `~${currentSocPct}% • ${currentRangeKm} km`;
+      if (hasRealSoc) {
+        DOM.smartMetricBattery.textContent = currentRangeKm 
+          ? `${currentSocPct}% • ~${currentRangeKm} km`
+          : `${currentSocPct}% • ${currentRemainingKwh.toFixed(1)} kWh`;
+      } else {
+        DOM.smartMetricBattery.textContent = `-- % • -- km`;
+      }
     }
     if (DOM.smartMetricBatterySub) {
-      DOM.smartMetricBatterySub.textContent = hasRealHistory
-        ? `${(batteryCapacity - currentRemainingKwh).toFixed(1)} kWh verbraucht (${kmSinceLastCharge} km)`
-        : `Basis-Puffer (${currentRemainingKwh.toFixed(1)} kWh)`;
+      if (hasRealSoc) {
+        DOM.smartMetricBatterySub.textContent = `${currentRemainingKwh.toFixed(1)} kWh im Akku (tippen)`;
+      } else {
+        DOM.smartMetricBatterySub.textContent = `Kein Akkustand hinterlegt (tippen)`;
+      }
     }
 
     if (DOM.smartMetricNmc) {
@@ -4827,12 +4903,18 @@ function createOutput(data, callback) {
     }
 
     if (DOM.smartMetricDriving) {
-      DOM.smartMetricDriving.textContent = `${baseConsumption.toFixed(1).replace('.', ',')} kWh • ${dailyKm} km/d`;
+      if (hasConsHistory && baseConsumption !== null && dailyKm !== null) {
+        DOM.smartMetricDriving.textContent = `${baseConsumption.toFixed(1).replace('.', ',')} kWh • ${dailyKm} km/d`;
+      } else {
+        DOM.smartMetricDriving.textContent = `-- kWh • -- km/d`;
+      }
     }
     if (DOM.smartMetricDrivingSub) {
-      DOM.smartMetricDrivingSub.textContent = hasConsHistory
-        ? `Realer Ø Verbrauch`
-        : `NMC-Referenzwert`;
+      if (hasConsHistory) {
+        DOM.smartMetricDrivingSub.textContent = `Reales Fahrprofil`;
+      } else {
+        DOM.smartMetricDrivingSub.textContent = `Mind. 2 Ladungen erforderlich`;
+      }
     }
 
     if (DOM.smartMetricSolar) {
@@ -5774,6 +5856,9 @@ function createOutput(data, callback) {
         DOM.entryPrice.value = s.pricePerKwh;
         DOM.entryTotalCost.value = s.totalCost.toFixed(2);
         DOM.entryNotes.value = s.notes || '';
+        if (DOM.entryBatterySoc) {
+          DOM.entryBatterySoc.value = (s.soc !== undefined && s.soc !== null) ? s.soc : '';
+        }
 
         const matchingLoc = appData.settings.locations.find(l => l.name === s.location) || defaultLoc;
         selectLocationForEntry(matchingLoc.id);
@@ -5782,6 +5867,9 @@ function createOutput(data, callback) {
       DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
       DOM.entryDateTime.value = formatDateTimeLocal(new Date());
       DOM.entryOdometer.value = latestOdo || '';
+      if (DOM.entryBatterySoc) {
+        DOM.entryBatterySoc.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
+      }
 
       selectLocationForEntry(defaultLoc.id);
     }
@@ -5849,6 +5937,15 @@ function createOutput(data, callback) {
       return;
     }
 
+    let enteredSoc = null;
+    if (DOM.entryBatterySoc && DOM.entryBatterySoc.value.trim() !== '') {
+      const parsedSoc = parseInt(DOM.entryBatterySoc.value, 10);
+      if (!isNaN(parsedSoc) && parsedSoc >= 0 && parsedSoc <= 100) {
+        enteredSoc = parsedSoc;
+        appData.vehicle.currentSoc = parsedSoc;
+      }
+    }
+
     let savedSession = null;
     if (editId) {
       const cleanEditId = String(editId).trim();
@@ -5859,6 +5956,7 @@ function createOutput(data, callback) {
           date: new Date(dt).toISOString(),
           kwh,
           odometer: odo,
+          soc: enteredSoc,
           pricePerKwh: price,
           totalCost: total,
           location: locName,
@@ -5874,6 +5972,7 @@ function createOutput(data, callback) {
         date: new Date(dt).toISOString(),
         kwh,
         odometer: odo,
+        soc: enteredSoc,
         pricePerKwh: price,
         totalCost: total,
         location: locName,
@@ -5913,6 +6012,9 @@ function createOutput(data, callback) {
     if (DOM.cfgCurrentOdo) {
       DOM.cfgCurrentOdo.value = Math.round(v.currentOdo ?? 0);
     }
+    if (DOM.cfgCurrentSoc) {
+      DOM.cfgCurrentSoc.value = (v.currentSoc !== null && v.currentSoc !== undefined) ? v.currentSoc : '';
+    }
 
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();
@@ -5927,11 +6029,21 @@ function createOutput(data, callback) {
       const parsedOdo = parseInt(DOM.cfgCurrentOdo.value, 10);
       appData.vehicle.currentOdo = isNaN(parsedOdo) ? 0 : Math.max(0, parsedOdo);
     }
+    if (DOM.cfgCurrentSoc) {
+      const val = DOM.cfgCurrentSoc.value.trim();
+      if (val === '') {
+        appData.vehicle.currentSoc = null;
+      } else {
+        const parsedSoc = parseInt(val, 10);
+        appData.vehicle.currentSoc = (isNaN(parsedSoc) || parsedSoc < 0 || parsedSoc > 100) ? null : parsedSoc;
+      }
+    }
 
     saveData();
     renderDashboard();
     renderChargesStream();
     renderAnalyticsCharts();
+    updateSmartChargingRecommendation();
     triggerHaptic();
     showToast('Fahrzeugdaten aktualisiert ✓');
   }

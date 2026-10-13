@@ -1610,6 +1610,33 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.reco-metric-cell.interactive {
+  cursor: pointer;
+}
+
+.reco-metric-cell.interactive:hover {
+  background: rgba(18, 26, 40, 0.85);
+  border-color: rgba(0, 229, 255, 0.3);
+}
+
+.reco-metric-cell.interactive:active {
+  background: rgba(24, 36, 56, 0.95);
+  border-color: rgba(0, 229, 255, 0.6);
+  transform: scale(0.98);
+}
+
+.smart-reco-pending-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 184, 0, 0.08);
+  border: 1px solid rgba(255, 184, 0, 0.22);
+  border-radius: var(--radius-sm);
+  color: #f7d57f;
+  font-size: 0.70rem;
+  line-height: 1.4;
 }
 
 .rm-label {
