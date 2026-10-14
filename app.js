@@ -108,6 +108,7 @@
   let isWeatherExpanded = false;
   let isLocationsEditMode = false;
   let currentSyncState = 'synced';
+  let selectedSmartRecoDayIndex = null;
 
   const DELETED_IDS_STORAGE_KEY = 'cupra_raval_deleted_ids';
 
@@ -257,6 +258,7 @@
     DOM.smartRecoTimeVal = document.getElementById('smartRecoTimeVal');
     DOM.smartRecoLocVal = document.getElementById('smartRecoLocVal');
     DOM.smartRecoKwhVal = document.getElementById('smartRecoKwhVal');
+    DOM.smartReco3DayGrid = document.getElementById('smartReco3DayGrid');
     DOM.smartRecoReasoningText = document.getElementById('smartRecoReasoningText');
     DOM.smartMetricBattery = document.getElementById('smartMetricBattery');
     DOM.smartMetricBatterySub = document.getElementById('smartMetricBatterySub');
@@ -1838,6 +1840,20 @@ function createOutput(data, callback) {
         if (link) {
           e.preventDefault();
           promptAndUpdateSoc();
+        }
+      });
+    }
+
+    if (DOM.smartReco3DayGrid) {
+      DOM.smartReco3DayGrid.addEventListener('click', (e) => {
+        const card = e.target.closest('.reco-3day-card');
+        if (card && card.dataset.dayIndex !== undefined) {
+          const idx = parseInt(card.dataset.dayIndex, 10);
+          if (!isNaN(idx)) {
+            selectedSmartRecoDayIndex = idx;
+            updateSmartChargingRecommendation();
+            triggerHaptic();
+          }
         }
       });
     }
@@ -4696,7 +4712,7 @@ function createOutput(data, callback) {
     const currentRemainingKwh = hasRealSoc ? Number(((batteryCapacity * currentSocPct) / 100).toFixed(1)) : null;
     const currentRangeKm = (hasRealSoc && todayEffectiveCons) ? Math.round((currentRemainingKwh / todayEffectiveCons) * 100) : null;
 
-    // 4. Intelligente 7-Tage-Projektion & Suche nach dem besten Ladefenster
+    // 4. Intelligente Projektion der ersten 7 Tage (Fokus auf 3-Tage Vorschau)
     const candidateDays = [];
     let cumEnergyNeeded = 0;
 
@@ -4710,6 +4726,29 @@ function createOutput(data, callback) {
       const dDate = new Date(d.dateStr);
       const dayOfWeek = dDate.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
+
+      // Bestes Zeitfenster berechnen (Heute nachmittagsspezifisch!)
+      let timeWindow;
+      if (i === 0) {
+        const nowHour = new Date().getHours();
+        if (nowHour < 11) {
+          timeWindow = '11:30 – 15:30 Uhr';
+        } else if (nowHour >= 11 && nowHour < 15) {
+          timeWindow = '12:30 – 16:30 Uhr';
+        } else if (nowHour >= 15 && nowHour < 18) {
+          timeWindow = '15:30 – 18:30 Uhr';
+        } else {
+          timeWindow = 'Abends / Über Nacht';
+        }
+      } else {
+        if (sunHours >= 3.5 || pvYield >= 8) {
+          timeWindow = '11:30 – 15:30 Uhr';
+        } else if (d.tMax >= 12) {
+          timeWindow = '13:00 – 16:30 Uhr';
+        } else {
+          timeWindow = '12:00 – 15:00 Uhr';
+        }
+      }
 
       let projEnergyAtStartOfDay = currentRemainingKwh;
       let projSocPct = currentSocPct;
@@ -4738,47 +4777,134 @@ function createOutput(data, callback) {
         else if (projSocPct >= 65 && i > 0) score -= 15; // Akku noch zu voll
       }
 
+      const dayLabel = (i === 0) ? 'Heute' : ((i === 1) ? 'Morgen' : `${d.dayName}, ${d.dateDisplay}`);
+
       candidateDays.push({
         dayIndex: i,
         day: d,
+        dayLabel,
         projEnergyAtStartOfDay,
         projSocPct,
         pvYield,
         sunHours,
+        rainMm,
+        timeWindow,
         score,
+        badgeClass: 'moderate',
+        badgeLabel: '⛅ Mäßig',
+        verdictText: 'Mäßiger Solarertrag.',
         isWorkday,
-        dAvgTemp
+        dAvgTemp,
+        dNmcFactor
       });
     }
 
-    // Sortierung nach Score (bester Ladeslot)
-    candidateDays.sort((a, b) => b.score - a.score);
-    const bestCandidate = candidateDays[0] || {
-      dayIndex: 0,
-      day: today,
-      projEnergyAtStartOfDay: currentRemainingKwh,
-      projSocPct: currentSocPct,
-      pvYield: today?.solarYield?.estimatedPvKwh || 0,
-      sunHours: today?.sunshineHours || 0,
-      score: 50
-    };
+    // Relative Differenzierung der ersten 3 Tage ("Was Sache ist")
+    const maxPvIn3Days = Math.max(...candidateDays.slice(0, 3).map(c => c.pvYield));
+    const best3DayIndex = candidateDays.slice(0, 3).reduce((bestIdx, c, idx, arr) => c.score > arr[bestIdx].score ? idx : bestIdx, 0);
 
-    const bDay = bestCandidate.day;
-    const isTodaySlot = (bestCandidate.dayIndex === 0);
-    const isTomorrowSlot = (bestCandidate.dayIndex === 1);
-    const slotDayLabel = isTodaySlot ? 'Heute' : (isTomorrowSlot ? 'Morgen' : `${bDay.dayName}, ${bDay.dateDisplay}`);
+    candidateDays.slice(0, 3).forEach((cd, idx) => {
+      if (cd.projSocPct !== null && cd.projSocPct <= 22) {
+        cd.badgeClass = 'urgent';
+        cd.badgeLabel = '⚠️ Dringend';
+        cd.verdictText = 'Akku niedrig – zügig laden!';
+      } else if (idx === best3DayIndex && (cd.pvYield >= 8.0 || cd.sunHours >= 4.0)) {
+        cd.badgeClass = 'top';
+        cd.badgeLabel = '🌟 Bester Slot';
+        cd.verdictText = (idx === 0) 
+          ? 'Heute bester Ladeslot mit maximaler Solarleistung.' 
+          : `Höchster PV-Ertrag der 3 Tage (~${cd.pvYield} kWh).`;
+      } else if (idx === 0) {
+        if (cd.pvYield >= 5.0 || cd.sunHours >= 2.0) {
+          cd.badgeClass = 'good';
+          cd.badgeLabel = '⚡️ Nachmittag gut';
+          cd.verdictText = 'Nachmittags ideal für Zwischenladung.';
+        } else if (cd.rainMm >= 2.5 || cd.sunHours < 1.0) {
+          cd.badgeClass = 'cold';
+          cd.badgeLabel = '🌧️ Wenig Sonne';
+          cd.verdictText = 'Wenig Ertrag – besser Folgetag nutzen.';
+        } else {
+          cd.badgeClass = 'moderate';
+          cd.badgeLabel = '⛅ Mäßig';
+          cd.verdictText = 'Zwischenladung möglich, Netzstrom dominiert.';
+        }
+      } else {
+        if (cd.pvYield >= 8.0 || cd.sunHours >= 4.0) {
+          cd.badgeClass = 'good';
+          cd.badgeLabel = '☀️ Sehr gut';
+          cd.verdictText = 'Hoher PV-Überschuss nutzbar.';
+        } else if (cd.pvYield >= 4.5 || cd.sunHours >= 2.0) {
+          cd.badgeClass = 'good';
+          cd.badgeLabel = '⚡️ Gut nutzbar';
+          cd.verdictText = 'Gutes Ladefenster für Pendler.';
+        } else if (cd.rainMm >= 2.5 || cd.sunHours < 1.0) {
+          cd.badgeClass = 'cold';
+          cd.badgeLabel = '🌧️ Trüb';
+          cd.verdictText = 'Bewölkt/Regnerisch – Ertrag gering.';
+        } else {
+          cd.badgeClass = 'moderate';
+          cd.badgeLabel = '⛅ Mäßig';
+          cd.verdictText = 'Mäßige Sonnenstunden.';
+        }
+      }
+    });
 
-    // Zeitfenster abhängig von PV & Tageshöchsttemperatur (NMC-Wohlfühltemperatur)
-    let timeWindow = '11:30 – 15:30 Uhr';
-    if (bDay.sunshineHours >= 3.5 || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 8)) {
-      timeWindow = '11:30 – 15:30 Uhr';
-    } else if (bDay.tMax >= 12) {
-      timeWindow = '13:00 – 16:30 Uhr';
+    // 5. Auswahl des aktiven Kandidaten (Reaktiv auf Heute + Klick-Auswahl)
+    const sortedByScore = [...candidateDays].sort((a, b) => b.score - a.score);
+    const highestCandidate = sortedByScore[0] || candidateDays[0];
+    const todayCandidate = candidateDays[0];
+    const isTodayViable = (todayCandidate && (todayCandidate.badgeClass === 'top' || todayCandidate.badgeClass === 'good' || todayCandidate.pvYield >= 5.0 || todayCandidate.sunHours >= 1.8));
+
+    let activeCandidate;
+    if (selectedSmartRecoDayIndex !== null) {
+      activeCandidate = candidateDays.find(c => c.dayIndex === selectedSmartRecoDayIndex) || highestCandidate;
     } else {
-      timeWindow = '12:00 – 15:00 Uhr';
+      // Wenn heute nachmittags bereits gut zum Laden ist, bieten wir heute als sofortigen Ladeslot an!
+      // Ansonsten den Slot mit dem besten Gesamtertrag/Score
+      activeCandidate = isTodayViable ? todayCandidate : highestCandidate;
     }
 
-    // Standort-Empfehlung
+    const bDay = activeCandidate.day;
+    const isTodaySlot = (activeCandidate.dayIndex === 0);
+    const isTomorrowSlot = (activeCandidate.dayIndex === 1);
+    const slotDayLabel = activeCandidate.dayLabel;
+    const timeWindow = activeCandidate.timeWindow;
+
+    // 6. 3-Tage Vorschau rendern (Kompakt & direkt vergleichbar)
+    if (DOM.smartReco3DayGrid) {
+      DOM.smartReco3DayGrid.innerHTML = candidateDays.slice(0, 3).map(cd => {
+        const isActive = (cd.dayIndex === activeCandidate.dayIndex);
+        let dayTitle = 'Heute';
+        if (cd.dayIndex === 1) dayTitle = 'Morgen';
+        else if (cd.dayIndex > 1) dayTitle = cd.day.dayName;
+
+        const dateDisplay = cd.day.dateDisplay;
+        const nmcPct = Math.round(cd.dNmcFactor * 100);
+        const cleanTime = cd.timeWindow.replace(' Uhr', '');
+
+        return `
+          <div class="reco-3day-card ${isActive ? 'active' : ''}" data-day-index="${cd.dayIndex}" title="Tippen für Details zu ${escapeHtml(dayTitle)}">
+            <div class="r3-head">
+              <span class="r3-day-name">${escapeHtml(dayTitle)}</span>
+              <span class="r3-day-date">${escapeHtml(dateDisplay)}</span>
+            </div>
+            <span class="r3-badge ${cd.badgeClass}">${escapeHtml(cd.badgeLabel)}</span>
+            <div class="r3-time">${escapeHtml(cleanTime)}</div>
+            <div class="r3-stats">
+              <span class="r3-stat-item solar">
+                <span>☀️</span> <strong>${cd.sunHours}h</strong> • ~${cd.pvYield} kWh
+              </span>
+              <span class="r3-stat-item">
+                <span>🌡️</span> <strong>${cd.day.tMax}°C</strong> (${nmcPct}%)
+              </span>
+            </div>
+            <div class="r3-verdict">${escapeHtml(cd.verdictText)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 7. Standort-Empfehlung für den aktiven Slot
     const activeLoc = getActiveWeatherLocation();
     const bayrhofsLoc = (appData.settings && appData.settings.locations && appData.settings.locations.find(l => l.id === 'loc_bayrhofs' || l.name.toLowerCase().includes('bayrhof'))) || DEFAULT_LOCATIONS[0];
     const zuhauseLoc = (appData.settings && appData.settings.locations && appData.settings.locations.find(l => l.id === 'loc_zuhause' || l.name.toLowerCase().includes('zuhause'))) || DEFAULT_LOCATIONS[1];
@@ -4796,20 +4922,20 @@ function createOutput(data, callback) {
       kwhTariff = Number(activeLoc.kwhPrice) || 0.25;
     }
 
-    // Empfohlene Lademenge (Ziel: 80% SoC für NMC-Zellgesundheit)
+    // 8. Empfohlene Lademenge (Ziel: 80% SoC für NMC-Zellgesundheit)
     const targetEnergyKwh = batteryCapacity * 0.80;
     let chargeKwhNeeded = null;
     let savingsEur = null;
 
     if (hasRealSoc && currentRemainingKwh !== null) {
-      const startingEnergy = (bestCandidate.projEnergyAtStartOfDay !== null && bestCandidate.projEnergyAtStartOfDay !== undefined)
-        ? bestCandidate.projEnergyAtStartOfDay
+      const startingEnergy = (activeCandidate.projEnergyAtStartOfDay !== null && activeCandidate.projEnergyAtStartOfDay !== undefined)
+        ? activeCandidate.projEnergyAtStartOfDay
         : currentRemainingKwh;
       chargeKwhNeeded = Math.max(8, Math.min(batteryCapacity, Math.round(targetEnergyKwh - startingEnergy)));
       savingsEur = Number((chargeKwhNeeded * Math.max(0.15, 0.59 - kwhTariff)).toFixed(2));
     }
 
-    // UI Aktualisierung
+    // 9. UI Aktualisierung (Hero Box & Badge)
     if (DOM.smartRecoSubModel) {
       DOM.smartRecoSubModel.textContent = `${v.model || 'Cupra Raval'} • NMC-Zellen (${batteryCapacity.toFixed(1)} kWh)`;
     }
@@ -4834,19 +4960,30 @@ function createOutput(data, callback) {
         : `☀️ Günstigster Solar-Slot`;
     }
 
-    // Begründung mit klarer Trennung zwischen echten Daten und Wetterdaten
+    // 10. Intelligente Begründung mit klarer 3-Tage-Transparenz
     let reasoning = ``;
     if (isTodaySlot) {
-      reasoning = `<strong>Heute direkt nutzen:</strong> Hoher PV-Ertrag (${bDay.sunshineHours}h Sonne, ca. ${bDay.solarYield?.estimatedPvKwh || 0} kWh Solar) und ${bDay.tMax}°C. `;
+      reasoning = `<strong>Heute direkt nutzen:</strong> Nachmittags (${timeWindow}) herrschen gute Bedingungen mit <strong>${activeCandidate.sunHours}h Sonne</strong> und <strong>~${activeCandidate.pvYield} kWh Solarertrag</strong> bei ${bDay.tMax}°C für eine Zwischenladung. `;
     } else {
-      reasoning = `<strong>${slotDayLabel} ist das beste Ladefenster:</strong> Bei <strong>${bDay.sunshineHours}h Sonne</strong> und <strong>~${bDay.solarYield?.estimatedPvKwh || 0} kWh PV-Ertrag</strong> erzielst du maximalen Solarüberschuss. `;
+      reasoning = `<strong>${slotDayLabel} (${timeWindow}):</strong> Bei <strong>${activeCandidate.sunHours}h Sonne</strong> und <strong>~${activeCandidate.pvYield} kWh PV-Ertrag</strong> erreichst du maximalen Solarüberschuss. `;
     }
 
-    if (todayTemp <= 14) {
-      reasoning += `Witterungsbedingt sinkt der NMC-Wirkungsgrad bei aktuellen ${todayTemp}°C um <strong>${nmcLossPct}%</strong>. `;
-      reasoning += `Das empfohlene Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), wodurch der Innenwiderstand der NMC-Zellen minimiert und Vorheizverluste vermieden werden. `;
+    // Kompakter 3-Tage Status im Text
+    const d0 = candidateDays[0];
+    const d1 = candidateDays[1];
+    const d2 = candidateDays[2];
+    if (d0 && d1 && d2) {
+      reasoning += `<br><br>📊 <strong>3-Tage-Check:</strong> ` +
+        `<strong>Heute:</strong> ${escapeHtml(d0.badgeLabel)} (~${d0.pvYield} kWh PV, ${d0.timeWindow}) • ` +
+        `<strong>Morgen:</strong> ${escapeHtml(d1.badgeLabel)} (~${d1.pvYield} kWh PV) • ` +
+        `<strong>${escapeHtml(d2.day.dayName)}:</strong> ${escapeHtml(d2.badgeLabel)} (~${d2.pvYield} kWh PV). `;
+    }
+
+    if (activeCandidate.dAvgTemp <= 14) {
+      const loss = Math.max(0, Math.round((1 - activeCandidate.dNmcFactor) * 100));
+      reasoning += `<br>Thermischer NMC-Effekt: Bei ${activeCandidate.dAvgTemp}°C rund ${loss}% Kälteeinfluss. Das Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), um Vorheizverluste zu minimieren. `;
     } else {
-      reasoning += `Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Arbeitsfenster. `;
+      reasoning += `<br>Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Wirkungsgradfenster (20–24°C). `;
     }
 
     if (hasRealSoc && hasConsHistory) {
@@ -4867,22 +5004,25 @@ function createOutput(data, callback) {
 
     // Dynamic Badge Pill
     if (DOM.smartRecoBadge) {
-      if (!hasRealSoc || !hasConsHistory) {
-        DOM.smartRecoBadge.textContent = '☀️ Solar-Vorschau';
+      if (isTodaySlot && isTodayViable) {
+        DOM.smartRecoBadge.textContent = '⚡️ Heute Nachmittag';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
-      } else if (bDay.hasPvSurplus || (bDay.solarYield && bDay.solarYield.estimatedPvKwh >= 10)) {
-        DOM.smartRecoBadge.textContent = '☀️ PV-Priorität';
-        DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
-      } else if (todayTemp < 6) {
+      } else if (activeCandidate.badgeClass === 'top') {
+        DOM.smartRecoBadge.textContent = '🎯 Bester Solar-Slot';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill';
+      } else if (activeCandidate.badgeClass === 'cold') {
         DOM.smartRecoBadge.textContent = '❄️ Kälteschutz';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill cold';
+      } else if (!hasRealSoc || !hasConsHistory) {
+        DOM.smartRecoBadge.textContent = '☀️ Solar-Vorschau';
+        DOM.smartRecoBadge.className = 'smart-reco-badge-pill pv';
       } else {
         DOM.smartRecoBadge.textContent = '🎯 Optimaler Slot';
         DOM.smartRecoBadge.className = 'smart-reco-badge-pill';
       }
     }
 
-    // 4 Metriken Kacheln (NUR echte Daten!)
+    // 11. 4 Metriken Kacheln (NUR echte Daten!)
     if (DOM.smartMetricBattery) {
       if (hasRealSoc) {
         DOM.smartMetricBattery.textContent = currentRangeKm 
@@ -4901,11 +5041,12 @@ function createOutput(data, callback) {
     }
 
     if (DOM.smartMetricNmc) {
-      DOM.smartMetricNmc.textContent = `${Math.round(todayNmcFactor * 100)}% @ ${todayTemp}°C`;
+      DOM.smartMetricNmc.textContent = `${Math.round(activeCandidate.dNmcFactor * 100)}% @ ${bDay.tMax}°C`;
     }
     if (DOM.smartMetricNmcSub) {
-      DOM.smartMetricNmcSub.textContent = (todayNmcFactor < 0.98)
-        ? `-${nmcLossPct}% Kälteeinfluss`
+      const activeLoss = Math.max(0, Math.round((1 - activeCandidate.dNmcFactor) * 100));
+      DOM.smartMetricNmcSub.textContent = (activeCandidate.dNmcFactor < 0.98)
+        ? `-${activeLoss}% Kälteeinfluss`
         : `Optimal (20–24°C)`;
     }
 
@@ -4925,10 +5066,10 @@ function createOutput(data, callback) {
     }
 
     if (DOM.smartMetricSolar) {
-      DOM.smartMetricSolar.textContent = `${bDay.dayName} • ~${bDay.solarYield?.estimatedPvKwh || 0} kWh`;
+      DOM.smartMetricSolar.textContent = `${bDay.dayName} • ~${activeCandidate.pvYield} kWh`;
     }
     if (DOM.smartMetricSolarSub) {
-      DOM.smartMetricSolarSub.textContent = `${bDay.sunshineHours}h Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
+      DOM.smartMetricSolarSub.textContent = `${activeCandidate.sunHours}h Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
     }
   }
 

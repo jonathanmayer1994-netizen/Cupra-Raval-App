@@ -369,6 +369,28 @@ def run_tests():
             smart_time_val = page.locator("#smartRecoTimeVal").inner_text()
             log_test("7.1d Intelligente Lade-Empfehlung Card gerendert mit Cupra Raval NMC-Modell", smart_card_visible and len(smart_reco_title) > 0 and len(smart_time_val) > 0, f"Card sichtbar: {smart_card_visible}, Titel: '{smart_reco_title}', Slot: '{smart_time_val}'")
 
+            # 7.1d2: 3-Tage Vorschau bei der intelligenten Lade-Empfehlung aktiv & interaktiv
+            day_cards_count = page.locator("#smartReco3DayGrid .reco-3day-card").count()
+            has_day0 = page.locator('.reco-3day-card[data-day-index="0"]').is_visible()
+            has_day1 = page.locator('.reco-3day-card[data-day-index="1"]').is_visible()
+            has_day2 = page.locator('.reco-3day-card[data-day-index="2"]').is_visible()
+            
+            # Klick auf Tag 2 und Prüfung der Slot-Aktualisierung
+            page.locator('.reco-3day-card[data-day-index="2"]').click()
+            time.sleep(0.3)
+            time_val_d2 = page.locator("#smartRecoTimeVal").inner_text()
+            card2_active = page.locator('.reco-3day-card[data-day-index="2"]').evaluate("el => el.classList.contains('active')")
+            
+            # Klick zurück auf Heute
+            page.locator('.reco-3day-card[data-day-index="0"]').click()
+            time.sleep(0.3)
+            time_val_d0 = page.locator("#smartRecoTimeVal").inner_text()
+            card0_active = page.locator('.reco-3day-card[data-day-index="0"]').evaluate("el => el.classList.contains('active')")
+            
+            log_test("7.1d2 3-Tage Vorschau bei intelligenter Empfehlung (Kompakt & Interaktiv)", 
+                     day_cards_count == 3 and has_day0 and has_day1 and has_day2 and card2_active and card0_active,
+                     f"Karten: {day_cards_count}, Tag 2: '{time_val_d2}', Heute: '{time_val_d0}'")
+
             # 7.1e: 4 NMC Telemetrie-Metriken aktiv (Akku, NMC-Effizienz, Fahrprofil, PV-Fenster)
             metric_bat = page.locator("#smartMetricBattery").inner_text()
             metric_nmc = page.locator("#smartMetricNmc").inner_text()
