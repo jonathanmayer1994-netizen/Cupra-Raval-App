@@ -498,6 +498,76 @@ def run_tests():
             is_now_marked = "Aktuell" in modal_sub_text and "Jetzt" in has_now_legend and now_badges_count >= 1
             log_test("7.7c Stündlicher Wetterchart zeigt aktuelle Uhrzeit-Markierung (JETZT) beim aktuellen Tag", is_now_marked, f"Sub: '{modal_sub_text}', Jetzt im Chart/Legende: True, Aktuelle Stunde aktiv: {now_badges_count}")
 
+            # 7.7d: Tagesansicht Header-Navigation & Badge
+            prev_disabled = page.locator("#btnPrevHourlyDay").is_disabled()
+            day_badge_init = page.locator("#hourlyDayBadge").inner_text()
+            title_day1 = page.locator("#hourlyModalTitle").inner_text()
+            log_test("7.7d Wetter-Tagesansicht Vorheriger-Tag Button bei Tag 0 deaktiviert & Tages-Badge aktiv", prev_disabled and "1/14" in day_badge_init, f"Badge: '{day_badge_init}', Disabled: {prev_disabled}, Titel: '{title_day1}'")
+
+            # 7.7e: Navigation auf Tag 2 per Button
+            page.locator("#btnNextHourlyDay").click()
+            time.sleep(0.3)
+            day_badge_day2 = page.locator("#hourlyDayBadge").inner_text()
+            prev_now_enabled = not page.locator("#btnPrevHourlyDay").is_disabled()
+            title_day2 = page.locator("#hourlyModalTitle").inner_text()
+            log_test("7.7e Nächster-Tag Button schaltet auf Tag 2/14 um und aktiviert Zurück-Button", "2/14" in day_badge_day2 and prev_now_enabled and title_day2 != title_day1, f"Badge: '{day_badge_day2}', Zurück aktiv: {prev_now_enabled}, Titel: '{title_day2}'")
+
+            # 7.7f: Wisch-Geste nach links (Swipe Left) schaltet zum nächsten Tag (Tag 3/14)
+            page.evaluate("""() => {
+                const sheet = document.querySelector('#modalHourlyWeather .swift-sheet-card');
+                const r = sheet.getBoundingClientRect();
+                const startX = r.left + 260;
+                const endX = r.left + 40;
+                const y = r.top + 160;
+                const t0 = new Touch({ identifier: 1, target: sheet, clientX: startX, clientY: y });
+                const t1 = new Touch({ identifier: 1, target: sheet, clientX: endX, clientY: y });
+                sheet.dispatchEvent(new TouchEvent('touchstart', { touches: [t0], changedTouches: [t0], bubbles: true }));
+                sheet.dispatchEvent(new TouchEvent('touchmove', { touches: [t1], changedTouches: [t1], cancelable: true, bubbles: true }));
+                sheet.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t1], bubbles: true }));
+            }""")
+            time.sleep(0.4)
+            day_badge_day3 = page.locator("#hourlyDayBadge").inner_text()
+            title_day3 = page.locator("#hourlyModalTitle").inner_text()
+            log_test("7.7f Wischgeste nach links (Swipe Left) wechselt zum nächsten Tag (Tag 3)", "3/14" in day_badge_day3 and title_day3 != day_badge_day2, f"Badge nach Swipe: '{day_badge_day3}', Titel: '{title_day3}'")
+
+            # 7.7g: Wisch-Geste nach rechts (Swipe Right) schaltet zum vorherigen Tag (Tag 2/14)
+            page.evaluate("""() => {
+                const sheet = document.querySelector('#modalHourlyWeather .swift-sheet-card');
+                const r = sheet.getBoundingClientRect();
+                const startX = r.left + 40;
+                const endX = r.left + 260;
+                const y = r.top + 160;
+                const t0 = new Touch({ identifier: 1, target: sheet, clientX: startX, clientY: y });
+                const t1 = new Touch({ identifier: 1, target: sheet, clientX: endX, clientY: y });
+                sheet.dispatchEvent(new TouchEvent('touchstart', { touches: [t0], changedTouches: [t0], bubbles: true }));
+                sheet.dispatchEvent(new TouchEvent('touchmove', { touches: [t1], changedTouches: [t1], cancelable: true, bubbles: true }));
+                sheet.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t1], bubbles: true }));
+            }""")
+            time.sleep(0.4)
+            day_badge_back = page.locator("#hourlyDayBadge").inner_text()
+            title_day_back = page.locator("#hourlyModalTitle").inner_text()
+            log_test("7.7g Wischgeste nach rechts (Swipe Right) wechselt zum vorherigen Tag (Tag 2)", "2/14" in day_badge_back and title_day_back == title_day2, f"Badge nach Swipe zurück: '{day_badge_back}', Titel: '{title_day_back}'")
+
+            # 7.7h: Tastatur-Navigation (ArrowLeft / ArrowRight)
+            page.keyboard.press("ArrowLeft")
+            time.sleep(0.3)
+            day_badge_arrow = page.locator("#hourlyDayBadge").inner_text()
+            log_test("7.7h Tastatur-Pfeiltasten navigieren Tage im Wetter-Modal", "1/14" in day_badge_arrow, f"Badge nach ArrowLeft: '{day_badge_arrow}'")
+
+            # 7.7i: Desktop Maus-Drag nach links schaltet zum nächsten Tag um
+            modal_box = page.locator("#modalHourlyWeather .swift-sheet-card").bounding_box()
+            if modal_box:
+                drag_start_x = modal_box["x"] + modal_box["width"] * 0.75
+                drag_end_x = modal_box["x"] + modal_box["width"] * 0.25
+                drag_y = modal_box["y"] + 150
+                page.mouse.move(drag_start_x, drag_y)
+                page.mouse.down()
+                page.mouse.move(drag_end_x, drag_y, steps=8)
+                page.mouse.up()
+                time.sleep(0.4)
+                day_badge_mousedrag = page.locator("#hourlyDayBadge").inner_text()
+                log_test("7.7i Desktop Maus-Drag nach links wechselt zum nächsten Tag", "2/14" in day_badge_mousedrag, f"Badge nach Maus-Drag: '{day_badge_mousedrag}'")
+
             page.locator("#btnCloseHourlyModal").click()
             time.sleep(0.3)
 

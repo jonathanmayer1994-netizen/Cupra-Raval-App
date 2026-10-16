@@ -2051,6 +2051,48 @@ body {
   height: 24px;
 }
 
+/* Schön abgerundetes Nebel-Icon (Squircle / Apple Rounded Corners) */
+.fog-rounded-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 6.5px;
+  -webkit-clip-path: inset(1.5px round 6.5px);
+  clip-path: inset(1.5px round 6.5px);
+  overflow: hidden;
+  font-size: 1.52rem;
+  line-height: 1;
+  box-shadow: 0 1.5px 5px rgba(0, 0, 0, 0.45);
+  vertical-align: middle;
+  transform: translateZ(0);
+}
+
+.day-weather-icon .fog-rounded-icon {
+  width: 23px;
+  height: 23px;
+}
+
+.hh-icon .fog-rounded-icon {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  -webkit-clip-path: inset(1px round 5px);
+  clip-path: inset(1px round 5px);
+  font-size: 1.15rem;
+}
+
+.solar-icon-circle .fog-rounded-icon,
+.dash-pv-icon-circle .fog-rounded-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  -webkit-clip-path: inset(2px round 8px);
+  clip-path: inset(2px round 8px);
+  font-size: 1.85rem;
+}
+
 /* Spalte 3: Mitte (Wetterwerte) */
 .day-mid-weather {
   display: flex;
@@ -2558,10 +2600,146 @@ input[type="number"] {
 /* ==========================================================================
    MODAL: STÜNDLICHER WETTERVERLAUF
    ========================================================================== */
+.hourly-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hourly-header-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.hourly-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hourly-day-badge {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.18);
+  border: 1px solid rgba(192, 128, 81, 0.38);
+  color: var(--cupra-bronze-light);
+  white-space: nowrap;
+}
+
+.sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sheet-btn-nav {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet-btn-nav:hover:not(:disabled) {
+  background: rgba(192, 128, 81, 0.25);
+  border-color: rgba(192, 128, 81, 0.5);
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+.sheet-btn-nav:active:not(:disabled) {
+  transform: scale(0.94);
+  background: rgba(192, 128, 81, 0.35);
+}
+
+.sheet-btn-nav:disabled {
+  opacity: 0.22;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.hourly-swipe-pill-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.48);
+  margin-top: -4px;
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.hourly-swipe-pill-hint .hint-arrow {
+  color: var(--cupra-bronze-light);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+#modalHourlyWeather {
+  touch-action: pan-y !important;
+}
+
+#modalHourlyWeather .swift-sheet-card {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
 .hourly-content-wrap {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  will-change: transform, opacity;
+  touch-action: pan-y !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@keyframes slideInFromRight {
+  0% {
+    opacity: 0.25;
+    transform: translate3d(36px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  0% {
+    opacity: 0.25;
+    transform: translate3d(-36px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.hourly-content-wrap.slide-enter-right {
+  animation: slideInFromRight 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hourly-content-wrap.slide-enter-left {
+  animation: slideInFromLeft 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .hourly-kpi-summary-row {

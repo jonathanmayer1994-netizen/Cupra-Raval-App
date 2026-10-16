@@ -21,7 +21,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const CACHE_KEY = 'cupra_raval_weather_service_cache_v6';
+  const CACHE_KEY = 'cupra_raval_weather_service_cache_v8';
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten Cache wie angefordert
 
   // Fallback-Sonnenzeiten für Kempten/Allgäu (Bayrhofs Region)
@@ -300,7 +300,7 @@
    * - 🌧️ Regen / Regenschauer / Starkregen
    * - ⛈️ Gewitter / Unwetter
    * - 🌨️ Schnee / Schneeschauer
-   * - 🌫️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
+   * - ☁️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
    */
   function determineAccurateWeatherIcon(sunshineHours, rainMm, weatherCode) {
     const sun = Number(sunshineHours) || 0;
@@ -682,6 +682,8 @@
   function clearCache() {
     try {
       localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem('cupra_raval_weather_service_cache_v7');
+      localStorage.removeItem('cupra_raval_weather_service_cache_v6');
       localStorage.removeItem('cupra_raval_weather_service_cache_v5');
       localStorage.removeItem('cupra_raval_weather_cache');
     } catch (_) {}

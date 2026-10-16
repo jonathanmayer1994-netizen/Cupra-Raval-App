@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v6';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v8';
   const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
@@ -356,6 +356,10 @@
     DOM.canvasHourlyChart = document.getElementById('canvasHourlyChart');
     DOM.hourlyChartLegendBox = document.getElementById('hourlyChartLegendBox');
     DOM.hourlyHoursScroll = document.getElementById('hourlyHoursScroll');
+    DOM.btnPrevHourlyDay = document.getElementById('btnPrevHourlyDay');
+    DOM.btnNextHourlyDay = document.getElementById('btnNextHourlyDay');
+    DOM.hourlyDayBadge = document.getElementById('hourlyDayBadge');
+    DOM.hourlyContentWrap = document.querySelector('#modalHourlyWeather .hourly-content-wrap');
 
     // KPI Detail Modal & Chart
     DOM.modalKpiDetail = document.getElementById('modalKpiDetail');
@@ -559,10 +563,16 @@
 
   function initWeatherCache() {
     try {
+      localStorage.removeItem('cupra_weather_cache_v7');
+      localStorage.removeItem('cupra_weather_cache_v6');
+      localStorage.removeItem('cupra_raval_weather_service_cache_v7');
+      localStorage.removeItem('cupra_raval_weather_service_cache_v6');
       localStorage.removeItem('cupra_weather_cache_v5');
       localStorage.removeItem('cupra_raval_weather_service_cache_v5');
       const cached = localStorage.getItem(WEATHER_CACHE_KEY);
-      if (cached) weatherForecast14Days = JSON.parse(cached);
+      if (cached) {
+        weatherForecast14Days = JSON.parse(cached);
+      }
     } catch (_) {}
   }
 
@@ -1909,10 +1919,37 @@ function createOutput(data, callback) {
 
     DOM.formLocationEditor.addEventListener('submit', handleSaveLocationEditor);
 
-    // Stündliches Wetter Modal Close
-    DOM.btnCloseHourlyModal.addEventListener('click', () => closeHourlyModal());
-    DOM.modalHourlyWeather.addEventListener('click', (e) => {
-      if (e.target === DOM.modalHourlyWeather) closeHourlyModal();
+    // Stündliches Wetter Modal Close & Steuerung
+    if (DOM.btnCloseHourlyModal) {
+      DOM.btnCloseHourlyModal.addEventListener('click', () => closeHourlyModal());
+    }
+    if (DOM.btnPrevHourlyDay) {
+      DOM.btnPrevHourlyDay.addEventListener('click', () => navigateHourlyDay(-1));
+    }
+    if (DOM.btnNextHourlyDay) {
+      DOM.btnNextHourlyDay.addEventListener('click', () => navigateHourlyDay(1));
+    }
+    if (DOM.modalHourlyWeather) {
+      DOM.modalHourlyWeather.addEventListener('click', (e) => {
+        if (e.target === DOM.modalHourlyWeather) closeHourlyModal();
+      });
+      setupHourlyWeatherSwipeGestures();
+    }
+
+    // Tastatur-Navigation für stündliches Wetter Modal
+    window.addEventListener('keydown', (e) => {
+      if (DOM.modalHourlyWeather && DOM.modalHourlyWeather.classList.contains('open')) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          navigateHourlyDay(-1);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          navigateHourlyDay(1);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeHourlyModal();
+        }
+      }
     });
 
     // Klickbare KPI Dashboard-Kacheln für historische Verlaufsgraphen
@@ -2145,7 +2182,7 @@ function createOutput(data, callback) {
       // Nur zulässig ganz oben an der Seite (window.scrollY <= 2)
       if (window.scrollY > 2) return;
       // Nicht auslösen bei geöffnetem Modal oder aktiven Eingaben
-      if (document.querySelector('.swift-modal.active, .swift-modal.open')) return;
+      if (document.querySelector('.swift-modal.active, .swift-modal.open, .modal-backdrop-sheet.open')) return;
 
       const cfg = getPullConfig();
       if (!cfg || !cfg.banner) return;
@@ -4566,7 +4603,7 @@ function createOutput(data, callback) {
    * - 🌧️ Regen / Regenschauer / Starkregen
    * - ⛈️ Gewitter / Unwetter
    * - 🌨️ Schnee / Schneeschauer
-   * - 🌫️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
+   * - ☁️ Echter Nebel / Hochnebel (NUR wenn Sonne < 2h & WMO 45/48)
    */
   function determineAccurateWeatherIcon(sunshineHours, rainMm, code) {
     const sun = Number(sunshineHours) || 0;
@@ -5124,7 +5161,10 @@ function createOutput(data, callback) {
     const badgeClass = isOffice ? 'reco-tag-office' : (isWeekendCharge ? 'reco-tag-weekend-charge' : 'reco-tag-home');
 
     // 100% Garantie: Immer valides, individuelles Icon & Zustand
-    const icon = item.icon || '☀️';
+    const rawIcon = item.icon || '☀️';
+    const iconHtml = (rawIcon && rawIcon.includes('🌫'))
+      ? `<span class="fog-rounded-icon" title="Nebel">🌫️</span>`
+      : rawIcon;
     const conditionText = item.conditionText || 'Sonnig';
     const rainProbText = (item.rainMm > 0 || (item.rainProbMax && item.rainProbMax >= 25))
       ? ` (${item.rainProbMax}%)`
@@ -5138,7 +5178,7 @@ function createOutput(data, callback) {
         </div>
 
         <div class="day-weather-icon-box">
-          <span class="day-weather-icon">${icon}</span>
+          <span class="day-weather-icon">${iconHtml}</span>
         </div>
 
         <div class="day-mid-weather">
@@ -5255,7 +5295,10 @@ function createOutput(data, callback) {
     if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
     const today = weatherForecast14Days[0];
 
-    DOM.dashPvIconCircle.innerHTML = today.icon;
+    const todayIconHtml = (today.icon && today.icon.includes('🌫'))
+      ? `<span class="fog-rounded-icon" title="Nebel">🌫️</span>`
+      : (today.icon || '☀️');
+    DOM.dashPvIconCircle.innerHTML = todayIconHtml;
     DOM.dashRecoHeadline.innerHTML = `Heute: <strong>${today.sunshineHours}h Sonne</strong> <span class="rain-sub-stat">💧 ${today.rainMm} l/m²</span>`;
 
     if (today.decision === 'office') {
@@ -5278,11 +5321,50 @@ function createOutput(data, callback) {
   }
 
   // =========================================================================
-  // MODAL: STÜNDLICHER WETTERVERLAUF EINES TAGES
+  // MODAL: STÜNDLICHER WETTERVERLAUF EINES TAGES & GESTENSTEUERUNG
   // =========================================================================
-  function openHourlyWeatherModal(dayIndex) {
-    const day = weatherForecast14Days && weatherForecast14Days[dayIndex];
+  let currentHourlyDayIndex = 0;
+
+  function navigateHourlyDay(direction) {
+    if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
+    const targetIdx = currentHourlyDayIndex + direction;
+    if (targetIdx < 0 || targetIdx >= weatherForecast14Days.length) return;
+    openHourlyWeatherModal(targetIdx, direction);
+  }
+
+  function openHourlyWeatherModal(dayIndex, animDirection = 0) {
+    if (!weatherForecast14Days || weatherForecast14Days.length === 0) return;
+
+    if (dayIndex < 0) dayIndex = 0;
+    if (dayIndex >= weatherForecast14Days.length) dayIndex = weatherForecast14Days.length - 1;
+
+    currentHourlyDayIndex = dayIndex;
+    const day = weatherForecast14Days[dayIndex];
     if (!day) return;
+
+    // Sanfte Slide-Animation bei Tag-Wechsel
+    if (DOM.hourlyContentWrap) {
+      DOM.hourlyContentWrap.style.transform = '';
+      DOM.hourlyContentWrap.style.transition = '';
+      DOM.hourlyContentWrap.style.opacity = '';
+      DOM.hourlyContentWrap.classList.remove('slide-enter-right', 'slide-enter-left');
+
+      if (animDirection > 0) {
+        void DOM.hourlyContentWrap.offsetWidth; // Force Reflow
+        DOM.hourlyContentWrap.classList.add('slide-enter-right');
+      } else if (animDirection < 0) {
+        void DOM.hourlyContentWrap.offsetWidth; // Force Reflow
+        DOM.hourlyContentWrap.classList.add('slide-enter-left');
+      }
+
+      if (animDirection !== 0) {
+        setTimeout(() => {
+          if (DOM.hourlyContentWrap) {
+            DOM.hourlyContentWrap.classList.remove('slide-enter-right', 'slide-enter-left');
+          }
+        }, 260);
+      }
+    }
 
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -5299,6 +5381,23 @@ function createOutput(data, callback) {
     DOM.hourlyModalSub.textContent = isToday
       ? `Heute • ${day.conditionText || 'Prognose'} • Aktuell: ${currentTimeStr} Uhr`
       : `${day.conditionText || 'Prognose'} • Verlauf von 06:00 bis 22:00 Uhr`;
+
+    // Status der Vor-/Zurück-Pfeile und Tages-Badge aktualisieren
+    if (DOM.btnPrevHourlyDay) {
+      DOM.btnPrevHourlyDay.disabled = (dayIndex <= 0);
+    }
+    if (DOM.btnNextHourlyDay) {
+      DOM.btnNextHourlyDay.disabled = (dayIndex >= weatherForecast14Days.length - 1);
+    }
+    if (DOM.hourlyDayBadge) {
+      if (dayIndex === 0) {
+        DOM.hourlyDayBadge.textContent = `Heute • 1/${weatherForecast14Days.length}`;
+      } else if (dayIndex === 1) {
+        DOM.hourlyDayBadge.textContent = `Morgen • 2/${weatherForecast14Days.length}`;
+      } else {
+        DOM.hourlyDayBadge.textContent = `Tag ${dayIndex + 1}/${weatherForecast14Days.length}`;
+      }
+    }
 
     DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
     DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
@@ -5361,11 +5460,16 @@ function createOutput(data, callback) {
       else if (isRise) sunEventBadge = `<span style="font-size:0.58rem; color:#f59e0b; font-weight:800;">🌅 ${day.sunrise}</span>`;
       else if (isSet) sunEventBadge = `<span style="font-size:0.58rem; color:#f97316; font-weight:800;">🌇 ${day.sunset}</span>`;
 
+      const rawHIcon = h.icon || '☀️';
+      const hIconHtml = (rawHIcon && rawHIcon.includes('🌫'))
+        ? `<span class="fog-rounded-icon" title="Nebel">🌫️</span>`
+        : rawHIcon;
+
       return `
         <div class="hourly-hour-card ${isCurrentHour ? 'is-current-hour' : ''} ${isRise || isSet ? 'sun-event-hour' : ''}" data-hour="${h.hour}">
           <span class="hh-time">${h.time}</span>
           ${sunEventBadge}
-          <span class="hh-icon">${h.icon}</span>
+          <span class="hh-icon">${hIconHtml}</span>
           <span class="hh-temp">${h.temp}°</span>
           <span class="hh-solar">☀️ ${(h.sunHours * 60).toFixed(0)}m</span>
           ${h.ghi && h.ghi > 0 ? `<span class="hh-ghi-val" style="font-size:0.56rem; color:#f59e0b; font-weight:700;">⚡️ ${h.ghi}W</span>` : ''}
@@ -5381,6 +5485,10 @@ function createOutput(data, callback) {
           curEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
         }
       }, 120);
+    } else {
+      if (DOM.hourlyHoursScroll) {
+        DOM.hourlyHoursScroll.scrollLeft = 0;
+      }
     }
 
     requestAnimationFrame(() => {
@@ -5398,6 +5506,172 @@ function createOutput(data, callback) {
 
   function closeHourlyModal() {
     DOM.modalHourlyWeather.classList.remove('open');
+    if (DOM.hourlyContentWrap) {
+      DOM.hourlyContentWrap.style.transform = '';
+      DOM.hourlyContentWrap.style.transition = '';
+      DOM.hourlyContentWrap.style.opacity = '';
+      DOM.hourlyContentWrap.classList.remove('slide-enter-right', 'slide-enter-left');
+    }
+  }
+
+  // Wisch-Geste (Touch & Mouse Drag) für den nahtlosen Tag-Wechsel
+  function setupHourlyWeatherSwipeGestures() {
+    if (!DOM.modalHourlyWeather) return;
+
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let startTime = 0;
+    let isTracking = false;
+    let isHorizontalSwipe = false;
+    let isDirectionDetermined = false;
+
+    const getCoords = (e) => {
+      if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    };
+
+    const handleStart = (e) => {
+      if (!DOM.modalHourlyWeather || !DOM.modalHourlyWeather.classList.contains('open')) return;
+      if (e.target.closest('#btnCloseHourlyModal, .sheet-btn-nav, button')) return;
+      if (!e.target.closest('#modalHourlyWeather')) return;
+
+      const pt = getCoords(e);
+      startX = pt.x;
+      startY = pt.y;
+      currentX = startX;
+      currentY = startY;
+      startTime = Date.now();
+      isTracking = true;
+      isHorizontalSwipe = false;
+      isDirectionDetermined = false;
+    };
+
+    const handleMove = (e) => {
+      if (!isTracking) return;
+
+      const pt = getCoords(e);
+      currentX = pt.x;
+      currentY = pt.y;
+
+      const diffX = currentX - startX;
+      const diffY = currentY - startY;
+      const absX = Math.abs(diffX);
+      const absY = Math.abs(diffY);
+
+      if (!isDirectionDetermined) {
+        if (absX < 7 && absY < 7) return;
+
+        // Horizontale Wischgeste gewinnt, sobald die X-Bewegung mind. 70% der Y-Bewegung ausmacht
+        if (absX >= absY * 0.7) {
+          isDirectionDetermined = true;
+          isHorizontalSwipe = true;
+        } else if (absY >= 14 && absY > absX * 1.5) {
+          // Eindeutig vertikales Scrollen im Modal
+          isDirectionDetermined = true;
+          isHorizontalSwipe = false;
+          isTracking = false;
+          return;
+        }
+      }
+
+      if (isHorizontalSwipe && DOM.hourlyContentWrap) {
+        if (e.cancelable) e.preventDefault();
+
+        // Gummiband-Effekt bei Grenzen (Tag 0 nach rechts oder Tag 13 nach links)
+        const atStart = (currentHourlyDayIndex <= 0 && diffX > 0);
+        const atEnd = (weatherForecast14Days && currentHourlyDayIndex >= weatherForecast14Days.length - 1 && diffX < 0);
+        const resistance = (atStart || atEnd) ? 0.2 : 0.82;
+        const dragX = diffX * resistance;
+
+        DOM.hourlyContentWrap.style.transform = `translate3d(${dragX}px, 0, 0)`;
+        DOM.hourlyContentWrap.style.transition = 'none';
+        DOM.hourlyContentWrap.style.opacity = Math.max(0.65, 1 - Math.abs(dragX) / 550).toString();
+      }
+    };
+
+    const handleEnd = (e) => {
+      if (!isTracking) return;
+      isTracking = false;
+
+      const pt = getCoords(e);
+      currentX = pt.x;
+      currentY = pt.y;
+
+      const diffX = currentX - startX;
+      const diffY = currentY - startY;
+      const dt = Math.max(1, Date.now() - startTime);
+      const speedX = Math.abs(diffX) / dt;
+
+      // Auslösen bei geringer Distanz (32px) ODER bei schnellem Finger-Flick (24px & >0.2px/ms)
+      const isFlick = (Math.abs(diffX) > 24 && speedX > 0.22 && Math.abs(diffX) > Math.abs(diffY));
+      const isDrag = (Math.abs(diffX) > 32 && Math.abs(diffX) > Math.abs(diffY));
+      const isSwipeSuccess = isHorizontalSwipe || isFlick || isDrag;
+
+      if (DOM.hourlyContentWrap) {
+        DOM.hourlyContentWrap.style.transition = 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease';
+      }
+
+      if (isSwipeSuccess) {
+        if (diffX < 0) {
+          // Wisch nach links -> Nächster Tag
+          if (weatherForecast14Days && currentHourlyDayIndex < weatherForecast14Days.length - 1) {
+            navigateHourlyDay(1);
+            return;
+          }
+        } else if (diffX > 0) {
+          // Wisch nach rechts -> Vorheriger Tag
+          if (currentHourlyDayIndex > 0) {
+            navigateHourlyDay(-1);
+            return;
+          }
+        }
+      }
+
+      // Weich zurückfedern falls kein Wechsel
+      if (DOM.hourlyContentWrap) {
+        DOM.hourlyContentWrap.style.transform = 'translate3d(0, 0, 0)';
+        DOM.hourlyContentWrap.style.opacity = '1';
+        setTimeout(() => {
+          if (DOM.hourlyContentWrap) {
+            DOM.hourlyContentWrap.style.transform = '';
+            DOM.hourlyContentWrap.style.transition = '';
+            DOM.hourlyContentWrap.style.opacity = '';
+          }
+        }, 230);
+      }
+    };
+
+    // Global auf window registrieren für lückenlose Berührungserkennung
+    window.addEventListener('touchstart', handleStart, { passive: true });
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('touchend', handleEnd, { passive: true });
+    window.addEventListener('touchcancel', handleEnd, { passive: true });
+
+    // Desktop Maus-Drag
+    let isMouseDown = false;
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (!DOM.modalHourlyWeather || !DOM.modalHourlyWeather.classList.contains('open')) return;
+      if (!e.target.closest('#modalHourlyWeather')) return;
+      if (e.target.closest('#btnCloseHourlyModal, .sheet-btn-nav, button')) return;
+
+      isMouseDown = true;
+      handleStart(e);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+      handleMove(e);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      handleEnd(e);
+    });
   }
 
   function renderHourlyWeatherChart(hours, sunriseTime, sunsetTime, currentTimeStr) {
