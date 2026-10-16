@@ -2604,19 +2604,40 @@ input[type="number"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  position: relative;
 }
 
-.hourly-header-titles {
-  min-width: 0;
-  flex: 1;
-}
-
-.hourly-title-row {
+.hourly-header-nav-left {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+.hourly-header-center {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.hourly-header-center .hourly-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.hourly-header-center .sheet-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  text-align: center;
 }
 
 .hourly-day-badge {
@@ -2631,9 +2652,19 @@ input[type="number"] {
   white-space: nowrap;
 }
 
-.sheet-header-actions {
+.hourly-header-center .sheet-subtitle-tag {
+  font-size: 0.72rem;
+  color: var(--cupra-bronze-light);
+  font-weight: 600;
+  display: block;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.hourly-header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -2644,7 +2675,7 @@ input[type="number"] {
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--text-secondary);
+  color: var(--cupra-bronze-light);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2667,38 +2698,10 @@ input[type="number"] {
 }
 
 .sheet-btn-nav:disabled {
-  opacity: 0.22;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-.hourly-swipe-pill-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: rgba(226, 232, 240, 0.48);
-  margin-top: -4px;
-  margin-bottom: 8px;
-  letter-spacing: 0.3px;
-  user-select: none;
-  pointer-events: none;
-}
-
-.hourly-swipe-pill-hint .hint-arrow {
-  color: var(--cupra-bronze-light);
-  font-size: 0.85rem;
-  font-weight: 800;
-}
-
-#modalHourlyWeather {
-  touch-action: pan-y !important;
+  display: none !important;
 }
 
 #modalHourlyWeather .swift-sheet-card {
-  touch-action: pan-y !important;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -2707,9 +2710,6 @@ input[type="number"] {
   flex-direction: column;
   gap: 12px;
   will-change: transform, opacity;
-  touch-action: pan-y !important;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 @keyframes slideInFromRight {
