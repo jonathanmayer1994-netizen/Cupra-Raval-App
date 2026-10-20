@@ -6342,7 +6342,11 @@ function createOutput(data, callback) {
     } else {
       DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
       DOM.entryDateTime.value = formatDateTimeLocal(new Date());
-      DOM.entryOdometer.value = latestOdo || '';
+      DOM.entryOdometer.value = '';
+      if (DOM.entryOdometer) {
+        DOM.entryOdometer.placeholder = latestOdo > 0 ? `z.B. ${latestOdo + 15}` : '0';
+      }
+      DOM.entryNotes.value = '';
       if (DOM.entryBatterySocStart) {
         DOM.entryBatterySocStart.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
       }
@@ -6556,35 +6560,71 @@ function createOutput(data, callback) {
 
     if (!text || typeof text !== 'string') return res;
 
-    // 1. Start SoC ("Ursprünglicher Ladezustand 17%")
-    const mStart = text.match(/urspr[üu]nglicher?\s*(?:ladezustand|akkustand)?[^\d%]{0,15}(\d{1,3})\s*%/i)
-                || text.match(/urspr[üu]nglich[^\d%]{0,15}(\d{1,3})/i)
-                || text.match(/start[^\d%]{0,15}(\d{1,3})\s*%/i);
+    // 1. Start SoC ("Ursprünglicher Ladezustand 17%", "Ursprunglicher Ladezustand", etc.)
+    const mStart = text.match(/urspr[üuüeéii\s\.\-]*ng?li[a-z]*[^\d%]{0,40}?(\d{1,3})\s*%?/i)
+                || text.match(/(?:initial|start|begonnen|anfang|vorher|von)[^\d%]{0,30}?(\d{1,3})\s*%/i);
     if (mStart) {
       const v = parseInt(mStart[1], 10);
       if (v >= 0 && v <= 100) res.startSoc = v;
     }
 
-    // 2. End SoC ("Endgültiger Ladezustand 71%", "Batterieladestand %", "🔋 71%")
-    const mEnd = text.match(/endg[üu]ltiger?\s*(?:ladezustand|akkustand)?[^\d%]{0,15}(\d{1,3})\s*%/i)
-              || text.match(/endg[üu]ltig[^\d%]{0,15}(\d{1,3})/i)
-              || text.match(/(?:ende|ziel)[^\d%]{0,15}(\d{1,3})\s*%/i)
-              || text.match(/[🔋\(\[]\s*(\d{1,3})\s*%/i);
+    // 2. End SoC ("Endgültiger Ladezustand 71%", "Endgiiltiger", "Endgueltiger", "Endgltiger", "Endgtiltiger", etc.)
+    const mEnd = text.match(/endg[üuüeéii\s\.\-]*lt?i?g[a-z]*[^\d%]{0,40}?(\d{1,3})\s*%?/i)
+              || text.match(/(?:endg[a-z]+|endzustand|ende|ziel|final|nach|target|beendet)[^\d%]{0,30}?(\d{1,3})\s*%/i)
+              || text.match(/batterieladestand[^\d%]{0,60}?[0o]?(\d{1,3})\s*%/i);
     if (mEnd) {
       const v = parseInt(mEnd[1], 10);
       if (v >= 0 && v <= 100) res.endSoc = v;
     }
 
-    // 3. Geladene kWh ("IN RECHNUNG GESTELLTER BETRAG ~ 30 kWh", "~ 30 kwh", "38.5 kWh")
-    let mKwh = text.match(/rechnung[^\n]*\n[^\n]*?(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+    // 3. Intelligenter Block-Fallback für 'LADEVORGANG' (Start = 1. Prozentwert, Ende = 2. Prozentwert)
+    const lvMatch = text.match(/ladevorgang[\s\S]{1,400}/i);
+    const searchBlock = lvMatch ? lvMatch[0] : text;
+    const pctMatches = [...searchBlock.matchAll(/(\d{1,3})\s*%/g)]
+      .map(m => parseInt(m[1], 10))
+      .filter(p => !isNaN(p) && p >= 0 && p <= 100);
+
+    if (res.startSoc === null || res.endSoc === null) {
+      if (pctMatches.length >= 2) {
+        if (res.startSoc === null) res.startSoc = pctMatches[0];
+        if (res.endSoc === null) res.endSoc = pctMatches[1];
+      } else if (pctMatches.length === 1) {
+        if (res.startSoc !== null && res.endSoc === null && pctMatches[0] !== res.startSoc) {
+          res.endSoc = pctMatches[0];
+        } else if (res.endSoc !== null && res.startSoc === null && pctMatches[0] !== res.endSoc) {
+          res.startSoc = pctMatches[0];
+        }
+      }
+    }
+
+    // Globaler Fallback für End-SoC: Falls Start bekannt ist aber End-SoC noch fehlt
+    if (res.endSoc === null && res.startSoc !== null) {
+      const allPcts = [...text.matchAll(/(\d{1,3})\s*%/g)]
+        .map(m => parseInt(m[1], 10))
+        .filter(p => !isNaN(p) && p >= 0 && p <= 100);
+      const candidates = allPcts.filter(p => p !== res.startSoc && p >= res.startSoc);
+      if (candidates.length > 0) {
+        res.endSoc = candidates[candidates.length - 1];
+      }
+    }
+
+    // Plausibilitäts-Check: Falls Start > Ende vertauscht wurden (z.B. durch OCR-Reihenfolge), korrigieren
+    if (res.startSoc !== null && res.endSoc !== null && res.startSoc > res.endSoc) {
+      const tmp = res.startSoc;
+      res.startSoc = res.endSoc;
+      res.endSoc = tmp;
+    }
+
+    // 4. Geladene kWh ("IN RECHNUNG GESTELLTER BETRAG ~ 30 kWh", "~ 30 kwh", "38.5 kWh")
+    let mKwh = text.match(/rechnung[^\n]*\n[^\n]*?(\d+(?:[.,]\d+)?)\s*kw[hno]?/i);
     if (!mKwh) {
-      mKwh = text.match(/(?:rechnung|betrag|geladen|gesamt)[^\d\n]{0,25}(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+      mKwh = text.match(/(?:rechnung|betrag|geladen|gesamt)[^\d\n]{0,25}(\d+(?:[.,]\d+)?)\s*kw[hno]?/i);
     }
     if (!mKwh) {
-      mKwh = text.match(/(?:~|≈|=>|\>)\s*(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+      mKwh = text.match(/(?:~|≈|=>|\>)\s*(\d+(?:[.,]\d+)?)\s*kw[hno]?/i);
     }
     if (!mKwh) {
-      const allMatches = [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*kw[hn]/gi)];
+      const allMatches = [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*kw[hno]?/gi)];
       if (allMatches.length > 0) {
         mKwh = allMatches[0];
       }
@@ -6596,7 +6636,7 @@ function createOutput(data, callback) {
       }
     }
 
-    // 4. Datum & Uhrzeit ("Ladevorgang gestartet 20.10.26, 06:59" oder "< Di. 20.10.26, 06:59")
+    // 5. Datum & Uhrzeit ("Ladevorgang gestartet 20.10.26, 06:59" oder "< Di. 20.10.26, 06:59")
     let mDt = text.match(/gestartet[^\d]*(\d{1,2})[./\s](\d{1,2})[./\s](\d{2,4})[^\d]*(\d{1,2})[:.](\d{2})/i);
     if (!mDt) {
       mDt = text.match(/(?:Mo|Di|Mi|Do|Fr|Sa|So)[.,\s]*(\d{1,2})[.](\d{1,2})[.](\d{2,4})[,\s]*(\d{1,2})[:.](\d{2})/i);

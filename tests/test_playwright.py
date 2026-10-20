@@ -242,13 +242,38 @@ def run_tests():
                     ocr_start_soc = page.locator("#entryBatterySocStart").input_value()
                     ocr_end_soc = page.locator("#entryBatterySoc").input_value()
                     ocr_dt = page.locator("#entryDateTime").input_value()
+                    ocr_odo = page.locator("#entryOdometer").input_value()
+                    ocr_notes = page.locator("#entryNotes").input_value()
+                    ocr_price = page.locator("#entryPrice").input_value()
+                    ocr_total = page.locator("#entryTotalCost").input_value()
+
                     ocr_success = (ocr_kwh == "30" and ocr_start_soc == "17" and ocr_end_soc == "71" and "06:59" in ocr_dt)
                     log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", ocr_success, f"kWh: {ocr_kwh}, Start: {ocr_start_soc}%, Ende: {ocr_end_soc}%, Datum: {ocr_dt}")
+
+                    # 4.3e2: Nur km-Stand und Notiz bleiben leer, alle anderen Felder sind befüllt
+                    only_odo_notes_empty = (ocr_odo == "" and ocr_notes == "" and ocr_kwh != "" and ocr_price != "" and ocr_total != "" and ocr_start_soc != "" and ocr_end_soc != "" and ocr_dt != "")
+                    log_test("4.3e2 Formular-Status: Nur aktueller km-Stand und Notizen bleiben leer", only_odo_notes_empty, f"Odo: '{ocr_odo}' (leer: {ocr_odo == ''}), Notiz: '{ocr_notes}' (leer: {ocr_notes == ''}), Total: '{ocr_total} €'")
 
                     delta_tag = page.locator("#entryDeltaSocTag").inner_text()
                     eff_pill_vis = page.locator("#entrySocEfficiencyPill").is_visible()
                     eff_txt = page.locator("#entrySocEfficiencyText").inner_text()
                     log_test("4.3f Live-Berechnung Netto-Akku-Zuwachs & Wirkungsgrad", "+54%" in delta_tag and eff_pill_vis and "93,6%" in eff_txt, f"Delta: {delta_tag}, Pill: {eff_txt}")
+
+                    # 4.3g: Unit-Tests für parseCupraScreenshotText Robustheit bei OCR-Glitches
+                    ocr_glitch_test = page.evaluate("""() => {
+                        const cases = [
+                            { text: 'LADEVORGANG\\nUrsprünglicher Ladezustand 17%\\nEndgiiltiger Ladezustand 71%', expectedEnd: 71 },
+                            { text: 'LADEVORGANG\\nUrsprunglicher Ladezustand 17 %\\nEndgltiger Ladezustand 71 %', expectedEnd: 71 },
+                            { text: 'LADEVORGANG\\nUrsprünglicher Ladezustand\\n17%\\nEndgültiger Ladezustand\\n71%', expectedEnd: 71 },
+                            { text: 'Leistung (kW) Batterieladestand %\\n20.10.2026 | 16:27\\nOkW 071%\\nLADEVORGANG\\nUrsprünglicher Ladezustand 17%', expectedEnd: 71 },
+                            { text: 'LADEVORGANG\\n17%\\n71%', expectedEnd: 71 }
+                        ];
+                        return cases.every(c => {
+                            const p = window.parseCupraScreenshotText(c.text);
+                            return p.startSoc === 17 && p.endSoc === c.expectedEnd;
+                        });
+                    }""")
+                    log_test("4.3g parseCupraScreenshotText erkennt End-SoC bei allen OCR-Umlautfehlern & Formaten", ocr_glitch_test, f"Ergebnis: {ocr_glitch_test}")
                 except Exception as ocr_err:
                     log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", False, f"Timeout/Fehler: {ocr_err}")
 
