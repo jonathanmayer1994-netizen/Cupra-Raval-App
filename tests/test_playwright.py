@@ -278,6 +278,7 @@ def run_tests():
                     log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", False, f"Timeout/Fehler: {ocr_err}")
 
             # Fill inputs for persistent test session
+            page.evaluate("() => { if (document.getElementById('entryDateTime')) document.getElementById('entryDateTime').value = new Date().toISOString().slice(0, 16); }")
             page.locator("#entryKwh").fill("42.5")
             page.locator("#entryOdometer").fill("12680")
             page.locator("#entryNotes").fill("Playwright E2E Testladung")
@@ -1018,11 +1019,11 @@ def run_tests():
             page.evaluate("""() => {
                 const raw = localStorage.getItem('cupra_raval_data');
                 const d = JSON.parse(raw);
-                const fiveDaysAgo = new Date(Date.now() - 5 * 86400000).toISOString();
-                // Ältere Session einfügen
+                const twoMinutesAgo = new Date(Date.now() - 120000).toISOString();
+                // Ältere Session einfügen (2 Minuten alt, vor der neuesten Session)
                 d.sessions.push({
                     id: 'session_integrity_old',
-                    date: fiveDaysAgo,
+                    date: twoMinutesAgo,
                     kwh: 25.0,
                     odometer: 12200,
                     socStart: 10,

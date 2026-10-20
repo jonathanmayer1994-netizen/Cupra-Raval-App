@@ -1459,6 +1459,32 @@ function getHeaderColumnMap(sheet) {
   // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
   if (map.id < 0) map.id = 0;
 
+  // ZWINGENDE ISOLATION: colMap.kwh darf NIEMALS gleich colMap.consumption sein!
+  // Spalte D ("kWh") MUSS eindeutig colMap.kwh sein.
+  if (map.kwh < 0 || map.kwh === map.consumption) {
+    let exactKwhIdx = -1;
+    for (let i = 0; i < headers.length; i++) {
+      const hText = String(headers[i] || "").toLowerCase().trim();
+      if (hText === "kwh" || hText === "kwh geladen" || hText === "geladen (kwh)" || hText === "lademenge (kwh)") {
+        exactKwhIdx = i;
+        break;
+      }
+    }
+    map.kwh = exactKwhIdx >= 0 ? exactKwhIdx : (headers.length > 3 ? 3 : -1);
+  }
+
+  // Verbrauch (Spalte M) separat absichern
+  if (map.consumption === map.kwh) {
+    map.consumption = -1;
+    for (let i = 0; i < headers.length; i++) {
+      const hText = String(headers[i] || "").toLowerCase().trim();
+      if (hText.includes("verbrauch") || hText.includes("consumption")) {
+        map.consumption = i;
+        break;
+      }
+    }
+  }
+
   // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand oder Akkustand-Spalten, automatisch anfügen
   if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0)) {
     let curCols = sheet.getLastColumn();
@@ -1537,7 +1563,21 @@ function doGet(e) {
         const dateVal = colMap.date >= 0 ? row[colMap.date] : row[1];
         if (!idVal && !dateVal) continue; // Leere Zeile überspringen
 
-        const kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+        let kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+        let consVal = colMap.consumption >= 0 ? parseNum(row[colMap.consumption]) : null;
+
+        // Auto-Heal: Falls Spalte D (kWh) 0 oder leer ist, aber Spalte M fälschlicherweise den Wert enthält (z. B. 30):
+        if (kwhVal <= 0 && consVal > 0 && colMap.kwh >= 0) {
+          kwhVal = consVal;
+          consVal = null;
+          try {
+            sheet.getRange(i + 2, colMap.kwh + 1).setValue(kwhVal);
+            if (colMap.consumption >= 0) {
+              sheet.getRange(i + 2, colMap.consumption + 1).setValue("");
+            }
+          } catch (eFix) {}
+        }
+
         const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
         const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
         const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
@@ -1550,7 +1590,6 @@ function doGet(e) {
         const rawSocStart = colMap.socStart >= 0 ? row[colMap.socStart] : null;
         const socStartVal = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "") ? parseNum(rawSocStart) : null;
         const deltaKmVal = colMap.deltaKm >= 0 ? parseNum(row[colMap.deltaKm]) : null;
-        const consVal = colMap.consumption >= 0 ? parseNum(row[colMap.consumption]) : null;
         const effVal = colMap.efficiency >= 0 ? parseNum(row[colMap.efficiency]) : null;
 
         // Dummy-Zeilen mit 0 kWh überspringen
@@ -1722,7 +1761,8 @@ function upsertSessionWithMap(sheet, colMap, s) {
   }
   if (colMap.consumption >= 0) {
     const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
-    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0) ? cVal : "";
+    // Niemals die geladene kWh-Menge in die Verbrauch-Spalte schreiben
+    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0 && cVal !== kwhNum) ? cVal : "";
   }
   if (colMap.efficiency >= 0) {
     const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);
