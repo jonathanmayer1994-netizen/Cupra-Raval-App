@@ -1382,7 +1382,7 @@ function getTargetSheet() {
  * und baut eine dynamische Spalten-Zuordnungs-Map auf.
  */
 function getHeaderColumnMap(sheet) {
-  const lastCol = Math.max(sheet.getLastColumn(), 8);
+  const lastCol = Math.max(sheet.getLastColumn(), 14);
   let headers = [];
   
   if (sheet.getLastRow() >= 1) {
@@ -1391,7 +1391,10 @@ function getHeaderColumnMap(sheet) {
 
   // Falls Zeile 1 noch völlig leer ist, Standard-Köpfe schreiben
   if (!headers || headers.every(h => !h || String(h).trim() === "")) {
-    const defaultHeaders = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)"];
+    const defaultHeaders = [
+      "ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz",
+      "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)", "Gefahrene km", "Verbrauch (kWh/100km)", "Wirkungsgrad (%)"
+    ];
     sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
     sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
     sheet.setFrozenRows(1);
@@ -1420,21 +1423,37 @@ function getHeaderColumnMap(sheet) {
 
   for (let i = 0; i < headers.length; i++) {
     const h = String(headers[i] || "").toLowerCase().trim();
-    if (h === "id" || h.includes("kennung") || h.includes("vorgang") || h.includes("session")) map.id = i;
-    else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) map.date = i;
-    else if (h.includes("ort") || h.includes("standort") || h.includes("location")) map.location = i;
-    else if (h.includes("gesamtkosten") || (h.includes("kosten") && !h.includes("kwh")) || h.includes("total")) map.totalCost = i;
-    else if (h.includes("preis") || h.includes("price") || h.includes("cent")) map.pricePerKwh = i;
-    else if (h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) map.kwh = i;
-    else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
-    else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
-    else if (h.includes("delta") || h.includes("gefahren") || h.includes("strecke") || h.includes("distanz")) map.deltaKm = i;
-    else if (h.includes("verbrauch") || h.includes("consumption")) map.consumption = i;
-    else if (h.includes("wirkungsgrad") || h.includes("effizienz") || h.includes("efficiency")) map.efficiency = i;
-    else if (h.includes("socstart") || h.includes("startsoc") || (h.includes("akku") && h.includes("start")) || (h.includes("start") && h.includes("%"))) map.socStart = i;
-    else if (h.includes("soc") || (h.includes("akku") && (h.includes("ende") || h.includes("stand") || !h.includes("start"))) || h.includes("batterieladestand")) map.soc = i;
-    else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
-    else if (h.includes("updated") || h.includes("stand")) map.updatedAt = i;
+    if (h === "id" || h.includes("kennung") || h.includes("vorgang") || h.includes("session")) {
+      map.id = i;
+    } else if (h.includes("datum") || h.includes("date") || h.includes("zeit")) {
+      map.date = i;
+    } else if (h.includes("ort") || h.includes("standort") || h.includes("location")) {
+      map.location = i;
+    } else if (h.includes("gesamtkosten") || (h.includes("kosten") && !h.includes("preis")) || h.includes("total")) {
+      map.totalCost = i;
+    } else if (h.includes("preis") || h.includes("price") || h.includes("cent")) {
+      map.pricePerKwh = i;
+    } else if (h.includes("verbrauch") || h.includes("consumption")) {
+      map.consumption = i;
+    } else if (h.includes("wirkungsgrad") || h.includes("effizienz") || h.includes("efficiency")) {
+      map.efficiency = i;
+    } else if (h.includes("delta") || h.includes("gefahren") || h.includes("strecke") || h.includes("distanz")) {
+      map.deltaKm = i;
+    } else if (h.includes("socstart") || h.includes("startsoc") || (h.includes("akku") && h.includes("start")) || (h.includes("start") && h.includes("%"))) {
+      map.socStart = i;
+    } else if (h.includes("soc") || (h.includes("akku") && (h.includes("ende") || h.includes("stand") || !h.includes("start"))) || h.includes("batterieladestand")) {
+      map.soc = i;
+    } else if (h === "kwh" || ((h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) && !h.includes("verbrauch") && !h.includes("preis") && !h.includes("kosten") && !h.includes("100km"))) {
+      map.kwh = i;
+    } else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) {
+      map.pvSurplus = i;
+    } else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) {
+      map.notes = i;
+    } else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) {
+      map.odometer = i;
+    } else if (h.includes("updated") || h.includes("aktualisiert")) {
+      map.updatedAt = i;
+    }
   }
 
   // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
