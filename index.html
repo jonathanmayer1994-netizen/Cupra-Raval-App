@@ -21,9 +21,11 @@
 
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Tesseract.js OCR Engine for Cupra Screenshot auto-filling -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=31">
+  <link rel="stylesheet" href="./style.css?v=32">
 </head>
 <body>
   <!-- Ambient Cupra Bronze & Deep Carbon Glows -->
@@ -190,6 +192,10 @@
             <div class="meta-card-item">
               <span class="capsule-label">Kilometerstand</span>
               <span class="capsule-value bronze-val" id="cardCurrentOdo">0 <small>km</small></span>
+            </div>
+            <div class="meta-card-item">
+              <span class="capsule-label">AKKUSTAND</span>
+              <span class="capsule-value bronze-val" id="cardCurrentSoc">-- <small>%</small></span>
             </div>
             <div class="meta-card-item">
               <span class="capsule-label">BATTERIE</span>
@@ -809,6 +815,29 @@
         <button type="button" class="sheet-btn-close" id="btnCloseModalCharge" aria-label="Schließen">✕</button>
       </div>
 
+      <!-- CUPRA SCREENSHOT AUTO-SCAN CARD -->
+      <div class="cupra-ocr-upload-card" id="cupraOcrUploadCard" title="Tippen oder Cupra App Screenshot hier ablegen">
+        <div class="ocr-card-inner">
+          <div class="ocr-card-left">
+            <div class="ocr-card-icon-badge" id="ocrCardIconBadge">
+              <span class="ocr-card-icon" id="ocrCardIcon">📸</span>
+              <span class="ocr-spinner" id="ocrSpinner" style="display: none;"></span>
+            </div>
+            <div class="ocr-card-texts">
+              <div class="ocr-card-title-row">
+                <span class="ocr-card-title">Cupra App Screenshot</span>
+                <span class="ocr-badge-ai">⚡️ AUTO-SCAN</span>
+              </div>
+              <div class="ocr-card-sub" id="ocrStatusText">Liest Lademenge & Akkustand (Start/Ende) automatisch aus</div>
+            </div>
+          </div>
+          <button type="button" class="btn-ocr-trigger" id="btnTriggerOcrUpload">
+            <span>Foto wählen</span>
+          </button>
+        </div>
+        <input type="file" id="inputCupraScreenshot" accept="image/*" style="display: none;">
+      </div>
+
       <form id="formChargeEntry" class="sheet-form">
         <input type="hidden" id="entryEditId" value="">
 
@@ -875,13 +904,32 @@
           </div>
         </div>
 
-        <!-- Akkustand nach Ladung (optional) -->
-        <div class="form-touch-row">
-          <label class="form-touch-label" for="entryBatterySoc">Akkustand nach Ladung (optional, % SoC)</label>
-          <div class="input-addon-box">
-            <input type="number" id="entryBatterySoc" class="form-touch-input" placeholder="z.B. 80" step="1" min="0" max="100">
-            <span class="addon-suffix">%</span>
+        <!-- Akkustand vor & nach Ladung (% SoC) -->
+        <div class="form-two-cols">
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryBatterySocStart">Akkustand Start (% SoC)</label>
+            <div class="input-addon-box">
+              <input type="number" id="entryBatterySocStart" class="form-touch-input" placeholder="z.B. 17" step="1" min="0" max="100">
+              <span class="addon-suffix">%</span>
+            </div>
           </div>
+
+          <div class="form-touch-row">
+            <label class="form-touch-label" for="entryBatterySoc">
+              Akkustand Ende (% SoC)
+              <span class="delta-tag-live" id="entryDeltaSocTag" style="display: none;">+0%</span>
+            </label>
+            <div class="input-addon-box">
+              <input type="number" id="entryBatterySoc" class="form-touch-input" placeholder="z.B. 71" step="1" min="0" max="100">
+              <span class="addon-suffix">%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Netto-Zuwachs & Wirkungsgrad Pill -->
+        <div class="soc-eff-banner" id="entrySocEfficiencyPill" style="display: none;">
+          <span class="soc-eff-icon">⚡️</span>
+          <span class="soc-eff-text" id="entrySocEfficiencyText">Netto: <strong>+0,0 kWh</strong> • Wirkungsgrad: <strong>--%</strong></span>
         </div>
 
         <!-- Notiz -->
@@ -1121,8 +1169,8 @@
   </div>
 
   <!-- Weather Service Module -->
-  <script src="./weatherService.js?v=31"></script>
+  <script src="./weatherService.js?v=32"></script>
   <!-- App Script -->
-  <script src="./app.js?v=31"></script>
+  <script src="./app.js?v=32"></script>
 </body>
 </html>

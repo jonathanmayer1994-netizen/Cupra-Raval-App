@@ -213,6 +213,7 @@
     DOM.cardBatteryKwh = document.getElementById('cardBatteryKwh');
     DOM.cardPowerPs = document.getElementById('cardPowerPs');
     DOM.cardCurrentOdo = document.getElementById('cardCurrentOdo');
+    DOM.cardCurrentSoc = document.getElementById('cardCurrentSoc');
     DOM.dashboardLiveStatus = document.getElementById('dashboardLiveStatus');
 
     // Charging Tab
@@ -311,10 +312,20 @@
     DOM.pickerSelectedIcon = document.getElementById('pickerSelectedIcon');
     DOM.pickerSelectedTitle = document.getElementById('pickerSelectedTitle');
     DOM.pickerSelectedSub = document.getElementById('pickerSelectedSub');
+    DOM.cupraOcrUploadCard = document.getElementById('cupraOcrUploadCard');
+    DOM.btnTriggerOcrUpload = document.getElementById('btnTriggerOcrUpload');
+    DOM.inputCupraScreenshot = document.getElementById('inputCupraScreenshot');
+    DOM.ocrStatusText = document.getElementById('ocrStatusText');
+    DOM.ocrCardIcon = document.getElementById('ocrCardIcon');
+    DOM.ocrSpinner = document.getElementById('ocrSpinner');
     DOM.entryLocationId = document.getElementById('entryLocationId');
     DOM.entryKwh = document.getElementById('entryKwh');
     DOM.entryOdometer = document.getElementById('entryOdometer');
+    DOM.entryBatterySocStart = document.getElementById('entryBatterySocStart');
     DOM.entryBatterySoc = document.getElementById('entryBatterySoc');
+    DOM.entryDeltaSocTag = document.getElementById('entryDeltaSocTag');
+    DOM.entrySocEfficiencyPill = document.getElementById('entrySocEfficiencyPill');
+    DOM.entrySocEfficiencyText = document.getElementById('entrySocEfficiencyText');
     DOM.entryDeltaKmTag = document.getElementById('entryDeltaKmTag');
     DOM.entryPrice = document.getElementById('entryPrice');
     DOM.entryTotalCost = document.getElementById('entryTotalCost');
@@ -467,7 +478,8 @@
           lat = lat ?? 47.7468;
           lon = lon ?? 10.3094;
           powerType = 'pv';
-          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.15;
+          // Standard-Tarif für Bayrhofs ist 15 Cent (0.15 €/kWh)
+          kwhPrice = (item && item.kwhPrice !== undefined && Number(item.kwhPrice) !== 0.18 && Number(item.kwhPrice) > 0) ? Number(item.kwhPrice) : 0.15;
           icon = icon || '🏢';
         } else if (nLower.includes('zuhause') || nLower.includes('durach')) {
           address = address || "Rubihornweg 1, 87471 Durach";
@@ -530,11 +542,19 @@
         const kwh = Number(s.kwh || s.kWh) || 0;
         const total = Number(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
 
+        const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s['Akkustand Ende (%)'] !== undefined ? s['Akkustand Ende (%)'] : s.akkustand)));
+        const socNum = (rawSoc !== undefined && rawSoc !== null && String(rawSoc).trim() !== '') ? parseNum(rawSoc) : null;
+
+        const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s['Akkustand Start (%)'] !== undefined ? s['Akkustand Start (%)'] : s.startSoc));
+        const socStartNum = (rawSocStart !== undefined && rawSocStart !== null && String(rawSocStart).trim() !== '') ? parseNum(rawSocStart) : null;
+
         return {
           id: s.id || `session_${Date.now()}_${idx}`,
           date: s.date || s.Datum || s.datum || new Date().toISOString(),
           kwh,
           odometer: Number(s.odometer || s['km-Stand']) || 0,
+          soc: (socNum !== null && !isNaN(socNum) && socNum >= 0 && socNum <= 100) ? Math.round(socNum) : null,
+          socStart: (socStartNum !== null && !isNaN(socStartNum) && socStartNum >= 0 && socStartNum <= 100) ? Math.round(socStartNum) : null,
           pricePerKwh: price,
           totalCost: total,
           location: locName,
@@ -546,10 +566,48 @@
     res.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Höchsten km-Stand als aktuellen Odometer
-    const maxOdo = res.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), res.vehicle.currentOdo);
+    const maxOdo = res.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), res.vehicle.currentOdo || 0);
     res.vehicle.currentOdo = maxOdo;
 
+    // Neuesten Akkustand als aktuellen Fahrzeug-SoC synchronisieren (falls noch nicht explizit gesetzt)
+    if (res.vehicle.currentSoc === null || res.vehicle.currentSoc === undefined) {
+      const latestWithSoc = res.sessions.find(s => s.soc !== undefined && s.soc !== null && !isNaN(s.soc));
+      if (latestWithSoc) {
+        res.vehicle.currentSoc = Number(latestWithSoc.soc);
+      } else {
+        const latestWithStart = res.sessions.find(s => s.socStart !== undefined && s.socStart !== null && !isNaN(s.socStart));
+        if (latestWithStart) {
+          res.vehicle.currentSoc = Number(latestWithStart.socStart);
+        }
+      }
+    }
+
     return res;
+  }
+
+  function syncVehicleStateFromSessions() {
+    if (!appData || !appData.sessions) return;
+    // Sessions chronologisch sortieren (neueste zuerst)
+    appData.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 1. Odometer: Höchsten plausiblen Kilometerstand aller Sessions beibehalten
+    if (appData.sessions.length > 0) {
+      const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), 0);
+      if (maxOdo > 0 && maxOdo >= (appData.vehicle.currentOdo || 0)) {
+        appData.vehicle.currentOdo = maxOdo;
+      }
+    }
+
+    // 2. Battery SoC: Zeitlich neuester Ladevorgang bestimmt den aktuellen Akkustand
+    const latestWithSoc = appData.sessions.find(s => s.soc !== undefined && s.soc !== null && !isNaN(s.soc));
+    if (latestWithSoc) {
+      appData.vehicle.currentSoc = Number(latestWithSoc.soc);
+    } else {
+      const latestWithStart = appData.sessions.find(s => s.socStart !== undefined && s.socStart !== null && !isNaN(s.socStart));
+      if (latestWithStart) {
+        appData.vehicle.currentSoc = Number(latestWithStart.socStart);
+      }
+    }
   }
 
   function saveData() {
@@ -651,11 +709,19 @@
     const notesStr = String(s.notes || s.notiz || s.Notiz || s.notizen || s.bemerkung || '');
     const odoNum = parseNum(s.odometer || s.km || s.kmstand || s['km-Stand'] || s.kilometer);
 
+    const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s['Akkustand Ende (%)'] !== undefined ? s['Akkustand Ende (%)'] : s.akkustand)));
+    const socNum = (rawSoc !== undefined && rawSoc !== null && String(rawSoc).trim() !== '') ? parseNum(rawSoc) : null;
+
+    const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s['Akkustand Start (%)'] !== undefined ? s['Akkustand Start (%)'] : s.startSoc));
+    const socStartNum = (rawSocStart !== undefined && rawSocStart !== null && String(rawSocStart).trim() !== '') ? parseNum(rawSocStart) : null;
+
     return {
       id: String(s.id || s.ID || `session_cloud_${idx}_${Date.now()}`),
       date: new Date(rawDate).toISOString(),
       kwh,
       odometer: odoNum,
+      soc: (socNum !== null && !isNaN(socNum) && socNum >= 0 && socNum <= 100) ? Math.round(socNum) : null,
+      socStart: (socStartNum !== null && !isNaN(socStartNum) && socStartNum >= 0 && socStartNum <= 100) ? Math.round(socStartNum) : null,
       pricePerKwh: price,
       totalCost: cost,
       location: locName,
@@ -728,12 +794,16 @@
       }
     });
 
+    // WICHTIG für Datenintegrität: Lokale Sessions niemals verwerfen, solange sie nicht gelöscht wurden
+    (appData.sessions || []).forEach(ls => {
+      const lsId = String(ls.id || ls.ID).trim();
+      if (!deletedIds.has(lsId) && isValidSession(ls) && !map.has(lsId)) {
+        map.set(lsId, ls);
+      }
+    });
+
     appData.sessions = Array.from(map.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // Höchsten km-Stand synchronisieren
-    const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), appData.vehicle.currentOdo);
-    appData.vehicle.currentOdo = maxOdo;
-
+    syncVehicleStateFromSessions();
     saveData();
     renderAll();
     return true;
@@ -977,7 +1047,12 @@
       Notiz: notes,
       odometer: odo,
       km: odo,
-      'km-Stand': odo
+      'km-Stand': odo,
+      soc: (s.soc !== undefined && s.soc !== null) ? s.soc : '',
+      SoC: (s.soc !== undefined && s.soc !== null) ? s.soc : '',
+      socStart: (s.socStart !== undefined && s.socStart !== null) ? s.socStart : '',
+      'Akkustand Ende (%)': (s.soc !== undefined && s.soc !== null) ? s.soc : '',
+      'Akkustand Start (%)': (s.socStart !== undefined && s.socStart !== null) ? s.socStart : ''
     };
   }
 
@@ -1888,10 +1963,74 @@ function createOutput(data, callback) {
       if (e.target === DOM.modalAddCharge) closeModalCharge();
     });
 
-    DOM.entryKwh.addEventListener('input', calculateModalCost);
+    DOM.entryKwh.addEventListener('input', () => {
+      calculateModalCost();
+      calculateModalSocDelta();
+    });
     DOM.entryPrice.addEventListener('input', calculateModalCost);
     DOM.entryOdometer.addEventListener('input', calculateModalOdoDelta);
+    if (DOM.entryBatterySocStart) {
+      DOM.entryBatterySocStart.addEventListener('input', calculateModalSocDelta);
+    }
+    if (DOM.entryBatterySoc) {
+      DOM.entryBatterySoc.addEventListener('input', calculateModalSocDelta);
+    }
     DOM.formChargeEntry.addEventListener('submit', handleSaveChargeEntry);
+
+    // Cupra App Screenshot OCR Upload Events
+    if (DOM.btnTriggerOcrUpload) {
+      DOM.btnTriggerOcrUpload.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (DOM.inputCupraScreenshot) DOM.inputCupraScreenshot.click();
+      });
+    }
+
+    if (DOM.cupraOcrUploadCard) {
+      DOM.cupraOcrUploadCard.addEventListener('click', (e) => {
+        if (e.target !== DOM.btnTriggerOcrUpload && !e.target.closest('#btnTriggerOcrUpload')) {
+          if (DOM.inputCupraScreenshot) DOM.inputCupraScreenshot.click();
+        }
+      });
+
+      DOM.cupraOcrUploadCard.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        DOM.cupraOcrUploadCard.classList.add('drag-over');
+      });
+      DOM.cupraOcrUploadCard.addEventListener('dragleave', () => {
+        DOM.cupraOcrUploadCard.classList.remove('drag-over');
+      });
+      DOM.cupraOcrUploadCard.addEventListener('drop', (e) => {
+        e.preventDefault();
+        DOM.cupraOcrUploadCard.classList.remove('drag-over');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          handleCupraScreenshotFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    if (DOM.inputCupraScreenshot) {
+      DOM.inputCupraScreenshot.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          handleCupraScreenshotFile(e.target.files[0]);
+        }
+      });
+    }
+
+    window.addEventListener('paste', (e) => {
+      if (!DOM.modalAddCharge || !DOM.modalAddCharge.classList.contains('open')) return;
+      if (e.clipboardData && e.clipboardData.items) {
+        for (let i = 0; i < e.clipboardData.items.length; i++) {
+          const item = e.clipboardData.items[i];
+          if (item.type && item.type.indexOf('image') !== -1) {
+            const file = item.getAsFile();
+            if (file) {
+              handleCupraScreenshotFile(file);
+              break;
+            }
+          }
+        }
+      }
+    });
 
     // Location Picker Sheet Events
     DOM.btnOpenLocationPicker.addEventListener('click', () => openLocationPickerSheet());
@@ -2408,11 +2547,24 @@ function createOutput(data, callback) {
     DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
     DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
     DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;
+    if (DOM.cardCurrentSoc) {
+      if (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(v.currentSoc)) {
+        DOM.cardCurrentSoc.innerHTML = `${Math.round(v.currentSoc)} <small>%</small>`;
+      } else {
+        DOM.cardCurrentSoc.innerHTML = `-- <small>%</small>`;
+      }
+    }
 
     if (appData.sessions.length > 0) {
       const latest = appData.sessions[0];
       const dObj = new Date(latest.date);
-      DOM.dashboardLiveStatus.textContent = `Zuletzt: ${dObj.toLocaleDateString('de-DE')} • ${latest.kwh.toFixed(1)} kWh @ ${latest.location}`;
+      let socSpan = '';
+      if (latest.socStart !== null && latest.socStart !== undefined && latest.soc !== null && latest.soc !== undefined) {
+        socSpan = ` (${latest.socStart}% → ${latest.soc}%)`;
+      } else if (latest.soc !== null && latest.soc !== undefined) {
+        socSpan = ` (${latest.soc}% SoC)`;
+      }
+      DOM.dashboardLiveStatus.textContent = `Zuletzt: ${dObj.toLocaleDateString('de-DE')} • ${latest.kwh.toFixed(1)} kWh${socSpan} @ ${latest.location}`;
     } else {
       DOM.dashboardLiveStatus.textContent = `Bereit für die erste Ladung`;
     }
@@ -2421,7 +2573,27 @@ function createOutput(data, callback) {
   }
 
   function calcConsumption(sessions) {
-    if (!sessions || sessions.length < 2) return { hasData: false };
+    const batteryCap = (appData && appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+    let totalEffInputKwh = 0;
+    let totalNetBatteryKwh = 0;
+    let effCount = 0;
+
+    (sessions || []).forEach(s => {
+      if (s.socStart !== null && s.socStart !== undefined && s.soc !== null && s.soc !== undefined && s.kwh > 0) {
+        const deltaSoc = s.soc - s.socStart;
+        if (deltaSoc > 0) {
+          const netKwh = (deltaSoc / 100) * batteryCap;
+          totalNetBatteryKwh += netKwh;
+          totalEffInputKwh += s.kwh;
+          effCount++;
+        }
+      }
+    });
+
+    const avgEff = (totalEffInputKwh > 0) ? Math.min(100, Math.round((totalNetBatteryKwh / totalEffInputKwh) * 1000) / 10) : null;
+    const totalLossKwh = (totalEffInputKwh > 0 && totalEffInputKwh >= totalNetBatteryKwh) ? (totalEffInputKwh - totalNetBatteryKwh) : 0;
+
+    if (!sessions || sessions.length < 2) return { hasData: false, avgEff, totalLossKwh, effCount };
     const sorted = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     let dist = 0, energy = 0, cost = 0;
@@ -2440,10 +2612,13 @@ function createOutput(data, callback) {
       return {
         hasData: true,
         avgCons: (energy / dist) * 100,
-        avgCost100: (cost / dist) * 100
+        avgCost100: (cost / dist) * 100,
+        avgEff,
+        totalLossKwh,
+        effCount
       };
     }
-    return { hasData: false };
+    return { hasData: false, avgEff, totalLossKwh, effCount };
   }
 
   // =========================================================================
@@ -3284,7 +3459,10 @@ function createOutput(data, callback) {
 
         stat1 = { lbl: "Ø Verbrauch", val: `${consData.hasData ? consData.avgCons.toFixed(1).replace('.', ',') : '--'} kWh` };
         stat2 = { lbl: "Kosten / 100km", val: `${consData.hasData ? consData.avgCost100.toFixed(2).replace('.', ',') : '--'} €` };
-        stat3 = { lbl: "Erfasst", val: `${distStats.totalTrackedKm} km` };
+        stat3 = {
+          lbl: (consData.avgEff !== null ? "Ø Ladeeffizienz" : "Erfasst"),
+          val: (consData.avgEff !== null ? `${consData.avgEff.toFixed(1).replace('.', ',')} %` : `${distStats.totalTrackedKm} km`)
+        };
 
         chartTitle = `Monatlicher Durchschnittsverbrauch`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
@@ -3348,7 +3526,10 @@ function createOutput(data, callback) {
 
         stat1 = { lbl: "Ø Verbrauch", val: `${consData.hasData ? consData.avgCons.toFixed(1).replace('.', ',') : '--'} kWh` };
         stat2 = { lbl: "Kosten / 100km", val: `${consData.hasData ? consData.avgCost100.toFixed(2).replace('.', ',') : '--'} €` };
-        stat3 = { lbl: "Abschnitte", val: `${validSegments.length}` };
+        stat3 = {
+          lbl: (consData.avgEff !== null ? "Ø Ladeeffizienz" : "Abschnitte"),
+          val: (consData.avgEff !== null ? `${consData.avgEff.toFixed(1).replace('.', ',')} %` : `${validSegments.length}`)
+        };
 
         chartTitle = `Verbrauchskurve je Fahrabschnitt (kWh/100km)`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
@@ -3629,6 +3810,11 @@ function createOutput(data, callback) {
       const deltaInfo = getSessionDelta(s);
       const locObj = appData.settings.locations.find(l => l.name === s.location);
       const locIcon = locObj ? locObj.icon : '📍';
+      const batteryCap = (appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+      const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
+      const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
+      const netKwh = (deltaSoc > 0) ? ((deltaSoc / 100) * batteryCap) : 0;
+      const eff = (hasBothSoc && netKwh > 0 && s.kwh > 0) ? Math.min(100, Math.round((netKwh / s.kwh) * 1000) / 10) : null;
 
       return `
         <div class="swift-glass-card session-swift-card" data-id="${s.id}">
@@ -3637,6 +3823,9 @@ function createOutput(data, callback) {
             <div class="session-badges-wrap">
               <span class="loc-badge-item">${locIcon} ${escapeHtml(s.location)}</span>
               ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+              ${hasBothSoc
+                ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.socStart}% → ${s.soc}% (+${deltaSoc}%)</span>`
+                : ((s.soc !== undefined && s.soc !== null) ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.soc}%</span>` : '')}
             </div>
           </div>
 
@@ -3658,6 +3847,11 @@ function createOutput(data, callback) {
               ${deltaInfo.consumption ? `<span style="margin-left: 4px; color: var(--cupra-bronze-light);">(${deltaInfo.consumption.toFixed(1)} kWh/100)</span>` : ''}
             </div>
           </div>
+
+          ${eff !== null ? `
+          <div style="font-size:0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 6px;">
+            ⚡️ Wirkungsgrad: <strong style="color: var(--cupra-bronze-bright);">${eff.toFixed(1).replace('.', ',')}%</strong> (Netto: +${netKwh.toFixed(1).replace('.', ',')} kWh im Akku)
+          </div>` : ''}
 
           ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
 
@@ -3710,6 +3904,7 @@ function createOutput(data, callback) {
       });
     }
 
+    syncVehicleStateFromSessions();
     saveData();
     renderAll();
     triggerHaptic();
@@ -6117,6 +6312,7 @@ function createOutput(data, callback) {
   function openModalCharge(editId = null) {
     DOM.formChargeEntry.reset();
     DOM.entryEditId.value = '';
+    resetOcrUploadCard();
 
     const latestOdo = getLatestOdometer();
     const defaultLoc = (appData.settings && appData.settings.locations && appData.settings.locations[0]) || DEFAULT_LOCATIONS[0];
@@ -6133,6 +6329,9 @@ function createOutput(data, callback) {
         DOM.entryPrice.value = Number(s.pricePerKwh).toFixed(2);
         DOM.entryTotalCost.value = s.totalCost.toFixed(2);
         DOM.entryNotes.value = s.notes || '';
+        if (DOM.entryBatterySocStart) {
+          DOM.entryBatterySocStart.value = (s.socStart !== undefined && s.socStart !== null) ? s.socStart : '';
+        }
         if (DOM.entryBatterySoc) {
           DOM.entryBatterySoc.value = (s.soc !== undefined && s.soc !== null) ? s.soc : '';
         }
@@ -6144,8 +6343,11 @@ function createOutput(data, callback) {
       DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
       DOM.entryDateTime.value = formatDateTimeLocal(new Date());
       DOM.entryOdometer.value = latestOdo || '';
+      if (DOM.entryBatterySocStart) {
+        DOM.entryBatterySocStart.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
+      }
       if (DOM.entryBatterySoc) {
-        DOM.entryBatterySoc.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
+        DOM.entryBatterySoc.value = '';
       }
 
       selectLocationForEntry(defaultLoc.id, true);
@@ -6153,6 +6355,7 @@ function createOutput(data, callback) {
 
     calculateModalOdoDelta();
     calculateModalCost();
+    calculateModalSocDelta();
 
     DOM.modalAddCharge.classList.add('open');
     triggerHaptic();
@@ -6185,6 +6388,50 @@ function createOutput(data, callback) {
     }
   }
 
+  function calculateModalSocDelta() {
+    if (!DOM.entryBatterySocStart || !DOM.entryBatterySoc) return;
+
+    const startVal = DOM.entryBatterySocStart.value.trim();
+    const endVal = DOM.entryBatterySoc.value.trim();
+    const kwhVal = parseFloat(DOM.entryKwh ? DOM.entryKwh.value : 0) || 0;
+
+    const startSoc = parseInt(startVal, 10);
+    const endSoc = parseInt(endVal, 10);
+
+    const hasStart = (!isNaN(startSoc) && startSoc >= 0 && startSoc <= 100);
+    const hasEnd = (!isNaN(endSoc) && endSoc >= 0 && endSoc <= 100);
+
+    if (hasStart && hasEnd && endSoc >= startSoc) {
+      const delta = endSoc - startSoc;
+      if (DOM.entryDeltaSocTag) {
+        DOM.entryDeltaSocTag.style.display = 'inline-block';
+        DOM.entryDeltaSocTag.textContent = `+${delta}%`;
+      }
+
+      if (DOM.entrySocEfficiencyPill && DOM.entrySocEfficiencyText) {
+        const batteryCap = (appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+        const netKwh = (delta / 100) * batteryCap;
+        let effHtml = `Netto: <strong>+${netKwh.toFixed(1).replace('.', ',')} kWh</strong>`;
+
+        if (kwhVal > 0) {
+          const eff = Math.min(100, Math.round((netKwh / kwhVal) * 1000) / 10);
+          const loss = Math.max(0, kwhVal - netKwh).toFixed(1).replace('.', ',');
+          effHtml += ` • Wirkungsgrad: <strong>${eff.toFixed(1).replace('.', ',')}%</strong> <span style="opacity:0.75">(${loss} kWh Ladeverlust)</span>`;
+        }
+
+        DOM.entrySocEfficiencyText.innerHTML = effHtml;
+        DOM.entrySocEfficiencyPill.style.display = 'flex';
+      }
+    } else {
+      if (DOM.entryDeltaSocTag) {
+        DOM.entryDeltaSocTag.style.display = 'none';
+      }
+      if (DOM.entrySocEfficiencyPill) {
+        DOM.entrySocEfficiencyPill.style.display = 'none';
+      }
+    }
+  }
+
   function getLatestOdometer() {
     if (appData.sessions.length > 0) {
       const withO = appData.sessions.filter(s => s.odometer > 0);
@@ -6192,6 +6439,255 @@ function createOutput(data, callback) {
     }
     return appData.vehicle.currentOdo || 0;
   }
+
+  // =========================================================================
+  // CUPRA APP SCREENSHOT OCR SCANNER & AUTO-FILLER
+  // =========================================================================
+  function resetOcrUploadCard() {
+    if (!DOM.cupraOcrUploadCard) return;
+    DOM.cupraOcrUploadCard.className = 'cupra-ocr-upload-card';
+    if (DOM.ocrStatusText) DOM.ocrStatusText.textContent = 'Liest Lademenge & Akkustand (Start/Ende) automatisch aus';
+    if (DOM.ocrCardIcon) {
+      DOM.ocrCardIcon.textContent = '📸';
+      DOM.ocrCardIcon.style.display = 'block';
+    }
+    if (DOM.ocrSpinner) DOM.ocrSpinner.style.display = 'none';
+    if (DOM.inputCupraScreenshot) DOM.inputCupraScreenshot.value = '';
+    const btnSpan = DOM.btnTriggerOcrUpload ? DOM.btnTriggerOcrUpload.querySelector('span') : null;
+    if (btnSpan) btnSpan.textContent = 'Foto wählen';
+  }
+
+  function setOcrLoading(loading, message = '') {
+    if (!DOM.cupraOcrUploadCard) return;
+    if (loading) {
+      DOM.cupraOcrUploadCard.classList.add('ocr-scanning');
+      DOM.cupraOcrUploadCard.classList.remove('ocr-success');
+      if (DOM.ocrSpinner) DOM.ocrSpinner.style.display = 'block';
+      if (DOM.ocrCardIcon) DOM.ocrCardIcon.style.display = 'none';
+      if (DOM.ocrStatusText) DOM.ocrStatusText.textContent = message || 'Screenshot wird per KI analysiert...';
+      if (DOM.btnTriggerOcrUpload) DOM.btnTriggerOcrUpload.disabled = true;
+    } else {
+      DOM.cupraOcrUploadCard.classList.remove('ocr-scanning');
+      if (DOM.ocrSpinner) DOM.ocrSpinner.style.display = 'none';
+      if (DOM.ocrCardIcon) DOM.ocrCardIcon.style.display = 'block';
+      if (DOM.btnTriggerOcrUpload) DOM.btnTriggerOcrUpload.disabled = false;
+    }
+  }
+
+  async function handleCupraScreenshotFile(file) {
+    if (!file) {
+      showToast('⚠️ Bitte eine Bilddatei auswählen');
+      return null;
+    }
+
+    setOcrLoading(true, '⚡️ Analysiere Cupra App Screenshot...');
+    triggerHaptic();
+
+    try {
+      if (typeof Tesseract === 'undefined') {
+        throw new Error('Tesseract OCR Bibliothek nicht verfügbar (Prüfe Internetverbindung)');
+      }
+
+      let imageSource = file;
+      if (file instanceof Blob || (typeof File !== 'undefined' && file instanceof File)) {
+        imageSource = await fileToPreprocessedCanvas(file);
+      }
+
+      const worker = await Tesseract.createWorker('deu+eng');
+      const ret = await worker.recognize(imageSource);
+      await worker.terminate();
+
+      const text = ret && ret.data ? ret.data.text : '';
+      const parsed = parseCupraScreenshotText(text);
+
+      applyOcrResultsToModal(parsed);
+      return parsed;
+    } catch (err) {
+      console.warn('OCR Erkennungsfehler:', err);
+      setOcrLoading(false);
+      if (DOM.ocrStatusText) {
+        DOM.ocrStatusText.textContent = '⚠️ Texterkennung fehlgeschlagen. Bitte manuell eingeben.';
+      }
+      showToast('⚠️ Screenshot konnte nicht gelesen werden');
+      return null;
+    }
+  }
+
+  function fileToPreprocessedCanvas(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1600;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas);
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function parseCupraScreenshotText(text) {
+    const res = {
+      kwh: null,
+      startSoc: null,
+      endSoc: null,
+      datetime: null
+    };
+
+    if (!text || typeof text !== 'string') return res;
+
+    // 1. Start SoC ("Ursprünglicher Ladezustand 17%")
+    const mStart = text.match(/urspr[üu]nglicher?\s*(?:ladezustand|akkustand)?[^\d%]{0,15}(\d{1,3})\s*%/i)
+                || text.match(/urspr[üu]nglich[^\d%]{0,15}(\d{1,3})/i)
+                || text.match(/start[^\d%]{0,15}(\d{1,3})\s*%/i);
+    if (mStart) {
+      const v = parseInt(mStart[1], 10);
+      if (v >= 0 && v <= 100) res.startSoc = v;
+    }
+
+    // 2. End SoC ("Endgültiger Ladezustand 71%", "Batterieladestand %", "🔋 71%")
+    const mEnd = text.match(/endg[üu]ltiger?\s*(?:ladezustand|akkustand)?[^\d%]{0,15}(\d{1,3})\s*%/i)
+              || text.match(/endg[üu]ltig[^\d%]{0,15}(\d{1,3})/i)
+              || text.match(/(?:ende|ziel)[^\d%]{0,15}(\d{1,3})\s*%/i)
+              || text.match(/[🔋\(\[]\s*(\d{1,3})\s*%/i);
+    if (mEnd) {
+      const v = parseInt(mEnd[1], 10);
+      if (v >= 0 && v <= 100) res.endSoc = v;
+    }
+
+    // 3. Geladene kWh ("IN RECHNUNG GESTELLTER BETRAG ~ 30 kWh", "~ 30 kwh", "38.5 kWh")
+    let mKwh = text.match(/rechnung[^\n]*\n[^\n]*?(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+    if (!mKwh) {
+      mKwh = text.match(/(?:rechnung|betrag|geladen|gesamt)[^\d\n]{0,25}(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+    }
+    if (!mKwh) {
+      mKwh = text.match(/(?:~|≈|=>|\>)\s*(\d+(?:[.,]\d+)?)\s*kw[hn]/i);
+    }
+    if (!mKwh) {
+      const allMatches = [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*kw[hn]/gi)];
+      if (allMatches.length > 0) {
+        mKwh = allMatches[0];
+      }
+    }
+    if (mKwh) {
+      const val = parseFloat(mKwh[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0 && val <= 120) {
+        res.kwh = val;
+      }
+    }
+
+    // 4. Datum & Uhrzeit ("Ladevorgang gestartet 20.10.26, 06:59" oder "< Di. 20.10.26, 06:59")
+    let mDt = text.match(/gestartet[^\d]*(\d{1,2})[./\s](\d{1,2})[./\s](\d{2,4})[^\d]*(\d{1,2})[:.](\d{2})/i);
+    if (!mDt) {
+      mDt = text.match(/(?:Mo|Di|Mi|Do|Fr|Sa|So)[.,\s]*(\d{1,2})[.](\d{1,2})[.](\d{2,4})[,\s]*(\d{1,2})[:.](\d{2})/i);
+    }
+    if (!mDt) {
+      mDt = text.match(/(\d{1,2})[.](\d{1,2})[.](\d{2,4})[,\s|]*(\d{1,2})[:.](\d{2})/i);
+    }
+    if (mDt) {
+      let [_, d, m, y, h, mi] = mDt;
+      d = d.padStart(2, '0');
+      m = m.padStart(2, '0');
+      if (y.length === 2) y = '20' + y;
+      h = h.padStart(2, '0');
+      mi = mi.padStart(2, '0');
+      res.datetime = `${y}-${m}-${d}T${h}:${mi}`;
+    }
+
+    return res;
+  }
+
+  function applyOcrResultsToModal(data) {
+    setOcrLoading(false);
+
+    let foundCount = 0;
+    const filledLabels = [];
+
+    if (data.kwh !== null && DOM.entryKwh) {
+      DOM.entryKwh.value = data.kwh;
+      DOM.entryKwh.classList.remove('auto-filled-glow');
+      void DOM.entryKwh.offsetWidth;
+      DOM.entryKwh.classList.add('auto-filled-glow');
+      foundCount++;
+      filledLabels.push(`${data.kwh} kWh`);
+    }
+
+    if (data.startSoc !== null && DOM.entryBatterySocStart) {
+      DOM.entryBatterySocStart.value = data.startSoc;
+      DOM.entryBatterySocStart.classList.remove('auto-filled-glow');
+      void DOM.entryBatterySocStart.offsetWidth;
+      DOM.entryBatterySocStart.classList.add('auto-filled-glow');
+      foundCount++;
+      filledLabels.push(`Start ${data.startSoc}%`);
+    }
+
+    if (data.endSoc !== null && DOM.entryBatterySoc) {
+      DOM.entryBatterySoc.value = data.endSoc;
+      DOM.entryBatterySoc.classList.remove('auto-filled-glow');
+      void DOM.entryBatterySoc.offsetWidth;
+      DOM.entryBatterySoc.classList.add('auto-filled-glow');
+      foundCount++;
+      filledLabels.push(`Ende ${data.endSoc}%`);
+    }
+
+    if (data.datetime && DOM.entryDateTime) {
+      DOM.entryDateTime.value = data.datetime;
+      DOM.entryDateTime.classList.remove('auto-filled-glow');
+      void DOM.entryDateTime.offsetWidth;
+      DOM.entryDateTime.classList.add('auto-filled-glow');
+    }
+
+    calculateModalCost();
+    calculateModalOdoDelta();
+    calculateModalSocDelta();
+
+    if (foundCount > 0) {
+      if (DOM.cupraOcrUploadCard) {
+        DOM.cupraOcrUploadCard.className = 'cupra-ocr-upload-card ocr-success';
+      }
+      if (DOM.ocrCardIcon) DOM.ocrCardIcon.textContent = '✨';
+      if (DOM.ocrStatusText) {
+        DOM.ocrStatusText.innerHTML = `<strong>${filledLabels.join(' • ')}</strong> automatisch eingetragen ✓`;
+      }
+      const btnSpan = DOM.btnTriggerOcrUpload ? DOM.btnTriggerOcrUpload.querySelector('span') : null;
+      if (btnSpan) btnSpan.textContent = 'Anderes Bild';
+
+      triggerHaptic();
+      showToast('⚡️ Cupra-Screenshot erfolgreich ausgelesen!');
+    } else {
+      if (DOM.ocrStatusText) {
+        DOM.ocrStatusText.textContent = '⚠️ Keine eindeutigen Werte erkannt. Bitte manuell eintragen.';
+      }
+      showToast('⚠️ Keine Ladedaten im Bild erkannt');
+    }
+  }
+
+  // Für Tests & externe Trigger bereitstellen
+  window.handleCupraScreenshotFile = handleCupraScreenshotFile;
+  window.parseCupraScreenshotText = parseCupraScreenshotText;
+  window.openModalCharge = openModalCharge;
+  window.handleDeleteCharge = handleDeleteCharge;
+  window.syncVehicleStateFromSessions = syncVehicleStateFromSessions;
 
   function handleSaveChargeEntry(e) {
     e.preventDefault();
@@ -6214,12 +6710,19 @@ function createOutput(data, callback) {
       return;
     }
 
+    let enteredStartSoc = null;
+    if (DOM.entryBatterySocStart && DOM.entryBatterySocStart.value.trim() !== '') {
+      const parsedStartSoc = parseInt(DOM.entryBatterySocStart.value, 10);
+      if (!isNaN(parsedStartSoc) && parsedStartSoc >= 0 && parsedStartSoc <= 100) {
+        enteredStartSoc = parsedStartSoc;
+      }
+    }
+
     let enteredSoc = null;
     if (DOM.entryBatterySoc && DOM.entryBatterySoc.value.trim() !== '') {
       const parsedSoc = parseInt(DOM.entryBatterySoc.value, 10);
       if (!isNaN(parsedSoc) && parsedSoc >= 0 && parsedSoc <= 100) {
         enteredSoc = parsedSoc;
-        appData.vehicle.currentSoc = parsedSoc;
       }
     }
 
@@ -6233,6 +6736,7 @@ function createOutput(data, callback) {
           date: new Date(dt).toISOString(),
           kwh,
           odometer: odo,
+          socStart: enteredStartSoc,
           soc: enteredSoc,
           pricePerKwh: price,
           totalCost: total,
@@ -6249,6 +6753,7 @@ function createOutput(data, callback) {
         date: new Date(dt).toISOString(),
         kwh,
         odometer: odo,
+        socStart: enteredStartSoc,
         soc: enteredSoc,
         pricePerKwh: price,
         totalCost: total,
@@ -6260,12 +6765,8 @@ function createOutput(data, callback) {
       appData.sessions.push(savedSession);
     }
 
-    // Kilometerstand automatisch addieren / fortschreiben
-    if (odo > (appData.vehicle.currentOdo || 0)) {
-      appData.vehicle.currentOdo = odo;
-    }
-
-    appData.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Chronologische Konsistenz & Fahrzeug-Synchronisation (Odometer & SoC)
+    syncVehicleStateFromSessions();
     saveData();
     closeModalCharge();
     renderAll();
@@ -6377,6 +6878,8 @@ function createOutput(data, callback) {
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 14, 20).toISOString(),
         kwh: 34.5,
         odometer: 12450,
+        socStart: 18,
+        soc: 80,
         pricePerKwh: 0.15,
         totalCost: 5.18,
         location: "Bayrhofs",
@@ -6388,6 +6891,8 @@ function createOutput(data, callback) {
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 4, 11, 45).toISOString(),
         kwh: 28.0,
         odometer: 12240,
+        socStart: 25,
+        soc: 75,
         pricePerKwh: 0.20,
         totalCost: 5.60,
         location: "Arbeit",
@@ -6399,6 +6904,8 @@ function createOutput(data, callback) {
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 8, 18, 15).toISOString(),
         kwh: 41.2,
         odometer: 12050,
+        socStart: 10,
+        soc: 85,
         pricePerKwh: 0.15,
         totalCost: 6.18,
         location: "Bayrhofs",
@@ -6410,6 +6917,8 @@ function createOutput(data, callback) {
         date: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14, 10, 30).toISOString(),
         kwh: 31.5,
         odometer: 11780,
+        socStart: 20,
+        soc: 76,
         pricePerKwh: 0.32,
         totalCost: 10.08,
         location: "Zuhause",
@@ -6421,6 +6930,8 @@ function createOutput(data, callback) {
         date: new Date(now.getFullYear(), now.getMonth() - 1, 18, 16, 10).toISOString(),
         kwh: 38.5,
         odometer: 11620,
+        socStart: 15,
+        soc: 83,
         pricePerKwh: 0.59,
         totalCost: 22.72,
         location: "Öffentlich",
@@ -6430,7 +6941,7 @@ function createOutput(data, callback) {
     ];
 
     appData.sessions = demo;
-    appData.vehicle.currentOdo = 12450;
+    syncVehicleStateFromSessions();
     saveData();
     renderAll();
     triggerHaptic();

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raval-charge-v31';
+const CACHE_NAME = 'raval-charge-v32';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -12,7 +12,8 @@ const ASSETS_TO_CACHE = [
   './icon-192.png',
   './icon-512.png',
   './raval.png',
-  'https://cdn.jsdelivr.net/npm/chart.js'
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
 ];
 
 self.addEventListener('install', (event) => {

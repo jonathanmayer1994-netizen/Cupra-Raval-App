@@ -222,10 +222,42 @@ def run_tests():
             price_sync = (entry_price_val in selected_sub.replace(',', '.'))
             log_test("4.3b Ladeort Preis-Synchronisation: Button & Eingabefeld identisch", price_sync, f"Sub: '{selected_sub}', Input: '{entry_price_val}'")
 
-            # Fill inputs
+            # 4.3c: Cupra Screenshot OCR-Upload Card und Button vorhanden
+            ocr_card_visible = page.locator("#cupraOcrUploadCard").is_visible()
+            ocr_btn_visible = page.locator("#btnTriggerOcrUpload").is_visible()
+            log_test("4.3c Cupra Screenshot OCR-Upload Card & Button vorhanden", ocr_card_visible and ocr_btn_visible, f"Card: {ocr_card_visible}, Btn: {ocr_btn_visible}")
+
+            # 4.3d: Start SoC Inputfeld vorhanden
+            start_soc_visible = page.locator("#entryBatterySocStart").is_visible()
+            log_test("4.3d Start-Akkustand Inputfeld (#entryBatterySocStart) vorhanden", start_soc_visible, f"Visible: {start_soc_visible}")
+
+            # 4.3e: Screenshot OCR Auto-Scan aus Cupra-App Screenshot
+            import os
+            sample_img_path = os.path.abspath("cupra_sample.png")
+            if os.path.exists(sample_img_path):
+                page.set_input_files("#inputCupraScreenshot", sample_img_path)
+                try:
+                    page.wait_for_function("() => (document.getElementById('entryKwh').value === '30' || document.getElementById('entryBatterySoc').value === '71')", timeout=12000)
+                    ocr_kwh = page.locator("#entryKwh").input_value()
+                    ocr_start_soc = page.locator("#entryBatterySocStart").input_value()
+                    ocr_end_soc = page.locator("#entryBatterySoc").input_value()
+                    ocr_dt = page.locator("#entryDateTime").input_value()
+                    ocr_success = (ocr_kwh == "30" and ocr_start_soc == "17" and ocr_end_soc == "71" and "06:59" in ocr_dt)
+                    log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", ocr_success, f"kWh: {ocr_kwh}, Start: {ocr_start_soc}%, Ende: {ocr_end_soc}%, Datum: {ocr_dt}")
+
+                    delta_tag = page.locator("#entryDeltaSocTag").inner_text()
+                    eff_pill_vis = page.locator("#entrySocEfficiencyPill").is_visible()
+                    eff_txt = page.locator("#entrySocEfficiencyText").inner_text()
+                    log_test("4.3f Live-Berechnung Netto-Akku-Zuwachs & Wirkungsgrad", "+54%" in delta_tag and eff_pill_vis and "93,6%" in eff_txt, f"Delta: {delta_tag}, Pill: {eff_txt}")
+                except Exception as ocr_err:
+                    log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", False, f"Timeout/Fehler: {ocr_err}")
+
+            # Fill inputs for persistent test session
             page.locator("#entryKwh").fill("42.5")
             page.locator("#entryOdometer").fill("12680")
             page.locator("#entryNotes").fill("Playwright E2E Testladung")
+            if page.locator("#entryBatterySocStart").is_visible():
+                page.locator("#entryBatterySocStart").fill("20")
             if page.locator("#entryBatterySoc").is_visible():
                 page.locator("#entryBatterySoc").fill("82")
             time.sleep(0.2)
@@ -256,6 +288,10 @@ def run_tests():
                 new_kwh = 0.0
             log_test("4.5 Dashboard KPI mit neuer Ladung synchronisiert", new_kwh >= prev_kwh + 42.0, f"Monats-kWh: {updated_month_kwh}")
 
+            # 4.5b: Dashboard Hero-Card zeigt aktualisierten Akkustand (#cardCurrentSoc)
+            card_soc_text = page.locator("#cardCurrentSoc").inner_text()
+            log_test("4.5b Dashboard Hero-Card zeigt synchronen Akkustand (82%)", "82" in card_soc_text, f"Card SoC: '{card_soc_text}'")
+
             # =====================================================================
             # SUITE 5: TAB 2: LADEN & HISTORIE + FILTER RAIL
             # =====================================================================
@@ -267,6 +303,14 @@ def run_tests():
 
             stream_cards_count = page.locator(".session-swift-card").count()
             log_test("5.1 Ladehistorie Stream Items gerendert", stream_cards_count > 0, f"{stream_cards_count} Ladekarten in der Historie")
+
+            # 5.1b: Ladekarte zeigt Akkustand (SoC)
+            if created_session_id and page.locator(f'.session-swift-card[data-id="{created_session_id}"]').count() > 0:
+                card_html = page.locator(f'.session-swift-card[data-id="{created_session_id}"]').first.inner_html()
+            else:
+                card_html = page.locator(".session-swift-card").first.inner_html()
+            has_soc_badge = "🔋" in card_html and ("82%" in card_html or "20%" in card_html or "71%" in card_html)
+            log_test("5.1b Ladekarte zeigt Akkustand (SoC) & Wirkungsgrad", has_soc_badge, f"Akkustand-Badge in Ladekarte vorhanden (Gefunden: {has_soc_badge})")
 
             # Test Filter Chips (Nur Ladeorte & Alle, kein 'Nur PV')
             pv_chip_count = page.locator('.chip-filter[data-filter="pv"]').count()
@@ -671,16 +715,21 @@ def run_tests():
             time.sleep(1.0)
 
             sheet_is_clean = False
-            try:
-                req = urllib.request.Request(GOOGLE_SHEETS_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    cloud_rows = json.loads(r.read().decode('utf-8'))
-                    sheet_is_clean = not any(
-                        (r.get('id') == created_session_id) or ('Playwright' in str(r.get('notes', '')))
-                        for r in cloud_rows
-                    )
-            except Exception as e:
-                sheet_is_clean = False
+            for attempt in range(3):
+                try:
+                    time.sleep(1.5)
+                    req = urllib.request.Request(GOOGLE_SHEETS_API_URL, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=25) as r:
+                        cloud_rows = json.loads(r.read().decode('utf-8'))
+                        sheet_is_clean = not any(
+                            (r.get('id') == created_session_id) or ('Playwright' in str(r.get('notes', '')))
+                            for r in cloud_rows
+                        )
+                    if sheet_is_clean:
+                        break
+                except Exception as e:
+                    time.sleep(2)
+
             log_test(
                 "10.2 Test-Ladevorgang aus Google Sheet entfernt",
                 sheet_is_clean,
@@ -881,6 +930,159 @@ def run_tests():
                 "11.6 Tab 3 (Wetter): Wetterdaten aktualisiert & Banner wieder unsichtbar",
                 weather_done_state,
                 f"Abgeschlossen und eingeklappt: {weather_done_state}"
+            )
+
+            # =====================================================================
+            # SUITE 12: DATENINTEGRITÄT & ZUSTANDS-SYNCHRONISATION
+            # =====================================================================
+            print("\n--- SUITE 12: Datenintegrität & Zustands-Synchronisation ---")
+
+            # 12.1: Session mit socStart und soc erstellen & Reload-Persistenz prüfen (Bugfix-Verifikation)
+            page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                const d = raw ? JSON.parse(raw) : {};
+                d.sessions = d.sessions || [];
+                // Test-Session von heute mit Start-SoC 20% und End-SoC 80%
+                d.sessions.unshift({
+                    id: 'session_integrity_latest',
+                    date: new Date().toISOString(),
+                    kwh: 31.2,
+                    odometer: 12500,
+                    socStart: 20,
+                    soc: 80,
+                    pricePerKwh: 0.15,
+                    totalCost: 4.68,
+                    location: 'Bayrhofs',
+                    pvSurplus: true,
+                    notes: 'Playwright Integrity Test Session'
+                });
+                localStorage.setItem('cupra_raval_data', JSON.stringify(d));
+            }""")
+            page.reload(wait_until="networkidle")
+            time.sleep(1)
+
+            stored_session_data = page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                const d = JSON.parse(raw);
+                const s = d.sessions.find(x => x.id === 'session_integrity_latest');
+                return {
+                    found: !!s,
+                    socStart: s ? s.socStart : null,
+                    soc: s ? s.soc : null,
+                    vehicleSoc: d.vehicle ? d.vehicle.currentSoc : null
+                };
+            }""")
+
+            log_test(
+                "12.1 Reload-Persistenz: soc & socStart bleiben nach sanitizeAndMigrate() vollständig erhalten",
+                stored_session_data["found"] and stored_session_data["socStart"] == 20 and stored_session_data["soc"] == 80,
+                f"socStart: {stored_session_data['socStart']}, soc: {stored_session_data['soc']}"
+            )
+
+            # 12.2: Fahrzeug Hero-Card spiegelt synchron den neuesten Akkustand wider
+            page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
+            time.sleep(0.5)
+            hero_soc_text = page.locator("#cardCurrentSoc").inner_text().strip()
+            log_test(
+                "12.2 Fahrzeug Hero-Card: Zeigt synchron den neuesten Akkustand (80 %)",
+                hero_soc_text == "80 %" and stored_session_data["vehicleSoc"] == 80,
+                f"Hero-Card: '{hero_soc_text}', Vehicle-SoC: {stored_session_data['vehicleSoc']}"
+            )
+
+            # 12.3: Historischer Schutz: Bearbeiten einer älteren Session überschreibt NICHT den aktuellen Fahrzeug-Akkustand
+            page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                const d = JSON.parse(raw);
+                const fiveDaysAgo = new Date(Date.now() - 5 * 86400000).toISOString();
+                // Ältere Session einfügen
+                d.sessions.push({
+                    id: 'session_integrity_old',
+                    date: fiveDaysAgo,
+                    kwh: 25.0,
+                    odometer: 12200,
+                    socStart: 10,
+                    soc: 50,
+                    pricePerKwh: 0.20,
+                    totalCost: 5.00,
+                    location: 'Arbeit',
+                    pvSurplus: false,
+                    notes: 'Playwright Older Session'
+                });
+                localStorage.setItem('cupra_raval_data', JSON.stringify(d));
+            }""")
+            page.reload(wait_until="networkidle")
+            time.sleep(1)
+
+            # Ältere Session öffnen & editieren (auf soc = 42%)
+            page.locator('.dock-tab-btn[data-tab="charging"]').click()
+            time.sleep(0.5)
+            old_card = page.locator(".session-swift-card", has_text="Playwright Older Session")
+            if old_card.count() > 0:
+                old_card.locator(".btn-edit-charge").click()
+            else:
+                page.evaluate("() => { if (window.openModalCharge) window.openModalCharge('session_integrity_old'); }")
+            time.sleep(0.5)
+
+            # Neuen Akkustand 42 eingeben und speichern
+            page.locator("#entryBatterySoc").fill("42")
+            page.locator("#btnSaveEntry").click()
+            time.sleep(0.7)
+
+            # Prüfen: Altes Event hat jetzt 42%, aber das Fahrzeug behält 80% (vom heutigen Ladevorgang)
+            integrity_check = page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                const d = JSON.parse(raw);
+                const oldSes = d.sessions.find(x => x.id === 'session_integrity_old');
+                return {
+                    oldSesSoc: oldSes ? oldSes.soc : null,
+                    vehicleCurrentSoc: d.vehicle ? d.vehicle.currentSoc : null
+                };
+            }""")
+
+            log_test(
+                "12.3 Historischer Schutz: Bearbeiten alter Session korrumpiert currentSoc des Fahrzeugs nicht",
+                integrity_check["oldSesSoc"] == 42 and integrity_check["vehicleCurrentSoc"] == 80,
+                f"Alte Session SoC: {integrity_check['oldSesSoc']}, Fahrzeug currentSoc: {integrity_check['vehicleCurrentSoc']} (Soll: 80)"
+            )
+
+            # 12.4: Modal Pre-Fill: Neues Lade-Modal übernimmt automatisch den Fahrzeug-Akkustand als Start-Akkustand
+            page.locator("#fabAddCharge").click()
+            time.sleep(0.5)
+            prefilled_start_soc = page.locator("#entryBatterySocStart").input_value().strip()
+            log_test(
+                "12.4 Modal Pre-Fill: Start-Akkustand übernimmt synchron den aktuellen Fahrzeug-Akkustand",
+                prefilled_start_soc == "80",
+                f"Prefilled Start-SoC: '{prefilled_start_soc}' (Soll: 80)"
+            )
+            page.locator("#btnCloseModalCharge").click()
+            time.sleep(0.3)
+
+            # 12.5: Lösch-Konsistenz: Nach Löschen der neuesten Session fällt currentSoc sauber auf 42% zurück
+            latest_card = page.locator(".session-swift-card", has_text="Playwright Integrity Test Session")
+            if latest_card.count() > 0:
+                latest_card.locator(".btn-del-charge").click()
+            else:
+                page.evaluate("""() => {
+                    if (window.handleDeleteCharge) {
+                        window.confirm = () => true;
+                        window.handleDeleteCharge('session_integrity_latest');
+                    }
+                }""")
+            time.sleep(0.6)
+
+            after_delete_check = page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                const d = JSON.parse(raw);
+                return {
+                    vehicleCurrentSoc: d.vehicle ? d.vehicle.currentSoc : null,
+                    remainingSessions: d.sessions.length
+                };
+            }""")
+
+            log_test(
+                "12.5 Lösch-Konsistenz: currentSoc fällt nach Löschen der neuesten Session auf vorherige zurück",
+                after_delete_check["vehicleCurrentSoc"] == 42,
+                f"Neuer Vehicle-SoC: {after_delete_check['vehicleCurrentSoc']} (Soll: 42)"
             )
 
         finally:

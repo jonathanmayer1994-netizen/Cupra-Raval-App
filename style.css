@@ -688,12 +688,18 @@ body {
   z-index: 1;
 }
 
-/* 2x2 Meta Grid */
+/* 4-Column Meta Grid (Kilometerstand, Akkustand, Batterie, Leistung) */
 .car-meta-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-bottom: 8px;
+}
+
+@media (max-width: 360px) {
+  .car-meta-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .meta-card-item {
@@ -3890,4 +3896,186 @@ select option {
   font-family: monospace;
   color: var(--cupra-bronze);
 }
+
+/* ==========================================================================
+   CUPRA APP SCREENSHOT OCR AUTO-SCAN & BATTERY EFFICIENCY
+   ========================================================================== */
+.cupra-ocr-upload-card {
+  background: linear-gradient(135deg, rgba(192, 128, 81, 0.14) 0%, rgba(12, 18, 26, 0.85) 100%);
+  border: 1px dashed rgba(192, 128, 81, 0.45);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cupra-ocr-upload-card:hover,
+.cupra-ocr-upload-card.drag-over {
+  border-color: var(--cupra-bronze-bright);
+  background: linear-gradient(135deg, rgba(192, 128, 81, 0.22) 0%, rgba(18, 26, 38, 0.95) 100%);
+  box-shadow: 0 4px 20px rgba(192, 128, 81, 0.25);
+  transform: translateY(-1px);
+}
+
+.cupra-ocr-upload-card.ocr-scanning {
+  border-style: solid;
+  border-color: var(--brand-primary);
+  background: linear-gradient(135deg, rgba(0, 210, 255, 0.15) 0%, rgba(12, 18, 26, 0.92) 100%);
+  box-shadow: 0 0 16px rgba(0, 210, 255, 0.2);
+}
+
+.cupra-ocr-upload-card.ocr-success {
+  border-style: solid;
+  border-color: rgba(46, 213, 115, 0.6);
+  background: linear-gradient(135deg, rgba(46, 213, 115, 0.14) 0%, rgba(12, 18, 26, 0.92) 100%);
+  box-shadow: 0 0 16px rgba(46, 213, 115, 0.18);
+}
+
+.ocr-card-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ocr-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ocr-card-icon-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(192, 128, 81, 0.18);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.ocr-card-icon {
+  display: block;
+  line-height: 1;
+}
+
+.ocr-card-texts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ocr-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ocr-card-title {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+}
+
+.ocr-badge-ai {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c08051, #e6a775);
+  color: #0b0f14;
+}
+
+.ocr-card-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-ocr-trigger {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-ocr-trigger:hover {
+  background: rgba(192, 128, 81, 0.28);
+  border-color: var(--cupra-bronze);
+  color: var(--cupra-bronze-bright);
+}
+
+.ocr-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(0, 210, 255, 0.2);
+  border-top-color: #00d2ff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* Live Netto-Zuwachs & Wirkungsgrad Pill */
+.soc-eff-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(192, 128, 81, 0.1);
+  border: 1px solid rgba(192, 128, 81, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-top: -4px;
+  margin-bottom: 10px;
+  font-size: 0.72rem;
+  color: #e6eef8;
+  animation: fadeIn 0.3s ease;
+}
+
+.soc-eff-banner .soc-eff-icon {
+  font-size: 0.95rem;
+}
+
+.soc-eff-banner strong {
+  color: var(--cupra-bronze-bright);
+}
+
+/* Auto-filled field glow animation */
+@keyframes autoFilledFlash {
+  0% {
+    box-shadow: 0 0 0 3px rgba(192, 128, 81, 0.7);
+    background-color: rgba(192, 128, 81, 0.22);
+  }
+  100% {
+    box-shadow: none;
+    background-color: transparent;
+  }
+}
+
+.auto-filled-glow {
+  animation: autoFilledFlash 1.6s ease-out;
+}
+
 
