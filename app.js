@@ -1018,6 +1018,28 @@
     const id = String(s.id || s.ID || ('session_' + Date.now()));
     const notes = String(s.notes || s.notiz || s.Notiz || '');
     const odo = parseNum(s.odometer || s['km-Stand']);
+    const startSoc = (s.socStart !== undefined && s.socStart !== null && s.socStart !== '') ? parseNum(s.socStart) : '';
+    const endSoc = (s.soc !== undefined && s.soc !== null && s.soc !== '') ? parseNum(s.soc) : '';
+
+    let deltaKm = '';
+    let consumption = '';
+    if (typeof getSessionDelta === 'function') {
+      const deltaObj = getSessionDelta(s);
+      if (deltaObj && deltaObj.deltaKm > 0) {
+        deltaKm = deltaObj.deltaKm;
+        if (deltaObj.consumption > 0) {
+          consumption = Number(deltaObj.consumption.toFixed(1));
+        }
+      }
+    }
+
+    let eff = '';
+    if (startSoc !== '' && endSoc !== '' && endSoc > startSoc && kwh > 0) {
+      const deltaSoc = endSoc - startSoc;
+      const batteryCap = (appData && appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+      const netKwh = (deltaSoc / 100) * batteryCap;
+      eff = Math.min(100, Math.round((netKwh / kwh) * 1000) / 10);
+    }
 
     return {
       id,
@@ -1053,11 +1075,20 @@
       odometer: odo,
       km: odo,
       'km-Stand': odo,
-      soc: (s.soc !== undefined && s.soc !== null) ? s.soc : '',
-      SoC: (s.soc !== undefined && s.soc !== null) ? s.soc : '',
-      socStart: (s.socStart !== undefined && s.socStart !== null) ? s.socStart : '',
-      'Akkustand Ende (%)': (s.soc !== undefined && s.soc !== null) ? s.soc : '',
-      'Akkustand Start (%)': (s.socStart !== undefined && s.socStart !== null) ? s.socStart : ''
+      soc: endSoc,
+      SoC: endSoc,
+      socEnd: endSoc,
+      'Akkustand Ende (%)': endSoc,
+      socStart: startSoc,
+      SoCStart: startSoc,
+      startSoc,
+      'Akkustand Start (%)': startSoc,
+      deltaKm,
+      'Gefahrene km': deltaKm,
+      consumption,
+      'Verbrauch (kWh/100km)': consumption,
+      efficiency: eff,
+      'Wirkungsgrad (%)': eff
     };
   }
 
@@ -1360,7 +1391,7 @@ function getHeaderColumnMap(sheet) {
 
   // Falls Zeile 1 noch völlig leer ist, Standard-Köpfe schreiben
   if (!headers || headers.every(h => !h || String(h).trim() === "")) {
-    const defaultHeaders = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand"];
+    const defaultHeaders = ["ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz", "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)"];
     sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
     sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
     sheet.setFrozenRows(1);
@@ -1378,6 +1409,11 @@ function getHeaderColumnMap(sheet) {
     pvSurplus: -1,
     notes: -1,
     odometer: -1,
+    socStart: -1,
+    soc: -1,
+    deltaKm: -1,
+    consumption: -1,
+    efficiency: -1,
     updatedAt: -1,
     rawHeaders: headers
   };
@@ -1392,12 +1428,41 @@ function getHeaderColumnMap(sheet) {
     else if (h.includes("kwh") || h.includes("menge") || h.includes("energie") || h.includes("lademenge")) map.kwh = i;
     else if (h.includes("pv") || h.includes("solar") || h.includes("sonne")) map.pvSurplus = i;
     else if (h.includes("notiz") || h.includes("note") || h.includes("bemerkung")) map.notes = i;
-    else if (h.includes("km") || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
+    else if (h.includes("delta") || h.includes("gefahren") || h.includes("strecke") || h.includes("distanz")) map.deltaKm = i;
+    else if (h.includes("verbrauch") || h.includes("consumption")) map.consumption = i;
+    else if (h.includes("wirkungsgrad") || h.includes("effizienz") || h.includes("efficiency")) map.efficiency = i;
+    else if (h.includes("socstart") || h.includes("startsoc") || (h.includes("akku") && h.includes("start")) || (h.includes("start") && h.includes("%"))) map.socStart = i;
+    else if (h.includes("soc") || (h.includes("akku") && (h.includes("ende") || h.includes("stand") || !h.includes("start"))) || h.includes("batterieladestand")) map.soc = i;
+    else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) map.odometer = i;
     else if (h.includes("updated") || h.includes("stand")) map.updatedAt = i;
   }
 
   // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
   if (map.id < 0) map.id = 0;
+
+  // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand oder Akkustand-Spalten, automatisch anfügen
+  if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0)) {
+    let curCols = sheet.getLastColumn();
+    if (map.odometer < 0) {
+      curCols++;
+      sheet.getRange(1, curCols).setValue("km-Stand").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+      map.odometer = curCols - 1;
+      headers.push("km-Stand");
+    }
+    if (map.socStart < 0) {
+      curCols++;
+      sheet.getRange(1, curCols).setValue("Akkustand Start (%)").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+      map.socStart = curCols - 1;
+      headers.push("Akkustand Start (%)");
+    }
+    if (map.soc < 0) {
+      curCols++;
+      sheet.getRange(1, curCols).setValue("Akkustand Ende (%)").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+      map.soc = curCols - 1;
+      headers.push("Akkustand Ende (%)");
+    }
+    map.rawHeaders = headers;
+  }
 
   return map;
 }
@@ -1461,6 +1526,13 @@ function doGet(e) {
         const locVal = colMap.location >= 0 ? String(row[colMap.location] || "Bayrhofs") : "Bayrhofs";
         const notesVal = colMap.notes >= 0 ? String(row[colMap.notes] || "") : "";
         const odoVal = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
+        const rawSoc = colMap.soc >= 0 ? row[colMap.soc] : null;
+        const socVal = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "") ? parseNum(rawSoc) : null;
+        const rawSocStart = colMap.socStart >= 0 ? row[colMap.socStart] : null;
+        const socStartVal = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "") ? parseNum(rawSocStart) : null;
+        const deltaKmVal = colMap.deltaKm >= 0 ? parseNum(row[colMap.deltaKm]) : null;
+        const consVal = colMap.consumption >= 0 ? parseNum(row[colMap.consumption]) : null;
+        const effVal = colMap.efficiency >= 0 ? parseNum(row[colMap.efficiency]) : null;
 
         // Dummy-Zeilen mit 0 kWh überspringen
         if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
@@ -1489,7 +1561,21 @@ function doGet(e) {
           notiz: notesVal,
           Notiz: notesVal,
           odometer: odoVal,
-          "km-Stand": odoVal
+          "km-Stand": odoVal,
+          soc: socVal,
+          SoC: socVal,
+          socEnd: socVal,
+          "Akkustand Ende (%)": socVal,
+          socStart: socStartVal,
+          SoCStart: socStartVal,
+          startSoc: socStartVal,
+          "Akkustand Start (%)": socStartVal,
+          deltaKm: deltaKmVal,
+          "Gefahrene km": deltaKmVal,
+          consumption: consVal,
+          "Verbrauch (kWh/100km)": consVal,
+          efficiency: effVal,
+          "Wirkungsgrad (%)": effVal
         });
       }
     }
@@ -1603,6 +1689,26 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
   if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
   if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
+
+  const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
+  const socNum = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "") ? parseNum(rawSoc) : null;
+  const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s.startSoc !== undefined ? s.startSoc : (s["Akkustand Start (%)"] !== undefined ? s["Akkustand Start (%)"] : null)));
+  const socStartNum = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "") ? parseNum(rawSocStart) : null;
+
+  if (colMap.socStart >= 0) rowData[colMap.socStart] = (socStartNum !== null && !isNaN(socStartNum)) ? socStartNum : "";
+  if (colMap.soc >= 0) rowData[colMap.soc] = (socNum !== null && !isNaN(socNum)) ? socNum : "";
+  if (colMap.deltaKm >= 0) {
+    const dVal = parseNum(s.deltaKm || s["Gefahrene km"]);
+    rowData[colMap.deltaKm] = (!isNaN(dVal) && dVal > 0) ? dVal : "";
+  }
+  if (colMap.consumption >= 0) {
+    const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
+    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0) ? cVal : "";
+  }
+  if (colMap.efficiency >= 0) {
+    const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);
+    rowData[colMap.efficiency] = (!isNaN(eVal) && eVal > 0) ? eVal : "";
+  }
   if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
 
   // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
