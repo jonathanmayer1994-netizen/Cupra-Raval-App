@@ -57,6 +57,9 @@
     }
   ];
 
+  // Unveränderlicher Start-Kilometerstand des Fahrzeugs bei Auslieferung
+  const VEHICLE_START_ODO = 9;
+
   const DEFAULT_DATA = {
     schemaVersion: CURRENT_SCHEMA,
     lastUpdated: new Date().toISOString(),
@@ -64,6 +67,7 @@
       model: "Cupra Raval Endurance Edition Dynamic",
       batteryKwh: 52.0,
       powerPs: 211,
+      startOdo: VEHICLE_START_ODO,
       currentOdo: 0,
       currentSoc: null
     },
@@ -422,6 +426,7 @@
         model: (data.vehicle && data.vehicle.model) || DEFAULT_DATA.vehicle.model,
         batteryKwh: Number((data.vehicle && data.vehicle.batteryKwh) || DEFAULT_DATA.vehicle.batteryKwh),
         powerPs: Number((data.vehicle && data.vehicle.powerPs) || DEFAULT_DATA.vehicle.powerPs),
+        startOdo: VEHICLE_START_ODO, // Unveränderlicher Startwert (9 km)
         currentOdo: (() => {
           let o = (data.vehicle && data.vehicle.currentOdo !== undefined && data.vehicle.currentOdo !== null)
             ? Number(data.vehicle.currentOdo)
@@ -2593,10 +2598,21 @@ function createOutput(data, callback) {
     const avgEff = (totalEffInputKwh > 0) ? Math.min(100, Math.round((totalNetBatteryKwh / totalEffInputKwh) * 1000) / 10) : null;
     const totalLossKwh = (totalEffInputKwh > 0 && totalEffInputKwh >= totalNetBatteryKwh) ? (totalEffInputKwh - totalNetBatteryKwh) : 0;
 
-    if (!sessions || sessions.length < 2) return { hasData: false, avgEff, totalLossKwh, effCount };
+    if (!sessions || sessions.length < 1) return { hasData: false, avgEff, totalLossKwh, effCount };
     const sorted = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     let dist = 0, energy = 0, cost = 0;
+
+    // Erstes Intervall: Start-Kilometerstand (Auslieferung: 9 km) bis erste Ladung
+    if (sorted[0].odometer && sorted[0].odometer > VEHICLE_START_ODO) {
+      const firstDelta = sorted[0].odometer - VEHICLE_START_ODO;
+      if (firstDelta > 0 && firstDelta < 3000) {
+        dist += firstDelta;
+        energy += sorted[0].kwh;
+        cost += sorted[0].totalCost;
+      }
+    }
+
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const curr = sorted[i];
@@ -2640,6 +2656,34 @@ function createOutput(data, callback) {
     let totalTrackedKm = 0;
     const segments = [];
 
+    // Erstes Segment: Auslieferungsstand (9 km) bis erste dokumentierte Ladung
+    if (sorted.length > 0 && sorted[0].odometer && sorted[0].odometer > VEHICLE_START_ODO) {
+      const firstS = sorted[0];
+      const delta0 = firstS.odometer - VEHICLE_START_ODO;
+      if (delta0 > 0) {
+        const d0 = new Date(firstS.date);
+        totalTrackedKm += delta0;
+
+        if (d0.getFullYear() === curYear) {
+          yearKm += delta0;
+          if (d0.getMonth() === curMonth) {
+            monthKm += delta0;
+          }
+        }
+
+        segments.push({
+          date: firstS.date,
+          fromOdo: VEHICLE_START_ODO,
+          toOdo: firstS.odometer,
+          deltaKm: delta0,
+          kwh: Number(firstS.kwh) || 0,
+          cost: Number(firstS.totalCost) || 0,
+          location: firstS.location || 'Ladung',
+          consumption: delta0 > 0 ? ((firstS.kwh / delta0) * 100) : 0
+        });
+      }
+    }
+
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const curr = sorted[i];
@@ -2674,12 +2718,18 @@ function createOutput(data, callback) {
     const daysSoFar = Math.max(1, curDay);
     const avgKmPerDay = monthKm > 0 ? (monthKm / daysSoFar) : 0;
     const avgKmPerMonth = yearKm > 0 ? (yearKm / (curMonth + 1)) : 0;
+    const totalOdo = (currentOdo !== undefined && currentOdo !== null && currentOdo > 0)
+      ? currentOdo
+      : (sorted.length > 0 ? sorted[sorted.length - 1].odometer : VEHICLE_START_ODO);
+    const totalDrivenKm = Math.max(0, totalOdo - VEHICLE_START_ODO);
 
     return {
       monthKm,
       yearKm,
       totalTrackedKm,
-      totalOdo: (currentOdo !== undefined && currentOdo !== null) ? currentOdo : (sorted.length > 0 ? sorted[sorted.length - 1].odometer : 0),
+      totalDrivenKm,
+      startOdo: VEHICLE_START_ODO,
+      totalOdo,
       avgKmPerDay,
       avgKmPerMonth,
       segments
@@ -3882,6 +3932,11 @@ function createOutput(data, callback) {
         const cons = (curr.kwh / delta) * 100;
         return { deltaKm: delta, consumption: cons };
       }
+    } else if (idx === 0 && curr.odometer && curr.odometer > VEHICLE_START_ODO) {
+      // Erstes Intervall: Auslieferungs-Kilometerstand (9 km) bis erste Ladung
+      const delta = curr.odometer - VEHICLE_START_ODO;
+      const cons = delta > 0 ? ((curr.kwh / delta) * 100) : null;
+      return { deltaKm: delta, consumption: cons };
     }
     return { deltaKm: 0, consumption: null };
   }
@@ -6380,10 +6435,13 @@ function createOutput(data, callback) {
     const editId = DOM.entryEditId.value;
 
     const cleanEditId = String(editId).trim();
-    let base = 0;
+    let base = VEHICLE_START_ODO;
     const sorted = [...appData.sessions].filter(s => String(s.id).trim() !== cleanEditId).sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (sorted.length > 0 && sorted[0].odometer) base = sorted[0].odometer;
-    else base = appData.vehicle.currentOdo || 0;
+    if (sorted.length > 0 && sorted[0].odometer) {
+      base = sorted[0].odometer;
+    } else if (appData.vehicle && appData.vehicle.currentOdo > VEHICLE_START_ODO) {
+      base = appData.vehicle.currentOdo;
+    }
 
     if (!isNaN(curOdo) && curOdo > base && base > 0) {
       DOM.entryDeltaKmTag.textContent = `+${curOdo - base} km`;
@@ -6441,7 +6499,7 @@ function createOutput(data, callback) {
       const withO = appData.sessions.filter(s => s.odometer > 0);
       if (withO.length > 0) return withO[0].odometer;
     }
-    return appData.vehicle.currentOdo || 0;
+    return (appData.vehicle && appData.vehicle.currentOdo > 0) ? appData.vehicle.currentOdo : VEHICLE_START_ODO;
   }
 
   // =========================================================================
@@ -6723,6 +6781,9 @@ function createOutput(data, callback) {
   }
 
   // Für Tests & externe Trigger bereitstellen
+  window.VEHICLE_START_ODO = VEHICLE_START_ODO;
+  window.calcDistanceStats = calcDistanceStats;
+  window.calcConsumption = calcConsumption;
   window.handleCupraScreenshotFile = handleCupraScreenshotFile;
   window.parseCupraScreenshotText = parseCupraScreenshotText;
   window.openModalCharge = openModalCharge;

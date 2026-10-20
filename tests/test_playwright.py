@@ -1110,6 +1110,58 @@ def run_tests():
                 f"Neuer Vehicle-SoC: {after_delete_check['vehicleCurrentSoc']} (Soll: 42)"
             )
 
+            # =====================================================================
+            # SUITE 13: START-KILOMETERSTAND (9 KM) & FAHRLEISTUNGS-INTEGRITÄT
+            # =====================================================================
+            print("\n--- SUITE 13: Start-Kilometerstand (Auslieferung: 9 km) & Berechnungen ---")
+
+            # 13.1: window.VEHICLE_START_ODO
+            start_odo_const = page.evaluate("() => window.VEHICLE_START_ODO")
+            log_test("13.1 VEHICLE_START_ODO ist unveränderbar als 9 km definiert", start_odo_const == 9, f"Wert: {start_odo_const} km")
+
+            # 13.2: Fahrzeug-Objekt in Storage besitzt startOdo: 9
+            start_odo_storage = page.evaluate("""() => {
+                const raw = localStorage.getItem('cupra_raval_data');
+                if (!raw) return null;
+                const d = JSON.parse(raw);
+                return d.vehicle ? d.vehicle.startOdo : null;
+            }""")
+            log_test("13.2 Fahrzeugdaten im Storage besitzen startOdo: 9 km", start_odo_storage == 9, f"Storage startOdo: {start_odo_storage}")
+
+            # 13.3: calcDistanceStats berechnet erstes Fahrsegment ab 9 km
+            dist_stats_check = page.evaluate("""() => {
+                const testSessions = [{ date: '2026-10-20T06:59:00Z', odometer: 233, kwh: 30, totalCost: 4.5 }];
+                const s = window.calcDistanceStats(testSessions, 233);
+                return {
+                    firstSegDelta: s.segments.length > 0 ? s.segments[0].deltaKm : 0,
+                    firstSegFrom: s.segments.length > 0 ? s.segments[0].fromOdo : 0,
+                    totalTracked: s.totalTrackedKm,
+                    totalDriven: s.totalDrivenKm
+                };
+            }""")
+            dist_correct = (dist_stats_check["firstSegDelta"] == 224 and dist_stats_check["firstSegFrom"] == 9 and dist_stats_check["totalTracked"] == 224 and dist_stats_check["totalDriven"] == 224)
+            log_test("13.3 calcDistanceStats berechnet Erstsegment ab 9 km (233 - 9 = 224 km)", dist_correct, f"Delta: {dist_stats_check['firstSegDelta']} km, From: {dist_stats_check['firstSegFrom']} km, Driven: {dist_stats_check['totalDriven']} km")
+
+            # 13.4: calcConsumption berechnet Verbrauch ab der 1. Ladung dank 9 km Startwert
+            cons_check = page.evaluate("""() => {
+                const testSessions = [{ date: '2026-10-20T06:59:00Z', odometer: 233, kwh: 30, totalCost: 4.5 }];
+                const c = window.calcConsumption(testSessions);
+                return {
+                    hasData: c.hasData,
+                    avgCons: c.hasData ? Math.round(c.avgCons * 10) / 10 : null
+                };
+            }""")
+            cons_correct = (cons_check["hasData"] == True and cons_check["avgCons"] == 13.4)
+            log_test("13.4 calcConsumption berechnet Verbrauch ab der 1. Ladung (30 kWh / 224 km = 13,4 kWh/100km)", cons_correct, f"hasData: {cons_check['hasData']}, avgCons: {cons_check['avgCons']} kWh/100km")
+
+            # 13.5: UI-Hinweis 'Start: 9 km' in den Fahrzeugeinstellungen vorhanden
+            page.locator('.dock-tab-btn[data-tab="settings"]').click()
+            time.sleep(0.3)
+            page.locator('.picker-seg[data-settab="car"]').click()
+            time.sleep(0.2)
+            odo_label_text = page.locator('label[for="cfgCurrentOdo"]').inner_text()
+            log_test("13.5 UI-Badge hint '(Start: 9 km)' in Fahrzeugeinstellungen sichtbar", "Start: 9 km" in odo_label_text, f"Label: '{odo_label_text}'")
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:
