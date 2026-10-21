@@ -2780,14 +2780,19 @@ function createOutput(data, callback) {
     const thg = appData.settings && appData.settings.thg;
     const isThgActive = thg && (thg.status === 'active' || thg.active === true) && Number(thg.amount) > 0 && (Number(thg.year) === curYear);
     const thgAmount = isThgActive ? Number(thg.amount) : 0;
-    const yEffectiveCost = Math.max(0, yCost - thgAmount);
 
     DOM.dashMonthCost.textContent = formatDe(mCost);
     DOM.dashMonthKwh.textContent = `${mKwh.toFixed(1)} kWh geladen`;
 
-    DOM.dashYearCost.textContent = formatDe(yEffectiveCost);
+    // Reale Ladekosten des Jahres anzeigen (niemals 0,00 € wenn geladen wurde!)
+    DOM.dashYearCost.textContent = formatDe(yCost);
     if (thgAmount > 0) {
-      DOM.dashYearKwh.innerHTML = `${yKwh.toFixed(1)} kWh <span class="thg-deduction-badge" title="THG-Quote ${thgAmount.toFixed(2).replace('.', ',')} € abgezogen">🌿 -${Math.round(thgAmount)} € THG</span>`;
+      const netCost = Math.max(0, yCost - thgAmount);
+      const surplus = Math.max(0, thgAmount - yCost);
+      const tooltip = surplus > 0 
+        ? `THG-Prämie (${thgAmount.toFixed(2).replace('.', ',')} €) übersteigt Ladekosten (${formatDe(yCost)} €): Netto 0,00 € + ${formatDe(surplus)} € Ertrag`
+        : `THG-Prämie (${thgAmount.toFixed(2).replace('.', ',')} €) abgezogen: Netto ${formatDe(netCost)} €`;
+      DOM.dashYearKwh.innerHTML = `${yKwh.toFixed(1)} kWh <span class="thg-deduction-badge" title="${tooltip}">🌿 -${Math.round(thgAmount)} € THG</span>`;
     } else {
       DOM.dashYearKwh.textContent = `${yKwh.toFixed(1)} kWh geladen`;
     }
@@ -2806,19 +2811,21 @@ function createOutput(data, callback) {
       DOM.dashYearDistanceSub.textContent = `Gesamt: ${Number(distStats.totalOdo).toLocaleString('de-DE')} km`;
     }
 
-    const effectiveAllCost = Math.max(0, allCost - thgAmount);
-    const avgPrice = allKwh > 0 ? (effectiveAllCost / allKwh) : 0.35;
-    DOM.dashAvgPrice.textContent = avgPrice.toFixed(2).replace('.', ',');
+    // Reale Durchschnittspreis pro kWh (niemals 0,00 €/kWh wenn Ladevorgänge existieren!)
+    const rawAvgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
+    DOM.dashAvgPrice.textContent = rawAvgPrice.toFixed(2).replace('.', ',');
     const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
-    DOM.dashPvShareSub.textContent = thgAmount > 0 
-      ? `${pvPct}% PV • Effektiv nach THG` 
-      : `${pvPct}% via PV-Solar`;
+    if (thgAmount > 0) {
+      DOM.dashPvShareSub.textContent = `${pvPct}% PV • 🌿 Inkl. THG`;
+    } else {
+      DOM.dashPvShareSub.textContent = `${pvPct}% via PV-Solar`;
+    }
 
     // Verbrauch
     const consData = calcConsumption(appData.sessions);
     if (consData.hasData) {
       DOM.dashAvgCons.textContent = consData.avgCons.toFixed(1).replace('.', ',');
-      const costPer100 = (consData.avgCons * avgPrice);
+      const costPer100 = (consData.avgCons * rawAvgPrice);
       DOM.dashAvgCost100.textContent = `${costPer100.toFixed(2).replace('.', ',')} € / 100 km`;
     } else {
       DOM.dashAvgCons.textContent = '--';
@@ -3207,6 +3214,10 @@ function createOutput(data, callback) {
     const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
     const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
 
+    const thg = appData.settings && appData.settings.thg;
+    const isThgActive = thg && (thg.status === 'active' || thg.active === true) && Number(thg.amount) > 0 && (Number(thg.year) === curYear);
+    const thgAmount = isThgActive ? Number(thg.amount) : 0;
+
     let title = "", sub = "", stat1 = {}, stat2 = {}, stat3 = {};
     let chartTitle = "Verlauf", legendHtml = "", listTitle = "Historische Datenpunkte", listHtml = "";
     let chartConfig = null;
@@ -3333,9 +3344,20 @@ function createOutput(data, callback) {
         title = `Ladekosten • Gesamtjahr ${curYear}`;
         sub = `Monatsvergleich aller Ladevorgänge`;
 
-        stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
-        stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
-        stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+        stat1 = { lbl: "Ladekosten", val: `${formatDe(yCost)} €` };
+        if (thgAmount > 0) {
+          stat2 = { lbl: `THG-Prämie`, val: `-${formatDe(thgAmount)} €` };
+          if (yCost <= thgAmount) {
+            stat3 = { lbl: "THG-Überschuss", val: `+${formatDe(thgAmount - yCost)} €` };
+            sub = `Reale Ladekosten: ${formatDe(yCost)} € • Durch THG vollständig gedeckt (+${formatDe(thgAmount - yCost)} € Ertrag)`;
+          } else {
+            stat3 = { lbl: "Netto nach THG", val: `${formatDe(yCost - thgAmount)} €` };
+            sub = `Reale Ladekosten: ${formatDe(yCost)} € • Netto nach THG: ${formatDe(yCost - thgAmount)} €`;
+          }
+        } else {
+          stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
+          stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+        }
 
         chartTitle = `Monatlicher Ladeverlauf ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
@@ -3382,9 +3404,18 @@ function createOutput(data, callback) {
         title = `Ladekosten • Alle Ladungen ${curYear}`;
         sub = `${ySessions.length} erfasste Ladevorgänge im gesamten Jahr`;
 
-        stat1 = { lbl: "Ladungen", val: `${ySessions.length}` };
-        stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
-        stat3 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
+        stat1 = { lbl: "Ladekosten", val: `${formatDe(yCost)} €` };
+        if (thgAmount > 0) {
+          stat2 = { lbl: "THG-Quote", val: `-${formatDe(thgAmount)} €` };
+          stat3 = {
+            lbl: yCost <= thgAmount ? "THG-Überschuss" : "Netto nach THG",
+            val: yCost <= thgAmount ? `+${formatDe(thgAmount - yCost)} €` : `${formatDe(yCost - thgAmount)} €`
+          };
+          sub = `${ySessions.length} erfasste Ladevorgänge • Netto nach THG: ${yCost <= thgAmount ? '0,00 € (+ ' + formatDe(thgAmount - yCost) + ' € Ertrag)' : formatDe(yCost - thgAmount) + ' €'}`;
+        } else {
+          stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
+          stat3 = { lbl: "Ø / Ladung", val: `${formatDe(ySessions.length > 0 ? yCost / ySessions.length : 0)} €` };
+        }
 
         chartTitle = `Chronologische Ladevorgänge ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>kWh</span><span class="legend-indicator dot-cyan"></span><span>Kosten (€)</span>`;
@@ -3679,7 +3710,18 @@ function createOutput(data, callback) {
 
         stat1 = { lbl: "Ø Strompreis", val: `${avgPrice.toFixed(2).replace('.', ',')} €/kWh` };
         stat2 = { lbl: "Solar-Anteil", val: `${pvPct}% PV` };
-        stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
+        if (thgAmount > 0) {
+          if (allCost <= thgAmount) {
+            stat3 = { lbl: "THG-Status", val: "100% gedeckt" };
+            sub = `Monatlicher Ladepreis • Stromkosten vollständig durch THG-Prämie amortisiert`;
+          } else {
+            const effPrice = (allCost - thgAmount) / allKwh;
+            stat3 = { lbl: "Effektiv (THG)", val: `${effPrice.toFixed(2).replace('.', ',')} €/kWh` };
+            sub = `Monatlicher Ladepreis • Effektiv ${effPrice.toFixed(2).replace('.', ',')} €/kWh nach THG`;
+          }
+        } else {
+          stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
+        }
 
         chartTitle = `Monatlicher Ø Ladepreis (€/kWh)`;
         legendHtml = `<span class="legend-indicator dot-cyan"></span><span>Ø Preis (€/kWh)</span><span class="legend-indicator dot-bronze"></span><span>0.35 € Referenz</span>`;
