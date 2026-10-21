@@ -4275,4 +4275,220 @@ select option {
   animation: autoFilledFlash 1.6s ease-out;
 }
 
+/* ==========================================================================
+   FEATURE 4a: TEMPERATURABHÄNGIGE WINTER-REICHWEITEN SIMULATION
+   ========================================================================== */
+.hero-range-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(192, 128, 81, 0.12) 0%, rgba(10, 15, 22, 0.78) 100%);
+  border: 1px solid rgba(192, 128, 81, 0.28);
+  border-radius: 12px;
+  margin-top: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero-range-banner:hover {
+  border-color: var(--cupra-bronze-bright);
+  background: linear-gradient(135deg, rgba(192, 128, 81, 0.22) 0%, rgba(15, 22, 32, 0.88) 100%);
+  transform: translateY(-1px);
+}
+
+.range-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.range-banner-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.range-banner-texts {
+  display: flex;
+  flex-direction: column;
+}
+
+.range-banner-title {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--cupra-bronze-light);
+  text-transform: uppercase;
+}
+
+.range-banner-values {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.range-val-primary {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.range-val-primary small {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.range-banner-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.range-temp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 210, 255, 0.15);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  color: #38bdf8;
+  white-space: nowrap;
+}
+
+.range-temp-badge.optimal {
+  background: rgba(46, 213, 115, 0.15);
+  border-color: rgba(46, 213, 115, 0.35);
+  color: #2ed573;
+}
+
+.range-temp-loss {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   FEATURE 8a: GPS GEOFENCING (< 10 METER)
+   ========================================================================== */
+.loc-geofence-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.60rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: #38bdf8;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  animation: fadeIn 0.25s ease;
+}
+
+.btn-gps-coords-capture {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 0.70rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-gps-coords-capture:hover {
+  background: rgba(56, 189, 248, 0.25);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   FEATURE 9a: THG-QUOTE KOSTENSENKER & GEGENRECHNUNG
+   ========================================================================== */
+.thg-settings-card {
+  margin-top: 14px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(46, 213, 115, 0.08) 0%, rgba(10, 15, 22, 0.75) 100%);
+  border: 1px solid rgba(46, 213, 115, 0.28);
+  border-radius: var(--radius-md);
+}
+
+.thg-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.thg-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #2ed573;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.thg-active-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.thg-active-checkbox {
+  accent-color: #2ed573;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.thg-inputs-grid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thg-card-hint {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.thg-deduction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #2ed573;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(46, 213, 115, 0.12);
+  border: 1px solid rgba(46, 213, 115, 0.32);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+
 

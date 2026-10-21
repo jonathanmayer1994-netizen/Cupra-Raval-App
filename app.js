@@ -87,7 +87,12 @@
         lat: 47.72,
         lon: 10.31
       },
-      pvThresholdSunshineHours: 4.5
+      pvThresholdSunshineHours: 4.5,
+      thg: {
+        year: 2026,
+        amount: 110.00,
+        status: 'active'
+      }
     },
     sessions: [],
     pendingSyncQueue: []
@@ -219,6 +224,13 @@
     DOM.cardCurrentOdo = document.getElementById('cardCurrentOdo');
     DOM.cardCurrentSoc = document.getElementById('cardCurrentSoc');
     DOM.dashboardLiveStatus = document.getElementById('dashboardLiveStatus');
+    DOM.heroRangeBanner = document.getElementById('heroRangeBanner');
+    DOM.dashRangeIcon = document.getElementById('dashRangeIcon');
+    DOM.dashRangePrimary = document.getElementById('dashRangePrimary');
+    DOM.dashRangeTempBadge = document.getElementById('dashRangeTempBadge');
+    DOM.dashRangeTempIcon = document.getElementById('dashRangeTempIcon');
+    DOM.dashRangeTempText = document.getElementById('dashRangeTempText');
+    DOM.dashRangeTempLoss = document.getElementById('dashRangeTempLoss');
 
     // Charging Tab
     DOM.chargingSegPickers = document.querySelectorAll('.picker-seg[data-sub]');
@@ -292,6 +304,9 @@
     DOM.cfgPower = document.getElementById('cfgPower');
     DOM.cfgCurrentOdo = document.getElementById('cfgCurrentOdo');
     DOM.cfgCurrentSoc = document.getElementById('cfgCurrentSoc');
+    DOM.cfgThgYear = document.getElementById('cfgThgYear');
+    DOM.cfgThgAmount = document.getElementById('cfgThgAmount');
+    DOM.cfgThgActive = document.getElementById('cfgThgActive');
     DOM.btnSaveVehicleSettings = document.getElementById('btnSaveVehicleSettings');
     DOM.btnToggleLocationEditMode = document.getElementById('btnToggleLocationEditMode');
     DOM.editModeIcon = document.getElementById('editModeIcon');
@@ -357,6 +372,11 @@
     DOM.locPowerTypePicker = document.getElementById('locPowerTypePicker');
     DOM.locEditPowerType = document.getElementById('locEditPowerType');
     DOM.locEditPrice = document.getElementById('locEditPrice');
+    DOM.btnCaptureGpsCoords = document.getElementById('btnCaptureGpsCoords');
+    DOM.locEditGpsStatus = document.getElementById('locEditGpsStatus');
+    DOM.locEditLat = document.getElementById('locEditLat');
+    DOM.locEditLon = document.getElementById('locEditLon');
+    DOM.locGeofenceIndicator = document.getElementById('locGeofenceIndicator');
 
     // Hourly Weather Modal
     DOM.modalHourlyWeather = document.getElementById('modalHourlyWeather');
@@ -525,6 +545,21 @@
       });
     } else {
       res.settings.locations = JSON.parse(JSON.stringify(DEFAULT_LOCATIONS));
+    }
+
+    // THG-Quote Settings Defaults & Migration (Feature 9a)
+    if (!res.settings.thg || typeof res.settings.thg !== 'object') {
+      res.settings.thg = {
+        year: new Date().getFullYear(),
+        amount: 110.00,
+        status: 'active'
+      };
+    } else {
+      if (res.settings.thg.amount === undefined || res.settings.thg.amount === null || isNaN(Number(res.settings.thg.amount))) {
+        res.settings.thg.amount = 110.00;
+      }
+      if (!res.settings.thg.year) res.settings.thg.year = new Date().getFullYear();
+      if (!res.settings.thg.status) res.settings.thg.status = 'active';
     }
 
     // Sessions Migration & Filter out invalid dummy rows
@@ -2237,6 +2272,45 @@ function createOutput(data, callback) {
       if (e.target === DOM.modalLocationPickerSheet) closeLocationPickerSheet();
     });
 
+    // Hero Range Banner -> Klick führt zu Tab 3 (Wetter & NMC-Telemetrie)
+    if (DOM.heroRangeBanner) {
+      DOM.heroRangeBanner.addEventListener('click', () => {
+        triggerHaptic();
+        switchMainTab('weather');
+      });
+    }
+
+    // Location Editor GPS Coords Capture Button (Feature 8a)
+    if (DOM.btnCaptureGpsCoords) {
+      DOM.btnCaptureGpsCoords.addEventListener('click', () => {
+        triggerHaptic();
+        if (!navigator.geolocation) {
+          showToast('⚠️ GPS im Browser nicht verfügbar');
+          return;
+        }
+        if (DOM.locEditGpsStatus) DOM.locEditGpsStatus.textContent = '⏳ Ermittle exakte GPS-Position...';
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = Number(pos.coords.latitude.toFixed(6));
+            const lon = Number(pos.coords.longitude.toFixed(6));
+            const acc = Math.round(pos.coords.accuracy || 0);
+            if (DOM.locEditLat) DOM.locEditLat.value = lat;
+            if (DOM.locEditLon) DOM.locEditLon.value = lon;
+            if (DOM.locEditGpsStatus) {
+              DOM.locEditGpsStatus.textContent = `✅ ${lat}, ${lon} (±${acc}m)`;
+            }
+            triggerHaptic();
+            showToast(`📍 Koordinaten übernommen (±${acc}m Genauigkeit)`);
+          },
+          (err) => {
+            if (DOM.locEditGpsStatus) DOM.locEditGpsStatus.textContent = '⚠️ GPS-Fehler';
+            showToast('⚠️ GPS-Position konnte nicht ermittelt werden');
+          },
+          { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+        );
+      });
+    }
+
     // Location Editor Events
     DOM.btnOpenNewLocationModal.addEventListener('click', () => openLocationEditorModal(null));
     DOM.btnCloseEditLocationModal.addEventListener('click', () => closeLocationEditorModal());
@@ -2702,11 +2776,21 @@ function createOutput(data, callback) {
       }
     });
 
+    // Feature 9a: THG-Quote Gegenrechnung
+    const thg = appData.settings && appData.settings.thg;
+    const isThgActive = thg && (thg.status === 'active' || thg.active === true) && Number(thg.amount) > 0 && (Number(thg.year) === curYear);
+    const thgAmount = isThgActive ? Number(thg.amount) : 0;
+    const yEffectiveCost = Math.max(0, yCost - thgAmount);
+
     DOM.dashMonthCost.textContent = formatDe(mCost);
     DOM.dashMonthKwh.textContent = `${mKwh.toFixed(1)} kWh geladen`;
 
-    DOM.dashYearCost.textContent = formatDe(yCost);
-    DOM.dashYearKwh.textContent = `${yKwh.toFixed(1)} kWh geladen`;
+    DOM.dashYearCost.textContent = formatDe(yEffectiveCost);
+    if (thgAmount > 0) {
+      DOM.dashYearKwh.innerHTML = `${yKwh.toFixed(1)} kWh <span class="thg-deduction-badge" title="THG-Quote ${thgAmount.toFixed(2).replace('.', ',')} € abgezogen">🌿 -${Math.round(thgAmount)} € THG</span>`;
+    } else {
+      DOM.dashYearKwh.textContent = `${yKwh.toFixed(1)} kWh geladen`;
+    }
 
     // Fahrleistung Monat & Jahr
     const distStats = calcDistanceStats(appData.sessions, appData.vehicle.currentOdo);
@@ -2722,16 +2806,20 @@ function createOutput(data, callback) {
       DOM.dashYearDistanceSub.textContent = `Gesamt: ${Number(distStats.totalOdo).toLocaleString('de-DE')} km`;
     }
 
-    const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
+    const effectiveAllCost = Math.max(0, allCost - thgAmount);
+    const avgPrice = allKwh > 0 ? (effectiveAllCost / allKwh) : 0.35;
     DOM.dashAvgPrice.textContent = avgPrice.toFixed(2).replace('.', ',');
     const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
-    DOM.dashPvShareSub.textContent = `${pvPct}% via PV-Solar`;
+    DOM.dashPvShareSub.textContent = thgAmount > 0 
+      ? `${pvPct}% PV • Effektiv nach THG` 
+      : `${pvPct}% via PV-Solar`;
 
     // Verbrauch
     const consData = calcConsumption(appData.sessions);
     if (consData.hasData) {
       DOM.dashAvgCons.textContent = consData.avgCons.toFixed(1).replace('.', ',');
-      DOM.dashAvgCost100.textContent = `${consData.avgCost100.toFixed(2).replace('.', ',')} € / 100 km`;
+      const costPer100 = (consData.avgCons * avgPrice);
+      DOM.dashAvgCost100.textContent = `${costPer100.toFixed(2).replace('.', ',')} € / 100 km`;
     } else {
       DOM.dashAvgCons.textContent = '--';
       DOM.dashAvgCost100.textContent = '-- € / 100 km';
@@ -2768,6 +2856,7 @@ function createOutput(data, callback) {
     }
 
     updateDashboardPvDecisionWidget();
+    updateDashboardWinterRangeSimulation();
   }
 
   function calcConsumption(sessions) {
@@ -4756,6 +4845,7 @@ function createOutput(data, callback) {
           saveWeatherCache(weatherForecast14Days);
           renderWeatherViews();
           updateDashboardPvDecisionWidget();
+          updateDashboardWinterRangeSimulation();
           renderWeatherExtraMeta();
           if (showFeedback) showToast(`Wetter & Solarprognose für ${loc.name} aktualisiert ☀️`);
           return;
@@ -4778,6 +4868,7 @@ function createOutput(data, callback) {
         saveWeatherCache(weatherForecast14Days);
         renderWeatherViews();
         updateDashboardPvDecisionWidget();
+        updateDashboardWinterRangeSimulation();
         renderWeatherExtraMeta();
         if (showFeedback) showToast(`Wetterdaten für ${loc.name} aktualisiert ☀️`);
         return;
@@ -4793,6 +4884,7 @@ function createOutput(data, callback) {
     }
     renderWeatherViews();
     updateDashboardPvDecisionWidget();
+    updateDashboardWinterRangeSimulation();
     renderWeatherExtraMeta();
   }
 
@@ -5763,6 +5855,136 @@ function createOutput(data, callback) {
   }
 
   // =========================================================================
+  // FEATURE 4a: TEMPERATURABHÄNGIGE WINTER-REICHWEITEN SIMULATION
+  // =========================================================================
+  function updateDashboardWinterRangeSimulation() {
+    if (!DOM.dashRangePrimary) return;
+
+    const v = (appData && appData.vehicle) || {};
+    const batteryCapacity = Number(v.batteryKwh) || 52.0;
+    const hasSoc = (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(Number(v.currentSoc)));
+    const soc = hasSoc ? Number(v.currentSoc) : null;
+
+    const consData = calcConsumption(appData.sessions);
+    const baseConsumption = (consData && consData.hasData && consData.avgCons > 0)
+      ? consData.avgCons
+      : 14.2;
+
+    let currentTemp = 12;
+    if (weatherForecast14Days && weatherForecast14Days.length > 0) {
+      const today = weatherForecast14Days[0];
+      currentTemp = Math.round((today.tMax + today.tMin) / 2);
+    }
+
+    const nmcFactor = getNmcTemperatureEfficiency(currentTemp);
+    const lossPct = Math.max(0, Math.round((1 - nmcFactor) * 100));
+
+    if (soc !== null) {
+      const remEnergyKwh = (batteryCapacity * soc) / 100;
+      const normRange = Math.round((remEnergyKwh / baseConsumption) * 100);
+      const effectiveConsumption = baseConsumption / nmcFactor;
+      const realWinterRange = Math.round((remEnergyKwh / effectiveConsumption) * 100);
+
+      DOM.dashRangePrimary.innerHTML = `${realWinterRange} <small>km</small>`;
+
+      if (currentTemp < 15) {
+        if (DOM.dashRangeTempIcon) DOM.dashRangeTempIcon.textContent = '❄️';
+        if (DOM.dashRangeTempText) DOM.dashRangeTempText.textContent = `Winter (${currentTemp}°C): ~${realWinterRange} km`;
+        if (DOM.dashRangeTempLoss) DOM.dashRangeTempLoss.textContent = `-${lossPct}% Kälteeinfluss (Norm: ~${normRange} km)`;
+        if (DOM.dashRangeTempBadge) DOM.dashRangeTempBadge.className = 'range-temp-badge';
+      } else {
+        if (DOM.dashRangeTempIcon) DOM.dashRangeTempIcon.textContent = '☀️';
+        if (DOM.dashRangeTempText) DOM.dashRangeTempText.textContent = `Mild (${currentTemp}°C): ~${realWinterRange} km`;
+        if (DOM.dashRangeTempLoss) DOM.dashRangeTempLoss.textContent = `Optimal (Norm: ~${normRange} km)`;
+        if (DOM.dashRangeTempBadge) DOM.dashRangeTempBadge.className = 'range-temp-badge optimal';
+      }
+    } else {
+      DOM.dashRangePrimary.innerHTML = `-- <small>km</small>`;
+      if (DOM.dashRangeTempIcon) DOM.dashRangeTempIcon.textContent = '🔋';
+      if (DOM.dashRangeTempText) DOM.dashRangeTempText.textContent = `Akkustand fehlt`;
+      if (DOM.dashRangeTempLoss) DOM.dashRangeTempLoss.textContent = `Tippen zum Eintragen`;
+      if (DOM.dashRangeTempBadge) DOM.dashRangeTempBadge.className = 'range-temp-badge';
+    }
+  }
+
+  // =========================================================================
+  // FEATURE 8a: GPS GEOFENCING (< 10 METER) BERECHNUNG & AUTO-SELECTION
+  // =========================================================================
+  function getGpsDistanceMeters(lat1, lon1, lat2, lon2) {
+    if (lat1 === undefined || lon1 === undefined || lat2 === undefined || lon2 === undefined ||
+        lat1 === null || lon1 === null || lat2 === null || lon2 === null ||
+        isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) {
+      return Infinity;
+    }
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function autoDetectLocationByGps(maxMeters = 10.0, overrideLat = null, overrideLon = null) {
+    const ind = document.getElementById('locGeofenceIndicator');
+    if (ind) ind.style.display = 'none';
+
+    const processCoords = (uLat, uLon) => {
+      const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
+      let closestLoc = null;
+      let minDistance = Infinity;
+
+      locs.forEach(loc => {
+        if (loc.isVariable || loc.lat === undefined || loc.lat === null || loc.lon === undefined || loc.lon === null) return;
+        const d = getGpsDistanceMeters(uLat, uLon, Number(loc.lat), Number(loc.lon));
+        if (d < minDistance) {
+          minDistance = d;
+          closestLoc = loc;
+        }
+      });
+
+      // Strikte < 10 Meter Prüfung (da Orte wie Bayrhofs & Arbeit nah beieinander liegen)
+      if (closestLoc && minDistance < maxMeters) {
+        selectLocationForEntry(closestLoc.id, true);
+        if (ind) {
+          ind.textContent = `📍 ${closestLoc.name} (<10m / ${minDistance.toFixed(1)}m)`;
+          ind.style.display = 'inline-flex';
+        }
+        if (DOM.pickerSelectedSub) {
+          const origText = DOM.pickerSelectedSub.textContent || '';
+          if (!origText.includes('📍')) {
+            DOM.pickerSelectedSub.textContent = `${origText} • 📍 Auto (<10m)`;
+          }
+        }
+        triggerHaptic();
+        showToast(`📍 Ladeort "${closestLoc.name}" automatisch erkannt (<10m)`);
+        return { loc: closestLoc, distance: minDistance };
+      } else if (closestLoc) {
+        console.log(`[Geofence] Nächster Ladeort "${closestLoc.name}" ist ${minDistance.toFixed(1)}m entfernt (Schwellenwert < ${maxMeters}m). Kein Auto-Switch.`);
+        return null;
+      }
+      return null;
+    };
+
+    if (overrideLat !== null && overrideLon !== null) {
+      return processCoords(overrideLat, overrideLon);
+    }
+
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        processCoords(pos.coords.latitude, pos.coords.longitude);
+      },
+      (err) => {
+        console.warn('[Geofence] GPS nicht verfügbar oder abgelehnt:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+    );
+  }
+
+  // =========================================================================
   // MODAL: STÜNDLICHER WETTERVERLAUF EINES TAGES & GESTENSTEUERUNG
   // =========================================================================
   let currentHourlyDayIndex = 0;
@@ -6361,6 +6583,13 @@ function createOutput(data, callback) {
         DOM.modalEditLocationTitle.textContent = "Standort anpassen";
         DOM.locEditName.value = loc.name;
         if (DOM.locEditAddress) DOM.locEditAddress.value = loc.address || '';
+        if (DOM.locEditLat) DOM.locEditLat.value = (loc.lat !== undefined && loc.lat !== null) ? loc.lat : '';
+        if (DOM.locEditLon) DOM.locEditLon.value = (loc.lon !== undefined && loc.lon !== null) ? loc.lon : '';
+        if (DOM.locEditGpsStatus) {
+          DOM.locEditGpsStatus.textContent = (loc.lat && loc.lon)
+            ? `📍 ${Number(loc.lat).toFixed(4)}, ${Number(loc.lon).toFixed(4)}`
+            : 'Keine Koordinaten gespeichert';
+        }
         DOM.locEditIcon.value = loc.icon || '🏢';
         DOM.locEditPowerType.value = loc.powerType || 'pv';
         DOM.locEditPrice.value = loc.kwhPrice;
@@ -6373,6 +6602,9 @@ function createOutput(data, callback) {
       DOM.modalEditLocationTitle.textContent = "Neuen Ladeort anlegen";
       DOM.locEditName.value = '';
       if (DOM.locEditAddress) DOM.locEditAddress.value = '';
+      if (DOM.locEditLat) DOM.locEditLat.value = '';
+      if (DOM.locEditLon) DOM.locEditLon.value = '';
+      if (DOM.locEditGpsStatus) DOM.locEditGpsStatus.textContent = '';
       DOM.locEditIcon.value = '🏢';
       DOM.locEditPowerType.value = 'pv';
       DOM.locEditPrice.value = '0.15';
@@ -6453,6 +6685,8 @@ function createOutput(data, callback) {
       const idx = appData.settings.locations.findIndex(l => l.id === id);
       if (idx !== -1) {
         const old = appData.settings.locations[idx];
+        const finalLat = (DOM.locEditLat && DOM.locEditLat.value) ? parseFloat(DOM.locEditLat.value) : (lat !== null ? lat : (old.lat || null));
+        const finalLon = (DOM.locEditLon && DOM.locEditLon.value) ? parseFloat(DOM.locEditLon.value) : (lon !== null ? lon : (old.lon || null));
         appData.settings.locations[idx] = {
           ...old,
           id,
@@ -6461,12 +6695,14 @@ function createOutput(data, callback) {
           powerType,
           kwhPrice: price,
           address: address || old.address || '',
-          lat: lat !== null ? lat : (old.lat || null),
-          lon: lon !== null ? lon : (old.lon || null),
+          lat: finalLat,
+          lon: finalLon,
           isVariable: isVariable || old.isVariable || false
         };
       }
     } else {
+      const finalLat = (DOM.locEditLat && DOM.locEditLat.value) ? parseFloat(DOM.locEditLat.value) : lat;
+      const finalLon = (DOM.locEditLon && DOM.locEditLon.value) ? parseFloat(DOM.locEditLon.value) : lon;
       appData.settings.locations.push({
         id: `loc_${Date.now()}`,
         name,
@@ -6474,8 +6710,8 @@ function createOutput(data, callback) {
         powerType,
         kwhPrice: price,
         address,
-        lat,
-        lon,
+        lat: finalLat,
+        lon: finalLon,
         isVariable
       });
     }
@@ -6603,6 +6839,8 @@ function createOutput(data, callback) {
       }
 
       selectLocationForEntry(defaultLoc.id, true);
+      // Feature 8a: Geofence Check (< 10 Meter)
+      autoDetectLocationByGps(10.0);
     }
 
     calculateModalOdoDelta();
@@ -7009,6 +7247,14 @@ function createOutput(data, callback) {
   window.openModalCharge = openModalCharge;
   window.handleDeleteCharge = handleDeleteCharge;
   window.syncVehicleStateFromSessions = syncVehicleStateFromSessions;
+  window.getGpsDistanceMeters = getGpsDistanceMeters;
+  window.autoDetectLocationByGps = autoDetectLocationByGps;
+  window.updateDashboardWinterRangeSimulation = updateDashboardWinterRangeSimulation;
+  Object.defineProperty(window, 'appData', {
+    get: () => appData,
+    set: (v) => { appData = v; },
+    configurable: true
+  });
 
   function handleSaveChargeEntry(e) {
     e.preventDefault();
@@ -7115,6 +7361,12 @@ function createOutput(data, callback) {
       DOM.cfgCurrentSoc.value = (v.currentSoc !== null && v.currentSoc !== undefined) ? v.currentSoc : '';
     }
 
+    // Feature 9a: THG-Quote Settings Form befüllen
+    const thg = (appData.settings && appData.settings.thg) || {};
+    if (DOM.cfgThgYear) DOM.cfgThgYear.value = thg.year || new Date().getFullYear();
+    if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = (thg.amount !== undefined && thg.amount !== null) ? Number(thg.amount).toFixed(2) : '110.00';
+    if (DOM.cfgThgActive) DOM.cfgThgActive.checked = thg.status !== 'inactive';
+
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();
     }
@@ -7136,6 +7388,21 @@ function createOutput(data, callback) {
         const parsedSoc = parseInt(val, 10);
         appData.vehicle.currentSoc = (isNaN(parsedSoc) || parsedSoc < 0 || parsedSoc > 100) ? null : parsedSoc;
       }
+    }
+
+    // Feature 9a: THG-Quote speichern
+    if (!appData.settings.thg) appData.settings.thg = {};
+    if (DOM.cfgThgYear) {
+      appData.settings.thg.year = parseInt(DOM.cfgThgYear.value, 10) || new Date().getFullYear();
+    }
+    if (DOM.cfgThgAmount) {
+      const parsedAmount = parseFloat(DOM.cfgThgAmount.value.replace(',', '.'));
+      appData.settings.thg.amount = !isNaN(parsedAmount) ? Math.max(0, parsedAmount) : 110.00;
+    }
+    if (DOM.cfgThgActive) {
+      const isActive = DOM.cfgThgActive.checked;
+      appData.settings.thg.status = isActive ? 'active' : 'inactive';
+      appData.settings.thg.active = isActive;
     }
 
     saveData();

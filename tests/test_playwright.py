@@ -1163,6 +1163,76 @@ def run_tests():
             odo_label_text = page.locator('label[for="cfgCurrentOdo"]').inner_text()
             log_test("13.5 UI-Badge hint '(Start: 9 km)' in Fahrzeugeinstellungen sichtbar", "Start: 9 km" in odo_label_text, f"Label: '{odo_label_text}'")
 
+            print("\n--- SUITE 14: Neue Features (4a: Winter-Simulation, 8a: GPS <10m, 9a: THG-Gegenrechnung) ---")
+
+            # 14.1: Feature 4a - Winter-Reichweiten-Simulation Banner auf Dashboard Hero Card
+            page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
+            time.sleep(0.3)
+            hero_banner = page.locator('#heroRangeBanner')
+            banner_visible = hero_banner.is_visible()
+            banner_text = hero_banner.inner_text() if banner_visible else ""
+            log_test("14.1 Feature 4a: Winter-Reichweiten-Simulation Banner sichtbar", 
+                     banner_visible and "°C" in banner_text and "km" in banner_text,
+                     f"Text: '{banner_text.replace(chr(10), ' ')}'")
+
+            # 14.2: Feature 4a - Klick auf Winter-Banner wechselt auf Wetter-Tab (Tab 3)
+            hero_banner.click()
+            time.sleep(0.3)
+            tab_weather_active = page.locator('#tab-weather').is_visible()
+            log_test("14.2 Feature 4a: Klick auf Winter-Banner öffnet Wetter-Tab (Tab 3)", 
+                     tab_weather_active is True, 
+                     f"Tab Weather sichtbar: {tab_weather_active}")
+
+            # 14.3: Feature 8a - Haversine GPS-Distanzberechnung
+            dist_check = page.evaluate("""() => {
+                const same = window.getGpsDistanceMeters(47.7468, 10.3094, 47.7468, 10.3094);
+                const bayrhofs_arbeit = window.getGpsDistanceMeters(47.7468, 10.3094, 47.7476, 10.3038);
+                return { same, bayrhofs_arbeit };
+            }""")
+            log_test("14.3 Feature 8a: GPS-Distanzberechnung (Bayrhofs vs Arbeit ~428m)",
+                     dist_check["same"] == 0 and dist_check["bayrhofs_arbeit"] > 400,
+                     f"Gleich: {dist_check['same']}m, Bayrhofs-Arbeit: {dist_check['bayrhofs_arbeit']:.1f}m")
+
+            # 14.4: Feature 8a - Strikte < 10 Meter Geofencing-Erkennung (< 10m Treffer, 20m Kein Treffer)
+            geofence_check = page.evaluate("""() => {
+                const bayrhofs = appData.settings.locations.find(l => l.name.includes('Bayrhof'));
+                // 4m Distanz
+                const nearLat = bayrhofs.lat + 0.000036;
+                const matchNear = window.autoDetectLocationByGps(10.0, nearLat, bayrhofs.lon);
+                // 22m Distanz
+                const farLat = bayrhofs.lat + 0.0002;
+                const matchFar = window.autoDetectLocationByGps(10.0, farLat, bayrhofs.lon);
+                return {
+                    nearMatched: matchNear ? matchNear.loc.name : null,
+                    farMatched: matchFar ? matchFar.loc.name : null
+                };
+            }""")
+            log_test("14.4 Feature 8a: Strikte < 10m Geofencing-Bedingung (4m -> Match, 22m -> Keins)",
+                     geofence_check["nearMatched"] is not None and geofence_check["farMatched"] is None,
+                     f"4m: {geofence_check['nearMatched']}, 22m: {geofence_check['farMatched']}")
+
+            # 14.5: Feature 9a - THG-Quote Kostensenker konfigurierbar & gespeichert
+            page.locator('.dock-tab-btn[data-tab="settings"]').click()
+            time.sleep(0.3)
+            page.locator('#cfgThgAmount').fill("120")
+            page.locator('#btnSaveVehicleSettings').click()
+            time.sleep(0.3)
+            thg_saved = page.evaluate("() => appData.settings.thg")
+            log_test("14.5 Feature 9a: THG-Quote Betrag (120 €) gespeichert",
+                     thg_saved and thg_saved.get("amount") == 120.0 and thg_saved.get("status") == "active",
+                     f"THG: {thg_saved}")
+
+            # 14.6: Feature 9a - Dashboard Jahreskosten Gegenrechnung & THG-Badge
+            page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
+            time.sleep(0.3)
+            thg_badge_elem = page.locator('.thg-deduction-badge')
+            thg_badge_visible = thg_badge_elem.is_visible()
+            badge_text = thg_badge_elem.inner_text() if thg_badge_visible else ""
+            dash_y_cost = page.locator('#dashYearCost').inner_text()
+            log_test("14.6 Feature 9a: Dashboard verrechnet THG-Quote auf Jahreskosten & zeigt Badge",
+                     thg_badge_visible and "120" in badge_text,
+                     f"Badge: '{badge_text}', Jahreskosten Netto: {dash_y_cost} €")
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:

@@ -25,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=39">
+  <link rel="stylesheet" href="./style.css?v=40">
 
   <style id="critical-form-grid-fix">
     /* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerechte Ausrichtung) */
@@ -318,6 +318,26 @@
             <div class="meta-card-item">
               <span class="capsule-label">LEISTUNG</span>
               <span class="capsule-value" id="cardPowerPs">211 <small>PS</small></span>
+            </div>
+          </div>
+
+          <!-- Temperaturabhängige Winter-Reichweiten Kachel (Feature 4a) -->
+          <div class="hero-range-banner clickable-card" id="heroRangeBanner" role="button" tabindex="0" title="Tippen für Details zu Wetter- und Kälteeinfluss auf den Akku">
+            <div class="range-banner-left">
+              <span class="range-banner-icon" id="dashRangeIcon">🔋</span>
+              <div class="range-banner-texts">
+                <span class="range-banner-title">AKKUSTAND &amp; REICHWEITE</span>
+                <div class="range-banner-values">
+                  <span class="range-val-primary" id="dashRangePrimary">-- <small>km</small></span>
+                </div>
+              </div>
+            </div>
+            <div class="range-banner-right">
+              <span class="range-temp-badge" id="dashRangeTempBadge">
+                <span id="dashRangeTempIcon">❄️</span>
+                <span id="dashRangeTempText">Winter: -- km</span>
+              </span>
+              <span class="range-temp-loss" id="dashRangeTempLoss">--% Kälteeinfluss</span>
             </div>
           </div>
 
@@ -692,6 +712,41 @@
 
             </div>
 
+            <!-- THG-Quote Kostensenker (Feature 9a) -->
+            <div class="thg-settings-card">
+              <div class="thg-card-header">
+                <span class="thg-card-title">🌿 THG-Quote Kostensenker</span>
+                <label class="thg-active-toggle" for="cfgThgActive">
+                  <input type="checkbox" id="cfgThgActive" class="thg-active-checkbox" checked>
+                  <span>Aktiv anrechnen</span>
+                </label>
+              </div>
+              <div class="thg-inputs-grid">
+                <div class="specs-field-block">
+                  <label class="specs-field-label" for="cfgThgYear">
+                    <span class="specs-label-tag">JAHR</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">📅</span>
+                    <input type="number" id="cfgThgYear" class="specs-input-control num-val" value="2026" min="2023" max="2035" step="1">
+                  </div>
+                </div>
+                <div class="specs-field-block">
+                  <label class="specs-field-label" for="cfgThgAmount">
+                    <span class="specs-label-tag">THG-PRÄMIE</span>
+                  </label>
+                  <div class="specs-input-wrapper unit-attached">
+                    <span class="specs-field-icon">💶</span>
+                    <input type="number" id="cfgThgAmount" class="specs-input-control num-val" value="110.00" min="0" max="1000" step="0.50" placeholder="110.00">
+                    <span class="specs-unit-badge">€</span>
+                  </div>
+                </div>
+              </div>
+              <div class="thg-card-hint">
+                Der Ertrag wird automatisch mit den Ladekosten des Jahres gegengerechnet und senkt den effektiven Strompreis je kWh.
+              </div>
+            </div>
+
             <!-- Speichern Action Button -->
             <button class="btn-swift-primary-bronze full-width specs-save-btn" id="btnSaveVehicleSettings">
               <span class="btn-save-icon">✓</span>
@@ -964,7 +1019,10 @@
 
         <!-- Touch-optimierter Apple Action-Sheet Ladeort Selector -->
         <div class="form-touch-row">
-          <label class="form-touch-label">Ladeort auswählen</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label class="form-touch-label" style="margin-bottom: 0;">Ladeort auswählen</label>
+            <span class="loc-geofence-tag" id="locGeofenceIndicator" style="display: none;">📍 Auto (&lt; 10m)</span>
+          </div>
           <div class="apple-touch-picker-button" id="btnOpenLocationPicker">
             <div class="picker-btn-left">
               <span class="picker-btn-icon" id="pickerSelectedIcon">🏢</span>
@@ -1095,7 +1153,15 @@
         <div class="form-touch-row">
           <label class="form-touch-label" for="locEditAddress">Adresse / Ort (für Wetterprognose)</label>
           <input type="text" id="locEditAddress" class="form-touch-input" placeholder="z.B. Unterwang 18, 87439 Kempten">
-          <span class="form-touch-hint" style="font-size:0.62rem; color:var(--text-muted); margin-top:3px; display:block;">Wird für standortgenaues Wetter & Solarprognose verwendet</span>
+          <span class="form-touch-hint" style="font-size:0.62rem; color:var(--text-muted); margin-top:3px; display:block;">Wird für standortgenaues Wetter &amp; Solarprognose verwendet</span>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+            <button type="button" class="btn-gps-coords-capture" id="btnCaptureGpsCoords">
+              <span>📍 Aktuelle GPS-Koordinaten übernehmen (&lt; 10m Geofencing)</span>
+            </button>
+            <span id="locEditGpsStatus" style="font-size: 0.65rem; color: var(--text-muted);"></span>
+          </div>
+          <input type="hidden" id="locEditLat" value="">
+          <input type="hidden" id="locEditLon" value="">
         </div>
 
         <!-- Icon Picker Grid -->
