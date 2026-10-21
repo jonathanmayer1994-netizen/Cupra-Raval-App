@@ -3206,31 +3206,43 @@ input[type="number"] {
 }
 
 .sheet-form { display: flex; flex-direction: column; gap: 14px; }
-.form-two-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.form-two-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-items: start; }
+.form-two-cols.form-kwh-odo-cols {
+  grid-template-columns: 114px 1fr;
+  gap: 10px;
+}
 .form-touch-row { display: flex; flex-direction: column; gap: 6px; }
 
 /* Kapsel-Labels im Cupra Bronze Design */
 .form-touch-label {
-  font-size: 0.7rem;
+  font-size: 0.67rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--cupra-bronze-light);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
+  min-height: 24px;
+  white-space: nowrap;
   margin-bottom: 2px;
 }
 
 .delta-tag-live {
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 800;
   background: rgba(192, 128, 81, 0.22);
   color: var(--cupra-bronze-bright);
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: var(--radius-full);
-  letter-spacing: normal;
+  letter-spacing: 0.01em;
   text-transform: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 /* ==========================================================================
@@ -3343,7 +3355,11 @@ select option {
 
 .input-addon-box .form-touch-input {
   width: 100%;
-  padding-right: 70px !important;
+  padding-right: 48px !important;
+}
+
+.form-kwh-odo-cols .form-touch-row:first-child .input-addon-box .form-touch-input {
+  padding-right: 58px !important;
 }
 
 .addon-suffix {

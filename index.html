@@ -865,9 +865,11 @@
         </div>
 
         <!-- Lademenge & Odometer -->
-        <div class="form-two-cols">
+        <div class="form-two-cols form-kwh-odo-cols">
           <div class="form-touch-row">
-            <label class="form-touch-label" for="entryKwh">Geladen (kWh)</label>
+            <label class="form-touch-label" for="entryKwh">
+              <span>Geladen (kWh)</span>
+            </label>
             <div class="input-addon-box">
               <input type="number" id="entryKwh" class="form-touch-input" placeholder="38.5" step="0.1" min="0.1" max="100" required>
               <span class="addon-suffix">kWh</span>
@@ -876,7 +878,7 @@
 
           <div class="form-touch-row">
             <label class="form-touch-label" for="entryOdometer">
-              Aktueller km-Stand
+              <span>Aktueller km-Stand</span>
               <span class="delta-tag-live" id="entryDeltaKmTag">+0 km</span>
             </label>
             <div class="input-addon-box">
@@ -889,7 +891,9 @@
         <!-- Preis & Gesamtkosten (Preis wird automatisch vom Ladeort geladen!) -->
         <div class="form-two-cols">
           <div class="form-touch-row">
-            <label class="form-touch-label" for="entryPrice">Preis (€/kWh)</label>
+            <label class="form-touch-label" for="entryPrice">
+              <span>Preis (€/kWh)</span>
+            </label>
             <div class="input-addon-box">
               <input type="number" id="entryPrice" class="form-touch-input" placeholder="0.35" step="0.01" min="0" required>
               <span class="addon-suffix">€</span>
@@ -897,7 +901,9 @@
           </div>
 
           <div class="form-touch-row">
-            <label class="form-touch-label" for="entryTotalCost">Gesamtpreis (€)</label>
+            <label class="form-touch-label" for="entryTotalCost">
+              <span>Gesamtpreis (€)</span>
+            </label>
             <div class="input-addon-box">
               <input type="number" id="entryTotalCost" class="form-touch-input bronze-highlight-input" placeholder="0.00" step="0.01" min="0" required>
               <span class="addon-suffix">€</span>
@@ -905,10 +911,12 @@
           </div>
         </div>
 
-        <!-- Akkustand vor & nach Ladung (% SoC) -->
+        <!-- Akkustand vor & nach Ladung -->
         <div class="form-two-cols">
           <div class="form-touch-row">
-            <label class="form-touch-label" for="entryBatterySocStart">Akkustand Start (% SoC)</label>
+            <label class="form-touch-label" for="entryBatterySocStart">
+              <span>Akkustand Start</span>
+            </label>
             <div class="input-addon-box">
               <input type="number" id="entryBatterySocStart" class="form-touch-input" placeholder="z.B. 17" step="1" min="0" max="100">
               <span class="addon-suffix">%</span>
@@ -917,7 +925,7 @@
 
           <div class="form-touch-row">
             <label class="form-touch-label" for="entryBatterySoc">
-              Akkustand Ende (% SoC)
+              <span>Akkustand Ende</span>
               <span class="delta-tag-live" id="entryDeltaSocTag" style="display: none;">+0%</span>
             </label>
             <div class="input-addon-box">
