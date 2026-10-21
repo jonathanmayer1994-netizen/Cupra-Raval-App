@@ -25,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=38">
+  <link rel="stylesheet" href="./style.css?v=39">
 
   <style id="critical-form-grid-fix">
     /* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerechte Ausrichtung) */
@@ -925,13 +925,30 @@
             <div class="ocr-card-texts">
               <div class="ocr-card-title-row">
                 <span class="ocr-card-title">Cupra App Screenshot</span>
+                <button type="button" class="btn-ocr-info" id="btnOcrInfo" aria-label="Information zum Screenshot-Scan" aria-expanded="false" title="Liest Lademenge (kWh) & Akkustand (Start/Ende) automatisch aus deinem Cupra App Screenshot aus">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </button>
               </div>
-              <div class="ocr-card-sub" id="ocrStatusText">Liest Lademenge & Akkustand (Start/Ende) automatisch aus</div>
+              <div class="ocr-card-sub" id="ocrStatusText" style="display: none;"></div>
             </div>
           </div>
           <button type="button" class="btn-ocr-trigger" id="btnTriggerOcrUpload">
             <span>Foto wählen</span>
           </button>
+        </div>
+        <!-- Aufklappbare Info-Box (erscheint beim Klick auf das Info-i) -->
+        <div class="ocr-info-banner" id="ocrInfoBanner" style="display: none;">
+          <div class="ocr-info-banner-inner">
+            <span class="ocr-info-banner-icon">ℹ️</span>
+            <div class="ocr-info-banner-text">
+              Liest Lademenge (kWh), Akkustand (Start &amp; Ende in %) sowie Datum automatisch aus deinem Cupra App Screenshot aus.
+            </div>
+            <button type="button" class="btn-ocr-info-close" id="btnCloseOcrInfo" aria-label="Info schließen">✕</button>
+          </div>
         </div>
         <input type="file" id="inputCupraScreenshot" accept="image/*" style="display: none;">
       </div>

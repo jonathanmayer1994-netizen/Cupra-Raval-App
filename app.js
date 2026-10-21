@@ -322,6 +322,9 @@
     DOM.ocrStatusText = document.getElementById('ocrStatusText');
     DOM.ocrCardIcon = document.getElementById('ocrCardIcon');
     DOM.ocrSpinner = document.getElementById('ocrSpinner');
+    DOM.btnOcrInfo = document.getElementById('btnOcrInfo');
+    DOM.ocrInfoBanner = document.getElementById('ocrInfoBanner');
+    DOM.btnCloseOcrInfo = document.getElementById('btnCloseOcrInfo');
     DOM.entryLocationId = document.getElementById('entryLocationId');
     DOM.entryKwh = document.getElementById('entryKwh');
     DOM.entryOdometer = document.getElementById('entryOdometer');
@@ -2147,7 +2150,27 @@ function createOutput(data, callback) {
     }
     DOM.formChargeEntry.addEventListener('submit', handleSaveChargeEntry);
 
-    // Cupra App Screenshot OCR Upload Events
+    // Cupra App Screenshot OCR Upload & Info Events
+    if (DOM.btnOcrInfo) {
+      DOM.btnOcrInfo.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleOcrInfo();
+      });
+    }
+
+    if (DOM.btnCloseOcrInfo) {
+      DOM.btnCloseOcrInfo.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setOcrInfoVisible(false);
+      });
+    }
+
+    if (DOM.ocrInfoBanner) {
+      DOM.ocrInfoBanner.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    }
+
     if (DOM.btnTriggerOcrUpload) {
       DOM.btnTriggerOcrUpload.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2157,7 +2180,12 @@ function createOutput(data, callback) {
 
     if (DOM.cupraOcrUploadCard) {
       DOM.cupraOcrUploadCard.addEventListener('click', (e) => {
-        if (e.target !== DOM.btnTriggerOcrUpload && !e.target.closest('#btnTriggerOcrUpload')) {
+        if (
+          e.target !== DOM.btnTriggerOcrUpload &&
+          !e.target.closest('#btnTriggerOcrUpload') &&
+          !e.target.closest('#btnOcrInfo') &&
+          !e.target.closest('#ocrInfoBanner')
+        ) {
           if (DOM.inputCupraScreenshot) DOM.inputCupraScreenshot.click();
         }
       });
@@ -6670,10 +6698,31 @@ function createOutput(data, callback) {
   // =========================================================================
   // CUPRA APP SCREENSHOT OCR SCANNER & AUTO-FILLER
   // =========================================================================
+  function setOcrInfoVisible(show) {
+    if (!DOM.ocrInfoBanner) return;
+    const isVisible = show !== undefined ? Boolean(show) : (DOM.ocrInfoBanner.style.display !== 'none');
+    DOM.ocrInfoBanner.style.display = isVisible ? 'block' : 'none';
+    if (DOM.btnOcrInfo) {
+      DOM.btnOcrInfo.classList.toggle('active', isVisible);
+      DOM.btnOcrInfo.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
+    }
+  }
+
+  function toggleOcrInfo() {
+    if (!DOM.ocrInfoBanner) return;
+    const isCurrentlyHidden = DOM.ocrInfoBanner.style.display === 'none' || !DOM.ocrInfoBanner.style.display;
+    setOcrInfoVisible(isCurrentlyHidden);
+    triggerHaptic();
+  }
+
   function resetOcrUploadCard() {
     if (!DOM.cupraOcrUploadCard) return;
     DOM.cupraOcrUploadCard.className = 'cupra-ocr-upload-card';
-    if (DOM.ocrStatusText) DOM.ocrStatusText.textContent = 'Liest Lademenge & Akkustand (Start/Ende) automatisch aus';
+    if (DOM.ocrStatusText) {
+      DOM.ocrStatusText.textContent = '';
+      DOM.ocrStatusText.style.display = 'none';
+    }
+    setOcrInfoVisible(false);
     if (DOM.ocrCardIcon) {
       DOM.ocrCardIcon.textContent = '📸';
       DOM.ocrCardIcon.style.display = 'block';
@@ -6691,7 +6740,10 @@ function createOutput(data, callback) {
       DOM.cupraOcrUploadCard.classList.remove('ocr-success');
       if (DOM.ocrSpinner) DOM.ocrSpinner.style.display = 'block';
       if (DOM.ocrCardIcon) DOM.ocrCardIcon.style.display = 'none';
-      if (DOM.ocrStatusText) DOM.ocrStatusText.textContent = message || 'Screenshot wird per KI analysiert...';
+      if (DOM.ocrStatusText) {
+        DOM.ocrStatusText.textContent = message || 'Screenshot wird per KI analysiert...';
+        DOM.ocrStatusText.style.display = 'block';
+      }
       if (DOM.btnTriggerOcrUpload) DOM.btnTriggerOcrUpload.disabled = true;
     } else {
       DOM.cupraOcrUploadCard.classList.remove('ocr-scanning');
@@ -6734,6 +6786,7 @@ function createOutput(data, callback) {
       setOcrLoading(false);
       if (DOM.ocrStatusText) {
         DOM.ocrStatusText.textContent = '⚠️ Texterkennung fehlgeschlagen. Bitte manuell eingeben.';
+        DOM.ocrStatusText.style.display = 'block';
       }
       showToast('⚠️ Screenshot konnte nicht gelesen werden');
       return null;
@@ -6931,6 +6984,7 @@ function createOutput(data, callback) {
       if (DOM.ocrCardIcon) DOM.ocrCardIcon.textContent = '✨';
       if (DOM.ocrStatusText) {
         DOM.ocrStatusText.innerHTML = `<strong>${filledLabels.join(' • ')}</strong> automatisch eingetragen ✓`;
+        DOM.ocrStatusText.style.display = 'block';
       }
       const btnSpan = DOM.btnTriggerOcrUpload ? DOM.btnTriggerOcrUpload.querySelector('span') : null;
       if (btnSpan) btnSpan.textContent = 'Anderes Bild';
@@ -6940,6 +6994,7 @@ function createOutput(data, callback) {
     } else {
       if (DOM.ocrStatusText) {
         DOM.ocrStatusText.textContent = '⚠️ Keine eindeutigen Werte erkannt. Bitte manuell eintragen.';
+        DOM.ocrStatusText.style.display = 'block';
       }
       showToast('⚠️ Keine Ladedaten im Bild erkannt');
     }
