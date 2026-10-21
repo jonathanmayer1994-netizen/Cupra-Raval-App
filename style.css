@@ -3213,6 +3213,59 @@ input[type="number"] {
 }
 .form-touch-row { display: flex; flex-direction: column; gap: 6px; }
 
+/* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerecht) */
+.form-kwh-odo-grid {
+  display: grid;
+  grid-template-columns: 114px 1fr;
+  grid-template-rows: auto 50px;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: end;
+  width: 100%;
+}
+
+.form-two-cols-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: auto 50px;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: end;
+  width: 100%;
+}
+
+.form-kwh-odo-grid > .form-touch-label,
+.form-two-cols-grid > .form-touch-label {
+  grid-row: 1;
+  margin-bottom: 0;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--cupra-bronze-light);
+}
+
+.form-kwh-odo-grid > .input-addon-box,
+.form-two-cols-grid > .input-addon-box {
+  grid-row: 2;
+  height: 50px;
+  align-self: start;
+}
+
+.form-kwh-odo-grid .box-kwh .form-touch-input {
+  padding-right: 52px !important;
+}
+
+.form-kwh-odo-grid .box-odo .form-touch-input {
+  padding-right: 44px !important;
+}
+
 /* Kapsel-Labels im Cupra Bronze Design */
 .form-touch-label {
   font-size: 0.67rem;
