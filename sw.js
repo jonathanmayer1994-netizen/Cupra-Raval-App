@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raval-charge-v36';
+const CACHE_NAME = 'raval-charge-v37';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS_TO_CACHE = [
   './weatherService.js',
   './app.js',
   './manifest.json',
+  './cupra-raval-icon.png',
   './icon.svg',
   './apple-touch-icon.png',
   './apple-touch-icon-precomposed.png',
