@@ -21,6 +21,103 @@ function getTargetSheet() {
 }
 
 /**
+ * Holt oder erstellt das Tabellenblatt "Vehicle_Config" für Fahrzeugspezifikationen & THG
+ */
+function getVehicleConfigSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("Vehicle_Config");
+  if (!sheet) {
+    sheet = ss.insertSheet("Vehicle_Config");
+    const headers = ["Parameter", "Wert", "Beschreibung", "Aktualisiert"];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    sheet.setFrozenRows(1);
+    try {
+      sheet.setColumnWidth(1, 170);
+      sheet.setColumnWidth(2, 190);
+      sheet.setColumnWidth(3, 270);
+      sheet.setColumnWidth(4, 210);
+    } catch (eW) {}
+  }
+  return sheet;
+}
+
+/**
+ * Speichert Fahrzeug- und THG-Konfiguration in "Vehicle_Config"
+ */
+function saveVehicleConfigToSheet(config) {
+  if (!config || typeof config !== "object") return;
+  const sheet = getVehicleConfigSheet();
+  const now = new Date().toISOString();
+
+  const defs = [
+    { key: "model", label: "Fahrzeugmodell", desc: "Modellbezeichnung", val: config.model || "" },
+    { key: "batteryKwh", label: "Batteriekapazität (kWh)", desc: "Nettokapazität Akku", val: config.batteryKwh !== undefined ? config.batteryKwh : 52.0 },
+    { key: "powerPs", label: "Leistung (PS)", desc: "Motorleistung in PS", val: config.powerPs !== undefined ? config.powerPs : 211 },
+    { key: "currentOdo", label: "Aktueller km-Stand", desc: "Zuletzt erfasster Gesamtkilometerstand", val: config.currentOdo !== undefined ? config.currentOdo : 0 },
+    { key: "currentSoc", label: "Aktueller SoC (%)", desc: "Zuletzt gemeldeter Batteriestand", val: config.currentSoc !== undefined ? config.currentSoc : "" },
+    { key: "startOdo", label: "Start km-Stand", desc: "Kilometerstand bei Übernahme/Zulassung", val: config.startOdo !== undefined ? config.startOdo : 9 },
+    { key: "thgYear", label: "THG Quote Jahr", desc: "Aktuelles Berechnungsjahr der THG-Quote", val: config.thgYear !== undefined ? config.thgYear : new Date().getFullYear() },
+    { key: "thgAmount", label: "THG Quote Betrag (€)", desc: "Jahresprämie THG-Gutschrift", val: config.thgAmount !== undefined ? config.thgAmount : 110.00 },
+    { key: "thgActive", label: "THG Quote Aktiv", desc: "Wird die THG-Quote mit Ladekosten gegengerechnet?", val: config.thgActive === true || config.thgActive === "true" ? "Ja" : "Nein" },
+    { key: "thgStatus", label: "THG Status", desc: "Status der THG-Prämie (active/inactive)", val: config.thgStatus || "active" }
+  ];
+
+  const lastRow = sheet.getLastRow();
+  const existingMap = {};
+  if (lastRow > 1) {
+    const keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = 0; i < keys.length; i++) {
+      const k = String(keys[i][0]).trim();
+      if (k) existingMap[k] = i + 2;
+    }
+  }
+
+  defs.forEach(function(d) {
+    const targetRow = existingMap[d.key] || existingMap[d.label];
+    if (targetRow) {
+      sheet.getRange(targetRow, 2).setValue(d.val);
+      sheet.getRange(targetRow, 3).setValue(d.desc);
+      sheet.getRange(targetRow, 4).setValue(now);
+    } else {
+      sheet.appendRow([d.key, d.val, d.desc, now]);
+      existingMap[d.key] = sheet.getLastRow();
+    }
+  });
+}
+
+/**
+ * Liest gespeicherte Fahrzeug- und THG-Konfiguration aus "Vehicle_Config"
+ */
+function getVehicleConfigFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Vehicle_Config");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return null;
+  }
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  const config = {};
+  for (let i = 0; i < rows.length; i++) {
+    const key = String(rows[i][0] || "").trim();
+    const val = rows[i][1];
+    if (!key) continue;
+
+    if (key === "model" || key === "Fahrzeugmodell") config.model = String(val);
+    else if (key === "batteryKwh" || key.indexOf("Batteriekapazität") !== -1) config.batteryKwh = parseNum(val);
+    else if (key === "powerPs" || key.indexOf("Leistung") !== -1) config.powerPs = parseNum(val);
+    else if (key === "currentOdo" || key.indexOf("Aktueller km-Stand") !== -1) config.currentOdo = parseNum(val);
+    else if (key === "currentSoc" || key.indexOf("Aktueller SoC") !== -1) config.currentSoc = (val !== "" && val !== null && val !== undefined) ? parseNum(val) : "";
+    else if (key === "startOdo" || key.indexOf("Start km-Stand") !== -1) config.startOdo = parseNum(val);
+    else if (key === "thgYear" || key.indexOf("THG Quote Jahr") !== -1) config.thgYear = parseNum(val);
+    else if (key === "thgAmount" || key.indexOf("THG Quote Betrag") !== -1) config.thgAmount = parseNum(val);
+    else if (key === "thgActive" || key.indexOf("THG Quote Aktiv") !== -1) config.thgActive = (val === true || String(val).toLowerCase() === "ja" || String(val).toLowerCase() === "true");
+    else if (key === "thgStatus" || key.indexOf("THG Status") !== -1) config.thgStatus = String(val);
+  }
+  return config;
+}
+
+/**
  * Liest die vorhandenen Spaltenüberschriften aus Zeile 1
  * und baut eine dynamische Spalten-Zuordnungs-Map auf.
  */
@@ -173,12 +270,19 @@ function doGet(e) {
         message: "Cupra Raval Cloud API ist betriebsbereit!",
         sheetName: sheet.getName(),
         rows: Math.max(0, sheet.getLastRow() - 1),
+        hasVehicleConfig: !!SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Vehicle_Config"),
         timestamp: new Date().toISOString()
       };
       return createOutput(pingResult, callback);
     }
 
-    // 2. Einzelnes Ereignis löschen (pro Ereignis, niemals alle Daten!)
+    // 2. Fahrzeug-Konfiguration & THG abrufen
+    if (action === "get_config" || action === "get_vehicle") {
+      const cfg = getVehicleConfigFromSheet();
+      return createOutput({ status: "success", action: "get_config", config: cfg }, callback);
+    }
+
+    // 3. Einzelnes Ereignis löschen (pro Ereignis, niemals alle Daten!)
     if (action === "delete") {
       const targetId = e && e.parameter ? (e.parameter.id || e.parameter.ID) : null;
       let count = 0;
@@ -188,13 +292,13 @@ function doGet(e) {
       return createOutput({ status: "success", action: "delete", id: targetId, deleted: count }, callback);
     }
 
-    // 3. Dummy-Zeilen (0 kWh) bereinigen
+    // 4. Dummy-Zeilen (0 kWh) bereinigen
     if (action === "cleanup") {
       const count = cleanDummyRows(sheet, colMap);
       return createOutput({ status: "success", action: "cleanup", cleaned: count }, callback);
     }
 
-    // 4. Ladedaten liefern
+    // 5. Ladedaten liefern
     const lastRow = sheet.getLastRow();
     const sessions = [];
 
@@ -310,6 +414,13 @@ function doPost(e) {
 
     const action = payload.action || (e && e.parameter && e.parameter.action) || "create";
     const colMap = getHeaderColumnMap(sheet);
+
+    // AKTION: Fahrzeug-Konfiguration & THG speichern in Tabellenblatt "Vehicle_Config"
+    if (action === "save_config" || action === "save_vehicle") {
+      const cfg = payload.config || payload.vehicle || payload;
+      saveVehicleConfigToSheet(cfg);
+      return createOutput({ status: "success", action: "save_config", timestamp: new Date().toISOString() });
+    }
 
     // AKTION: Löschen (Nur pro Ereignis, niemals alle Daten!)
     if (action === "delete") {

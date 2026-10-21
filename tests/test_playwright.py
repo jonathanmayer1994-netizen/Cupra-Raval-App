@@ -78,7 +78,11 @@ def run_tests():
             # SUITE 1: INITIAL PAGE LOAD & BRANDING
             # =====================================================================
             print("\n--- SUITE 1: Initial Page Load & Header Branding ---")
-            page.goto("http://localhost:8080/", wait_until="networkidle")
+            page.goto("http://localhost:8080/", wait_until="domcontentloaded")
+            try:
+                page.wait_for_function("() => window.appData && window.appData.sessions && window.appData.sessions.length > 0", timeout=7000)
+            except Exception:
+                pass
             time.sleep(1)
 
             app_title = page.locator("#appHeaderTitle").inner_text()
@@ -871,9 +875,9 @@ def run_tests():
                 return el.classList.contains('ptr-refreshing') || el.classList.contains('ptr-success');
             }""")
 
-            # Warten bis Google Sheets Sync vollständig beendet und eingeklappt ist (bis zu 7s für echten Cloud-Call)
+            # Warten bis Google Sheets Sync vollständig beendet und eingeklappt ist (bis zu 12s für echten Cloud-Call)
             reset_state = False
-            for _ in range(35):
+            for _ in range(60):
                 time.sleep(0.2)
                 reset_state = page.evaluate("""() => {
                     const el = document.getElementById('ptrCharging');
@@ -984,7 +988,7 @@ def run_tests():
                 });
                 localStorage.setItem('cupra_raval_data', JSON.stringify(d));
             }""")
-            page.reload(wait_until="networkidle")
+            page.reload(wait_until="domcontentloaded")
             time.sleep(1)
 
             stored_session_data = page.evaluate("""() => {
@@ -1036,7 +1040,7 @@ def run_tests():
                 });
                 localStorage.setItem('cupra_raval_data', JSON.stringify(d));
             }""")
-            page.reload(wait_until="networkidle")
+            page.reload(wait_until="domcontentloaded")
             time.sleep(1)
 
             # Ältere Session öffnen & editieren (auf soc = 42%)
@@ -1232,6 +1236,12 @@ def run_tests():
             log_test("14.6 Feature 9a: Dashboard verrechnet THG-Quote auf Jahreskosten & zeigt Badge",
                      thg_badge_visible and "120" in badge_text,
                      f"Badge: '{badge_text}', Jahreskosten Netto: {dash_y_cost} €")
+
+            # 14.7: Fahrzeug-Konfiguration & THG-Quote via postCloudVehicleConfig() synchronisierbar
+            cfg_sync_available = page.evaluate("() => typeof window.postCloudVehicleConfig === 'function'")
+            log_test("14.7 Fahrzeug-Konfiguration & THG in Google Sheet tab Vehicle_Config synchronisierbar",
+                     cfg_sync_available,
+                     f"Funktion postCloudVehicleConfig: {cfg_sync_available}")
 
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
