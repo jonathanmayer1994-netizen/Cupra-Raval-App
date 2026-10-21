@@ -25,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=35">
+  <link rel="stylesheet" href="./style.css?v=36">
 
   <style id="critical-form-grid-fix">
     /* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerechte Ausrichtung) */
@@ -89,6 +89,55 @@
       align-items: center !important;
       flex-shrink: 0 !important;
       line-height: 1.2 !important;
+    }
+
+    /* 4-Zellen Grid für Fahrzeugdaten (Einstellungen Tab 4) */
+    .specs-grid-two {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1fr) !important;
+      grid-template-rows: auto 50px !important;
+      column-gap: 10px !important;
+      row-gap: 6px !important;
+      align-items: end !important;
+      width: 100% !important;
+    }
+    .specs-grid-two.specs-grid-odo-soc {
+      grid-template-columns: 1.22fr 0.78fr !important;
+    }
+    .specs-grid-two > .specs-field-label {
+      grid-row: 1 !important;
+      margin-bottom: 0 !important;
+      min-height: 22px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 4px !important;
+      white-space: nowrap !important;
+    }
+    .specs-grid-two > .specs-input-wrapper {
+      grid-row: 2 !important;
+      height: 50px !important;
+      align-self: start !important;
+      margin-top: 0 !important;
+    }
+    .specs-label-tag {
+      font-size: 0.67rem !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.03em !important;
+      text-transform: uppercase !important;
+      color: var(--cupra-bronze-light) !important;
+      white-space: nowrap !important;
+    }
+    .specs-start-badge {
+      font-size: 0.65rem !important;
+      color: var(--text-muted) !important;
+      font-weight: 600 !important;
+      margin-left: auto !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      line-height: 1 !important;
     }
   </style>
 </head>
@@ -602,58 +651,42 @@
 
               <!-- 2-Spalten Grid für Technische Daten: Batterie & Leistung -->
               <div class="specs-grid-two">
-                
-                <!-- Feld 2: Batteriekapazität -->
-                <div class="specs-field-group">
-                  <label class="specs-field-label" for="cfgBatteryCap">
-                    <span class="specs-label-tag">BATTERIE</span>
-                  </label>
-                  <div class="specs-input-wrapper unit-attached">
-                    <span class="specs-field-icon">🔋</span>
-                    <input type="number" id="cfgBatteryCap" class="specs-input-control num-val" value="52.0" step="0.5" min="20" max="150">
-                    <span class="specs-unit-badge">kWh</span>
-                  </div>
+                <label class="specs-field-label" for="cfgBatteryCap">
+                  <span class="specs-label-tag">BATTERIE</span>
+                </label>
+                <label class="specs-field-label" for="cfgPower">
+                  <span class="specs-label-tag">LEISTUNG</span>
+                </label>
+                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-field-icon">🔋</span>
+                  <input type="number" id="cfgBatteryCap" class="specs-input-control num-val" value="52.0" step="0.5" min="20" max="150">
+                  <span class="specs-unit-badge">kWh</span>
                 </div>
-
-                <!-- Feld 3: Motorleistung -->
-                <div class="specs-field-group">
-                  <label class="specs-field-label" for="cfgPower">
-                    <span class="specs-label-tag">LEISTUNG</span>
-                  </label>
-                  <div class="specs-input-wrapper unit-attached">
-                    <span class="specs-field-icon">⚡</span>
-                    <input type="number" id="cfgPower" class="specs-input-control num-val" value="211" step="1" min="50" max="600">
-                    <span class="specs-unit-badge">PS</span>
-                  </div>
+                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-field-icon">⚡</span>
+                  <input type="number" id="cfgPower" class="specs-input-control num-val" value="211" step="1" min="50" max="600">
+                  <span class="specs-unit-badge">PS</span>
                 </div>
-
               </div>
 
-              <!-- 2-Spalten Grid: Kilometerstand & Aktueller Akkustand -->
-              <div class="specs-grid-two">
-                <!-- Feld 4: Kilometerstand (Laufleistung) -->
-                <div class="specs-field-group">
-                  <label class="specs-field-label" for="cfgCurrentOdo">
-                    <span class="specs-label-tag">KILOMETERSTAND</span>
-                    <span style="font-size:0.72rem; color:var(--text-muted); font-weight:500; margin-left:auto;">(Start: 9 km)</span>
-                  </label>
-                  <div class="specs-input-wrapper unit-attached">
-                    <span class="specs-field-icon">📍</span>
-                    <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
-                    <span class="specs-unit-badge">km</span>
-                  </div>
+              <!-- 2-Spalten Grid: Kilometerstand & Aktueller Akkustand (4-Zellen CSS-Grid) -->
+              <div class="specs-grid-two specs-grid-odo-soc">
+                <label class="specs-field-label" for="cfgCurrentOdo">
+                  <span class="specs-label-tag">KILOMETERSTAND</span>
+                  <span class="specs-start-badge">(Start: 9 km)</span>
+                </label>
+                <label class="specs-field-label" for="cfgCurrentSoc">
+                  <span class="specs-label-tag">AKKUSTAND (SoC)</span>
+                </label>
+                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-field-icon">📍</span>
+                  <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
+                  <span class="specs-unit-badge">km</span>
                 </div>
-
-                <!-- Feld 5: Aktueller Akkustand (optional für echte KI-Berechnung) -->
-                <div class="specs-field-group">
-                  <label class="specs-field-label" for="cfgCurrentSoc">
-                    <span class="specs-label-tag">AKKUSTAND (SoC)</span>
-                  </label>
-                  <div class="specs-input-wrapper unit-attached">
-                    <span class="specs-field-icon">⚡</span>
-                    <input type="number" id="cfgCurrentSoc" class="specs-input-control num-val" min="0" max="100" step="1" placeholder="z.B. 65">
-                    <span class="specs-unit-badge">%</span>
-                  </div>
+                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-field-icon">⚡</span>
+                  <input type="number" id="cfgCurrentSoc" class="specs-input-control num-val" min="0" max="100" step="1" placeholder="z.B. 65">
+                  <span class="specs-unit-badge">%</span>
                 </div>
               </div>
 

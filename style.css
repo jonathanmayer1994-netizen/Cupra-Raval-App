@@ -2369,8 +2369,46 @@ body {
 
 .specs-grid-two {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: auto 50px;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: end;
+  width: 100%;
+}
+
+.specs-grid-two.specs-grid-odo-soc {
+  grid-template-columns: 1.22fr 0.78fr;
+}
+
+.specs-grid-two > .specs-field-label {
+  grid-row: 1;
+  margin-bottom: 0;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.specs-grid-two > .specs-input-wrapper {
+  grid-row: 2;
+  height: 50px;
+  align-self: start;
+  margin-top: 0;
+}
+
+.specs-start-badge {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .specs-unit-badge {
