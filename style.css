@@ -4464,9 +4464,14 @@ select option {
 
 .thg-inputs-grid {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: 1fr 1.35fr;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+#cfgThgYear {
+  font-size: 0.95rem;
+  letter-spacing: -0.2px;
 }
 
 .thg-card-hint {
