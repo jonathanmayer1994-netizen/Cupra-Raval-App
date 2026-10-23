@@ -384,6 +384,107 @@
 
         <!-- Unteransicht A: Ladehistorie -->
         <div id="sub-history" class="charging-sub-view active">
+
+          <!-- ======================================================= -->
+          <!-- BAYRHOFS ABRECHNUNG & INTELLIGENTER ZAHLUNGSABGLEICH    -->
+          <!-- ======================================================= -->
+          <div class="swift-glass-card bayrhofs-reconcile-card" id="bayrhofsReconcileCard">
+            <div class="reconcile-card-header" id="reconcileCardHeader">
+              <div class="reconcile-header-content">
+                <div class="reconcile-badge-icon">💶</div>
+                <div class="reconcile-header-text">
+                  <div class="reconcile-title-row">
+                    <span class="reconcile-title">Bayrhofs Sammelabrechnung</span>
+                    <span class="reconcile-status-chip" id="reconcileStatusChip">Berechne...</span>
+                  </div>
+                  <div class="reconcile-subtext" id="reconcileHeaderSubtext">Spätere Summenabrechnung für Bayrhofs</div>
+                </div>
+              </div>
+              <button type="button" class="btn-reconcile-toggle" id="btnToggleReconcileCollapse" aria-label="Abrechnungs-Bereich öffnen oder schließen">
+                <span class="reconcile-chevron" id="reconcileChevronIcon">▾</span>
+              </button>
+            </div>
+
+            <!-- Schnellübersicht: Offen vs. Abgerechnet -->
+            <div class="reconcile-metrics-grid">
+              <div class="reconcile-metric-pill unpaid" id="pillFilterUnpaidBayrhofs" title="Tippen um nur offene Bayrhofs-Ladungen anzuzeigen">
+                <div class="metric-top">
+                  <span class="metric-dot unpaid"></span>
+                  <span class="metric-label">Offen bei Bayrhofs</span>
+                </div>
+                <div class="metric-sum" id="reconcileUnpaidSum">0,00 €</div>
+                <div class="metric-sub" id="reconcileUnpaidCount">0 Ladungen</div>
+              </div>
+
+              <div class="reconcile-metric-pill paid" id="pillFilterPaidBayrhofs" title="Tippen um bereits abgerechnete Bayrhofs-Ladungen anzuzeigen">
+                <div class="metric-top">
+                  <span class="metric-dot paid"></span>
+                  <span class="metric-label">Bereits abgerechnet</span>
+                </div>
+                <div class="metric-sum" id="reconcilePaidSum">0,00 €</div>
+                <div class="metric-sub" id="reconcilePaidCount">0 Ladungen</div>
+              </div>
+            </div>
+
+            <!-- Aufklappbarer Bereich: Intelligenter Zahlungsabgleich -->
+            <div class="reconcile-expandable-content" id="reconcileExpandableContent">
+              <div class="reconcile-input-container">
+                <div class="reconcile-input-title-row">
+                  <label class="form-touch-label" for="inputReconcileAmount" style="margin-bottom:0;">
+                    <span>Gezahlten Betrag eingeben</span>
+                  </label>
+                  <span class="reconcile-auto-note">Intelligente Zuordnung</span>
+                </div>
+                <div class="reconcile-input-action-row">
+                  <div class="input-addon-box reconcile-input-box">
+                    <input type="number" id="inputReconcileAmount" class="form-touch-input" placeholder="z.B. 42.50" step="0.01" min="0.01">
+                    <span class="addon-suffix">€</span>
+                  </div>
+                  <button type="button" class="btn-swift-primary-bronze btn-run-reconcile" id="btnRunReconcile">
+                    <span>🧠 Zuordnen</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Dynamische Match-Ergebnisbox -->
+              <div class="reconcile-result-panel" id="reconcileResultPanel" style="display: none;">
+                <div class="reconcile-result-header" id="reconcileResultHeader">
+                  <div class="result-badge-badge" id="reconcileResultBadge">✨ Exakte Übereinstimmung</div>
+                  <div class="result-explanation" id="reconcileResultExplanation">Gefundene Ladungen für deinen Zahlungsbetrag:</div>
+                </div>
+
+                <!-- Checkliste der vorgeschlagenen Ladungen -->
+                <div class="reconcile-checklist-stream" id="reconcileChecklistStream">
+                  <!-- Dynamische Zeilen -->
+                </div>
+
+                <!-- Zusammenfassungs-Leiste -->
+                <div class="reconcile-summary-bar">
+                  <div class="summary-stat-cell">
+                    <span class="summary-stat-lbl">Ausgewählt:</span>
+                    <span class="summary-stat-num" id="reconcileSelectedTotal">0,00 €</span>
+                  </div>
+                  <div class="summary-stat-cell">
+                    <span class="summary-stat-lbl">Zahlbetrag:</span>
+                    <span class="summary-stat-num" id="reconcileTargetAmount">0,00 €</span>
+                  </div>
+                  <div class="summary-stat-cell">
+                    <span class="summary-stat-lbl">Differenz:</span>
+                    <span class="summary-stat-diff zero" id="reconcileDiffDisplay">0,00 €</span>
+                  </div>
+                </div>
+
+                <!-- Aktionen -->
+                <div class="reconcile-actions-row">
+                  <button type="button" class="btn-swift-secondary" id="btnCancelReconcile">Zurücksetzen</button>
+                  <button type="button" class="btn-swift-primary-bronze btn-confirm-reconcile" id="btnConfirmReconcile">
+                    <span>✓ Als bezahlt verbuchen</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Dynamische Filter-Pills nach Ladeorten & PV -->
           <div class="history-filter-scroll-wrapper">
             <div class="filter-chips-rail" id="chargingFilterRail">
@@ -1102,6 +1203,21 @@
         <div class="form-touch-row">
           <label class="form-touch-label" for="entryNotes">Notiz (optional)</label>
           <input type="text" id="entryNotes" class="form-touch-input" placeholder="z.B. PV-Peak genutzt, Autobahnraststätte...">
+        </div>
+
+        <!-- Zahlungsstatus (Wichtig: Nur Bayrhofs wird über spätere Sammelabrechnung abgerechnet) -->
+        <div class="form-touch-row" id="entryPaymentStatusRow">
+          <label class="form-touch-label" for="entryPaymentPaidCheckbox">
+            <span>Zahlungsstatus</span>
+            <span class="pay-hint-label" id="entryPaymentHint">Sammelabrechnung (Bayrhofs)</span>
+          </label>
+          <div class="payment-status-selector-box" id="entryPaymentStatusBox">
+            <label class="payment-status-toggle-option" id="entryPaymentOptionLabel">
+              <input type="checkbox" id="entryPaymentPaidCheckbox" class="payment-checkbox">
+              <span class="payment-toggle-indicator" id="entryPaymentIndicator"></span>
+              <span class="payment-toggle-text" id="entryPaymentStatusText">Noch offen (wird später abgerechnet)</span>
+            </label>
+          </div>
         </div>
 
         <!-- Buttons -->

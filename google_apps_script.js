@@ -133,7 +133,7 @@ function getHeaderColumnMap(sheet) {
   if (!headers || headers.every(h => !h || String(h).trim() === "")) {
     const defaultHeaders = [
       "ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz",
-      "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)", "Gefahrene km", "Verbrauch (kWh/100km)", "Wirkungsgrad (%)"
+      "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)", "Gefahrene km", "Verbrauch (kWh/100km)", "Wirkungsgrad (%)", "Bezahlt"
     ];
     sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
     sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
@@ -157,6 +157,7 @@ function getHeaderColumnMap(sheet) {
     deltaKm: -1,
     consumption: -1,
     efficiency: -1,
+    paid: -1,
     updatedAt: -1,
     rawHeaders: headers
   };
@@ -191,6 +192,8 @@ function getHeaderColumnMap(sheet) {
       map.notes = i;
     } else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) {
       map.odometer = i;
+    } else if (h.includes("bezahlt") || h.includes("zahlung") || h.includes("paid") || h.includes("status")) {
+      map.paid = i;
     } else if (h.includes("updated") || h.includes("aktualisiert")) {
       map.updatedAt = i;
     }
@@ -225,8 +228,8 @@ function getHeaderColumnMap(sheet) {
     }
   }
 
-  // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand oder Akkustand-Spalten, automatisch anfügen
-  if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0)) {
+  // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand, Akkustand oder Bezahlt-Spalten, automatisch anfügen
+  if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0 || map.paid < 0)) {
     let curCols = sheet.getLastColumn();
     if (map.odometer < 0) {
       curCols++;
@@ -245,6 +248,12 @@ function getHeaderColumnMap(sheet) {
       sheet.getRange(1, curCols).setValue("Akkustand Ende (%)").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
       map.soc = curCols - 1;
       headers.push("Akkustand Ende (%)");
+    }
+    if (map.paid < 0) {
+      curCols++;
+      sheet.getRange(1, curCols).setValue("Bezahlt").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+      map.paid = curCols - 1;
+      headers.push("Bezahlt");
     }
     map.rawHeaders = headers;
   }
@@ -339,6 +348,21 @@ function doGet(e) {
         const deltaKmVal = colMap.deltaKm >= 0 ? parseNum(row[colMap.deltaKm]) : null;
         const effVal = colMap.efficiency >= 0 ? parseNum(row[colMap.efficiency]) : null;
 
+        const isBayrhof = locVal.toLowerCase().indexOf("bayrhof") !== -1;
+        let paidVal = true;
+        if (colMap.paid >= 0) {
+          const rawPaid = row[colMap.paid];
+          if (rawPaid !== "" && rawPaid !== null && rawPaid !== undefined) {
+            const sPaid = String(rawPaid).toLowerCase().trim();
+            paidVal = (sPaid === "ja" || sPaid === "true" || sPaid === "1" || sPaid.indexOf("bezahlt") !== -1);
+          } else {
+            // Nur Bayrhofs wird summenabgerechnet (Default: offen), alles andere immer direkt bezahlt (true)
+            paidVal = !isBayrhof;
+          }
+        } else {
+          paidVal = !isBayrhof;
+        }
+
         // Dummy-Zeilen mit 0 kWh überspringen
         if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
           continue;
@@ -380,7 +404,11 @@ function doGet(e) {
           consumption: consVal,
           "Verbrauch (kWh/100km)": consVal,
           efficiency: effVal,
-          "Wirkungsgrad (%)": effVal
+          "Wirkungsgrad (%)": effVal,
+          paid: paidVal,
+          bezahlt: paidVal,
+          Bezahlt: paidVal ? (isBayrhof ? "Ja" : "Ja (Direkt)") : "Nein",
+          "Zahlungsstatus": paidVal ? "Bezahlt" : "Offen"
         });
       }
     }
@@ -449,6 +477,26 @@ function doPost(e) {
       return createOutput({ status: "success", action: "bulk_sync", count: savedCount });
     }
 
+    // AKTION: Zahlungsstatus aktualisieren (z.B. für Bayrhofs Sammelabrechnung)
+    if (action === "mark_paid" || action === "update_payment") {
+      const targetIds = Array.isArray(payload.ids) ? payload.ids.map(String) : (payload.id ? [String(payload.id)] : []);
+      const paidState = payload.paid !== undefined ? (payload.paid === true || payload.paid === "true" || payload.paid === "Ja") : true;
+      let updatedCount = 0;
+      if (targetIds.length > 0 && colMap.paid >= 0 && sheet.getLastRow() > 1) {
+        const numRows = sheet.getLastRow() - 1;
+        const idColIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
+        const ids = sheet.getRange(2, idColIdx, numRows, 1).getValues();
+        for (let r = 0; r < ids.length; r++) {
+          const rowId = String(ids[r][0] || "").trim();
+          if (targetIds.includes(rowId)) {
+            sheet.getRange(r + 2, colMap.paid + 1).setValue(paidState ? "Ja" : "Nein");
+            updatedCount++;
+          }
+        }
+      }
+      return createOutput({ status: "success", action: "mark_paid", count: updatedCount, ids: targetIds });
+    }
+
     // AKTION: Einzelner Ladevorgang (Erstellen oder Aktualisieren)
     const session = payload.session || payload;
     upsertSessionWithMap(sheet, colMap, session);
@@ -491,6 +539,17 @@ function upsertSessionWithMap(sheet, colMap, s) {
   const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
   const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
 
+  // Zahlungsstatus bestimmen:
+  // Wichtig: Nur bei Bayrhofs Laden wird über eine spätere Summenabrechnung gemacht. Alles andere wird immer direkt bezahlt!
+  const isBayrhof = locStr.toLowerCase().indexOf("bayrhof") !== -1;
+  let isPaid = true;
+  if (isBayrhof) {
+    const rawPaid = s.paid !== undefined ? s.paid : (s.Bezahlt !== undefined ? s.Bezahlt : (s.bezahlt !== undefined ? s.bezahlt : false));
+    isPaid = (rawPaid === true || rawPaid === "true" || String(rawPaid).toLowerCase() === "ja" || String(rawPaid).toLowerCase().indexOf("bezahlt") !== -1);
+  } else {
+    isPaid = true; // Andere Standorte sind immer direkt bezahlt
+  }
+
   // Werte in die passenden Spalten schreiben
   if (colMap.id >= 0) rowData[colMap.id] = id;
   if (colMap.date >= 0) rowData[colMap.date] = dateStr;
@@ -501,6 +560,7 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
   if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
   if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
+  if (colMap.paid >= 0) rowData[colMap.paid] = isPaid ? (isBayrhof ? "Ja" : "Ja (Direkt)") : "Nein";
 
   const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
   const socNum = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "") ? parseNum(rawSoc) : null;

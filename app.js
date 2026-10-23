@@ -240,6 +240,32 @@
     DOM.ptrCharging = document.getElementById('ptrCharging');
     DOM.ptrChargingStatus = document.getElementById('ptrChargingStatus');
 
+    // Bayrhofs Abrechnung & Zahlungsabgleich
+    DOM.bayrhofsReconcileCard = document.getElementById('bayrhofsReconcileCard');
+    DOM.reconcileCardHeader = document.getElementById('reconcileCardHeader');
+    DOM.btnToggleReconcileCollapse = document.getElementById('btnToggleReconcileCollapse');
+    DOM.reconcileChevronIcon = document.getElementById('reconcileChevronIcon');
+    DOM.reconcileStatusChip = document.getElementById('reconcileStatusChip');
+    DOM.reconcileHeaderSubtext = document.getElementById('reconcileHeaderSubtext');
+    DOM.reconcileUnpaidSum = document.getElementById('reconcileUnpaidSum');
+    DOM.reconcileUnpaidCount = document.getElementById('reconcileUnpaidCount');
+    DOM.reconcilePaidSum = document.getElementById('reconcilePaidSum');
+    DOM.reconcilePaidCount = document.getElementById('reconcilePaidCount');
+    DOM.pillFilterUnpaidBayrhofs = document.getElementById('pillFilterUnpaidBayrhofs');
+    DOM.pillFilterPaidBayrhofs = document.getElementById('pillFilterPaidBayrhofs');
+    DOM.reconcileExpandableContent = document.getElementById('reconcileExpandableContent');
+    DOM.inputReconcileAmount = document.getElementById('inputReconcileAmount');
+    DOM.btnRunReconcile = document.getElementById('btnRunReconcile');
+    DOM.reconcileResultPanel = document.getElementById('reconcileResultPanel');
+    DOM.reconcileResultBadge = document.getElementById('reconcileResultBadge');
+    DOM.reconcileResultExplanation = document.getElementById('reconcileResultExplanation');
+    DOM.reconcileChecklistStream = document.getElementById('reconcileChecklistStream');
+    DOM.reconcileSelectedTotal = document.getElementById('reconcileSelectedTotal');
+    DOM.reconcileTargetAmount = document.getElementById('reconcileTargetAmount');
+    DOM.reconcileDiffDisplay = document.getElementById('reconcileDiffDisplay');
+    DOM.btnCancelReconcile = document.getElementById('btnCancelReconcile');
+    DOM.btnConfirmReconcile = document.getElementById('btnConfirmReconcile');
+
     // Analytics
     DOM.periodPills = document.querySelectorAll('.period-pill');
     DOM.analyticsSubtitle = document.getElementById('analyticsSubtitle');
@@ -352,6 +378,11 @@
     DOM.entryPrice = document.getElementById('entryPrice');
     DOM.entryTotalCost = document.getElementById('entryTotalCost');
     DOM.entryNotes = document.getElementById('entryNotes');
+    DOM.entryPaymentStatusRow = document.getElementById('entryPaymentStatusRow');
+    DOM.entryPaymentPaidCheckbox = document.getElementById('entryPaymentPaidCheckbox');
+    DOM.entryPaymentHint = document.getElementById('entryPaymentHint');
+    DOM.entryPaymentOptionLabel = document.getElementById('entryPaymentOptionLabel');
+    DOM.entryPaymentStatusText = document.getElementById('entryPaymentStatusText');
 
     // Location Picker Sheet
     DOM.modalLocationPickerSheet = document.getElementById('modalLocationPickerSheet');
@@ -602,7 +633,17 @@
           totalCost: total,
           location: locName,
           pvSurplus: isPv,
-          notes: String(s.notes || s.notiz || s.Notiz || '')
+          notes: String(s.notes || s.notiz || s.Notiz || ''),
+          paid: (() => {
+            const isBayrhof = isBayrhofsLocation(locName);
+            if (!isBayrhof) return true; // Alles außer Bayrhofs wird immer direkt bezahlt!
+            if (s.paid !== undefined && s.paid !== null) return Boolean(s.paid);
+            if (s.Bezahlt !== undefined && s.Bezahlt !== null) {
+              const bStr = String(s.Bezahlt).toLowerCase().trim();
+              return (bStr === 'ja' || bStr === 'true' || bStr === '1' || bStr.includes('bezahlt'));
+            }
+            return false; // Default für Bayrhofs ist offen
+          })()
         };
       });
 
@@ -708,6 +749,25 @@
     return Number(cleaned) || 0;
   }
 
+  function isBayrhofsLocation(loc) {
+    if (!loc) return false;
+    const name = typeof loc === 'object' ? (loc.name || '') : String(loc);
+    return name.toLowerCase().includes('bayrhof');
+  }
+
+  function isSessionPaid(s) {
+    if (!s) return false;
+    const loc = s.location || s.Ort || s.ort || '';
+    if (!isBayrhofsLocation(loc)) {
+      // Wichtig: Nur bei Bayrhofs Laden wird über eine spätere Summenabrechnung gemacht. Alles andere wird immer direkt bezahlt!
+      return true;
+    }
+    return Boolean(s.paid);
+  }
+
+  window.isBayrhofsLocation = isBayrhofsLocation;
+  window.isSessionPaid = isSessionPaid;
+
   function isValidSession(s) {
     if (!s) return false;
     const id = String(s.id || s.ID || '');
@@ -768,7 +828,16 @@
       totalCost: cost,
       location: locName,
       pvSurplus: Boolean(isPv),
-      notes: notesStr
+      notes: notesStr,
+      paid: (() => {
+        const isBayrhof = isBayrhofsLocation(locName);
+        if (!isBayrhof) return true; // Nicht-Bayrhofs wird immer direkt bezahlt!
+        const rawPaid = s.paid !== undefined ? s.paid : (s.Bezahlt !== undefined ? s.Bezahlt : (s.bezahlt !== undefined ? s.bezahlt : (s['Zahlungsstatus'] !== undefined ? s['Zahlungsstatus'] : undefined)));
+        if (rawPaid !== undefined && rawPaid !== null && rawPaid !== '') {
+          return (rawPaid === true || rawPaid === 'true' || String(rawPaid).toLowerCase() === 'ja' || String(rawPaid).toLowerCase().includes('bezahlt'));
+        }
+        return false;
+      })()
     };
   }
 
@@ -1078,6 +1147,9 @@
       eff = Math.min(100, Math.round((netKwh / kwh) * 1000) / 10);
     }
 
+    const isBayrhof = isBayrhofsLocation(loc);
+    const isPaid = isBayrhof ? Boolean(s.paid) : true;
+
     return {
       id,
       ID: id,
@@ -1125,8 +1197,40 @@
       consumption,
       'Verbrauch (kWh/100km)': consumption,
       efficiency: eff,
-      'Wirkungsgrad (%)': eff
+      'Wirkungsgrad (%)': eff,
+      paid: isPaid,
+      bezahlt: isPaid,
+      Bezahlt: isPaid ? (isBayrhof ? 'Ja' : 'Ja (Direkt)') : 'Nein',
+      'Zahlungsstatus': isPaid ? 'Bezahlt' : 'Offen'
     };
+  }
+
+  async function postCloudPaymentUpdate(sessionIds, paidStatus = true) {
+    if (!sessionIds || sessionIds.length === 0) return;
+    setSyncStatus('saving');
+    const apiUrl = getCloudApiUrl();
+    const payload = {
+      action: 'mark_paid',
+      ids: sessionIds,
+      paid: paidStatus,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      await fetch(apiUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      setTimeout(() => setSyncStatus('synced'), 700);
+    } catch (err) {
+      console.warn('Google Sheets Payment-Update POST Fehler, speichere in Offline-Queue:', err);
+      appData.pendingSyncQueue = appData.pendingSyncQueue || [];
+      appData.pendingSyncQueue.push(payload);
+      saveData();
+      setSyncStatus('offline');
+    }
   }
 
   async function deleteCloudSession(id) {
@@ -2585,6 +2689,72 @@ function createOutput(data, callback) {
     DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
     DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
 
+    // Bayrhofs Sammelabrechnung & Zahlungsabgleich Event Listeners
+    if (DOM.btnToggleReconcileCollapse) {
+      DOM.btnToggleReconcileCollapse.addEventListener('click', () => {
+        toggleBayrhofsReconcileCard();
+      });
+    }
+    if (DOM.reconcileCardHeader) {
+      DOM.reconcileCardHeader.addEventListener('click', (e) => {
+        if (!e.target.closest('#btnToggleReconcileCollapse')) {
+          toggleBayrhofsReconcileCard();
+        }
+      });
+    }
+    if (DOM.pillFilterUnpaidBayrhofs) {
+      DOM.pillFilterUnpaidBayrhofs.addEventListener('click', () => {
+        activeChargingFilter = 'unpaid_bayrhofs';
+        renderLocationFilterRail();
+        renderChargesStream();
+        triggerHaptic();
+      });
+    }
+    if (DOM.pillFilterPaidBayrhofs) {
+      DOM.pillFilterPaidBayrhofs.addEventListener('click', () => {
+        activeChargingFilter = 'Bayrhofs';
+        renderLocationFilterRail();
+        renderChargesStream();
+        triggerHaptic();
+      });
+    }
+    if (DOM.btnRunReconcile) {
+      DOM.btnRunReconcile.addEventListener('click', () => {
+        triggerReconcileCalculation();
+      });
+    }
+    if (DOM.inputReconcileAmount) {
+      DOM.inputReconcileAmount.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          triggerReconcileCalculation();
+        }
+      });
+      DOM.inputReconcileAmount.addEventListener('input', () => {
+        // Bei Betragseingabe automatisch vorberechnen falls Panel bereits sichtbar
+        if (DOM.reconcileResultPanel && DOM.reconcileResultPanel.style.display !== 'none') {
+          triggerReconcileCalculation();
+        }
+      });
+    }
+    if (DOM.btnCancelReconcile) {
+      DOM.btnCancelReconcile.addEventListener('click', () => {
+        if (DOM.reconcileResultPanel) DOM.reconcileResultPanel.style.display = 'none';
+        if (DOM.inputReconcileAmount) DOM.inputReconcileAmount.value = '';
+        triggerHaptic();
+      });
+    }
+    if (DOM.btnConfirmReconcile) {
+      DOM.btnConfirmReconcile.addEventListener('click', () => {
+        handleConfirmReconcile();
+      });
+    }
+    if (DOM.entryPaymentPaidCheckbox) {
+      DOM.entryPaymentPaidCheckbox.addEventListener('change', () => {
+        updateModalPaymentLabel();
+      });
+    }
+
     // Google Sheets Cloud Sync Buttons & Actions
     if (DOM.btnSyncCloud) {
       DOM.btnSyncCloud.addEventListener('click', () => {
@@ -2895,6 +3065,7 @@ function createOutput(data, callback) {
   // =========================================================================
   function renderAll() {
     renderDashboard();
+    renderBayrhofsReconcileCard();
     renderLocationFilterRail();
     renderWeatherLocationFilterRail();
     renderChargesStream();
@@ -4300,6 +4471,377 @@ function createOutput(data, callback) {
   // =========================================================================
   // TAB 2: LADEN & HISTORIE
   // =========================================================================
+  // =========================================================================
+  // TAB 2: LADEN, HISTORIE & BAYRHOFS SAMMELABRECHNUNG
+  // =========================================================================
+  let isReconcileCardCollapsed = false;
+  let activeReconcileMatch = null;
+
+  function toggleBayrhofsReconcileCard() {
+    if (!DOM.bayrhofsReconcileCard) return;
+    isReconcileCardCollapsed = !isReconcileCardCollapsed;
+    DOM.bayrhofsReconcileCard.classList.toggle('collapsed', isReconcileCardCollapsed);
+    if (DOM.reconcileChevronIcon) {
+      DOM.reconcileChevronIcon.textContent = isReconcileCardCollapsed ? '▸' : '▾';
+    }
+    triggerHaptic();
+  }
+
+  function renderBayrhofsReconcileCard() {
+    if (!DOM.bayrhofsReconcileCard) return;
+
+    const bayrhofsSessions = (appData.sessions || []).filter(s => isBayrhofsLocation(s.location));
+    const unpaidSessions = bayrhofsSessions.filter(s => !s.paid);
+    const paidSessions = bayrhofsSessions.filter(s => Boolean(s.paid));
+
+    const unpaidSum = unpaidSessions.reduce((acc, s) => acc + (s.totalCost || 0), 0);
+    const paidSum = paidSessions.reduce((acc, s) => acc + (s.totalCost || 0), 0);
+
+    if (DOM.reconcileUnpaidSum) DOM.reconcileUnpaidSum.textContent = formatDe(unpaidSum) + ' €';
+    if (DOM.reconcileUnpaidCount) DOM.reconcileUnpaidCount.textContent = `${unpaidSessions.length} Ladung${unpaidSessions.length === 1 ? '' : 'en'}`;
+
+    if (DOM.reconcilePaidSum) DOM.reconcilePaidSum.textContent = formatDe(paidSum) + ' €';
+    if (DOM.reconcilePaidCount) DOM.reconcilePaidCount.textContent = `${paidSessions.length} Ladung${paidSessions.length === 1 ? '' : 'en'}`;
+
+    if (DOM.reconcileStatusChip) {
+      if (unpaidSessions.length > 0) {
+        DOM.reconcileStatusChip.className = 'reconcile-status-chip has-unpaid';
+        DOM.reconcileStatusChip.textContent = `${unpaidSessions.length} offen • ${formatDe(unpaidSum)} €`;
+      } else {
+        DOM.reconcileStatusChip.className = 'reconcile-status-chip all-settled';
+        DOM.reconcileStatusChip.textContent = 'Alles abgerechnet ✓';
+      }
+    }
+
+    if (DOM.reconcileHeaderSubtext) {
+      if (unpaidSessions.length > 0) {
+        DOM.reconcileHeaderSubtext.textContent = `Offener Sammelbetrag: ${formatDe(unpaidSum)} € zur späteren Abrechnung`;
+      } else {
+        DOM.reconcileHeaderSubtext.textContent = 'Aktuell keine offenen Sammelabrechnungen bei Bayrhofs';
+      }
+    }
+  }
+
+  function triggerReconcileCalculation() {
+    if (!DOM.inputReconcileAmount) return;
+    const rawVal = DOM.inputReconcileAmount.value.replace(',', '.').trim();
+    const amount = parseFloat(rawVal);
+
+    if (isNaN(amount) || amount <= 0) {
+      showToast('⚠️ Bitte einen gültigen Zahlungsbetrag eingeben');
+      return;
+    }
+
+    const match = calculateBayrhofsPaymentMatch(amount);
+    displayReconcileResult(match);
+    triggerHaptic();
+  }
+
+  function calculateBayrhofsPaymentMatch(targetAmount) {
+    const unpaid = (appData.sessions || [])
+      .filter(s => isBayrhofsLocation(s.location) && !s.paid)
+      .sort((a, b) => new Date(a.date) - new Date(b.date)); // Älteste zuerst (FIFO)
+
+    if (unpaid.length === 0) {
+      return {
+        success: false,
+        type: 'none_unpaid',
+        matchedIds: [],
+        allSessions: [],
+        selectedSum: 0,
+        targetAmount,
+        diff: -targetAmount,
+        message: 'Keine offenen Bayrhofs-Ladungen vorhanden.'
+      };
+    }
+
+    const target = Math.round(targetAmount * 100) / 100;
+    const tolerance = 0.03; // Cent-Toleranz für Rundungen
+
+    // 1. Einzelne exakte Übereinstimmung prüfen
+    const singleMatch = unpaid.find(s => Math.abs(s.totalCost - target) <= tolerance);
+    if (singleMatch) {
+      return {
+        success: true,
+        type: 'exact',
+        badge: '✨ Exakte Einzel-Übereinstimmung',
+        explanation: `Die Ladung vom ${new Date(singleMatch.date).toLocaleDateString('de-DE')} (${formatDe(singleMatch.totalCost)} €) stimmt exakt mit deinem Zahlungsbetrag überein!`,
+        matchedIds: [String(singleMatch.id)],
+        allSessions: unpaid,
+        selectedSum: singleMatch.totalCost,
+        targetAmount: target,
+        diff: singleMatch.totalCost - target
+      };
+    }
+
+    // 2. Exakte Teilmengen-Kombination (Subset Sum)
+    const exactSubset = findSubsetSum(unpaid, target, tolerance);
+    if (exactSubset && exactSubset.length > 0) {
+      const sum = exactSubset.reduce((acc, s) => acc + s.totalCost, 0);
+      return {
+        success: true,
+        type: 'exact',
+        badge: '✨ Exakte Übereinstimmung (' + exactSubset.length + ' Ladungen)',
+        explanation: `${exactSubset.length} offene Ladungen ergeben zusammen exakt ${formatDe(sum)} €!`,
+        matchedIds: exactSubset.map(s => String(s.id)),
+        allSessions: unpaid,
+        selectedSum: sum,
+        targetAmount: target,
+        diff: sum - target
+      };
+    }
+
+    // 3. Chronologische FIFO-Zuordnung (Standard für betriebliche Sammelabrechnungen)
+    let chronoSubset = [];
+    let chronoSum = 0;
+    for (const s of unpaid) {
+      chronoSubset.push(s);
+      chronoSum += s.totalCost;
+      if (chronoSum >= target - tolerance) break;
+    }
+
+    const chronoDiff = chronoSum - target;
+    if (Math.abs(chronoDiff) <= tolerance) {
+      return {
+        success: true,
+        type: 'exact',
+        badge: '⏱ Chronologisch abgerechnet (' + chronoSubset.length + ' Ladungen)',
+        explanation: `Die ${chronoSubset.length} ältesten offenen Ladungen entsprechen exakt deiner Abrechnung von ${formatDe(chronoSum)} €!`,
+        matchedIds: chronoSubset.map(s => String(s.id)),
+        allSessions: unpaid,
+        selectedSum: chronoSum,
+        targetAmount: target,
+        diff: chronoDiff
+      };
+    }
+
+    // 4. Beste Annäherung / Nächste Kombination
+    const bestCombo = findClosestSubset(unpaid, target);
+    if (bestCombo && bestCombo.subset.length > 0) {
+      const bestSum = bestCombo.sum;
+      const bestDiff = bestSum - target;
+      const isClose = Math.abs(bestDiff) < 1.00;
+      return {
+        success: true,
+        type: isClose ? 'chrono' : 'diff',
+        badge: isClose ? '🎯 Bester Treffer (' + bestCombo.subset.length + ' Ladungen)' : '⚠️ Abweichung (' + formatDe(Math.abs(bestDiff)) + ' €)',
+        explanation: isClose
+          ? `${bestCombo.subset.length} Ladungen passen am besten (Summe: ${formatDe(bestSum)} €, Differenz: ${formatDe(bestDiff)} €). Du kannst die Auswahl unten anpassen.`
+          : `Keine exakte Kombination für ${formatDe(target)} € gefunden. Die nächste Summe ist ${formatDe(bestSum)} € (${formatDe(bestDiff)} € Abweichung).`,
+        matchedIds: bestCombo.subset.map(s => String(s.id)),
+        allSessions: unpaid,
+        selectedSum: bestSum,
+        targetAmount: target,
+        diff: bestDiff
+      };
+    }
+
+    return {
+      success: true,
+      type: 'chrono',
+      badge: '⏱ Vorgeschlagene Ladungen',
+      explanation: 'Bitte wähle die bezahlten Ladungen in der Liste aus:',
+      matchedIds: chronoSubset.map(s => String(s.id)),
+      allSessions: unpaid,
+      selectedSum: chronoSum,
+      targetAmount: target,
+      diff: chronoDiff
+    };
+  }
+
+  function findSubsetSum(sessions, target, tolerance = 0.03) {
+    if (sessions.length > 25) sessions = sessions.slice(0, 25);
+    let found = null;
+
+    function backtrack(idx, current, currentSum) {
+      if (found) return;
+      if (Math.abs(currentSum - target) <= tolerance) {
+        found = [...current];
+        return;
+      }
+      if (currentSum > target + tolerance) return;
+      if (idx >= sessions.length) return;
+
+      for (let i = idx; i < sessions.length; i++) {
+        current.push(sessions[i]);
+        backtrack(i + 1, current, currentSum + sessions[i].totalCost);
+        current.pop();
+        if (found) return;
+      }
+    }
+
+    backtrack(0, [], 0);
+    return found;
+  }
+
+  function findClosestSubset(sessions, target) {
+    if (sessions.length > 22) sessions = sessions.slice(0, 22);
+    let bestSubset = [];
+    let bestDiff = Infinity;
+    let bestSum = 0;
+
+    function backtrack(idx, current, currentSum) {
+      const diff = Math.abs(currentSum - target);
+      if (diff < bestDiff && current.length > 0) {
+        bestDiff = diff;
+        bestSubset = [...current];
+        bestSum = currentSum;
+        if (bestDiff === 0) return;
+      }
+      if (currentSum > target * 1.5) return;
+      if (idx >= sessions.length) return;
+
+      for (let i = idx; i < sessions.length; i++) {
+        current.push(sessions[i]);
+        backtrack(i + 1, current, currentSum + sessions[i].totalCost);
+        current.pop();
+        if (bestDiff === 0) return;
+      }
+    }
+
+    backtrack(0, [], 0);
+    return { subset: bestSubset, sum: bestSum, diff: bestDiff };
+  }
+
+  function displayReconcileResult(match) {
+    activeReconcileMatch = match;
+    if (!DOM.reconcileResultPanel) return;
+
+    if (!match.success) {
+      showToast(match.message || 'Keine offenen Ladungen');
+      DOM.reconcileResultPanel.style.display = 'none';
+      return;
+    }
+
+    DOM.reconcileResultPanel.style.display = 'flex';
+
+    if (DOM.reconcileResultBadge) {
+      DOM.reconcileResultBadge.className = 'result-badge-badge ' + (match.type || 'exact');
+      DOM.reconcileResultBadge.textContent = match.badge || '✨ Zuordnung berechnet';
+    }
+
+    if (DOM.reconcileResultExplanation) {
+      DOM.reconcileResultExplanation.textContent = match.explanation || '';
+    }
+
+    const selectedSet = new Set(match.matchedIds || []);
+
+    if (DOM.reconcileChecklistStream) {
+      DOM.reconcileChecklistStream.innerHTML = match.allSessions.map(s => {
+        const d = new Date(s.date);
+        const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        const isChecked = selectedSet.has(String(s.id));
+
+        return `
+          <div class="reconcile-check-item ${isChecked ? 'selected' : ''}" data-id="${s.id}">
+            <div class="reconcile-check-left">
+              <input type="checkbox" class="reconcile-item-checkbox" data-id="${s.id}" data-cost="${s.totalCost}" ${isChecked ? 'checked' : ''}>
+              <div>
+                <div class="reconcile-item-date">${dStr} • ${tStr}</div>
+                <div class="reconcile-item-meta">${s.kwh.toFixed(1)} kWh • ${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</div>
+              </div>
+            </div>
+            <div class="reconcile-item-cost">${formatDe(s.totalCost)} €</div>
+          </div>
+        `;
+      }).join('');
+
+      DOM.reconcileChecklistStream.querySelectorAll('.reconcile-item-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const item = cb.closest('.reconcile-check-item');
+          if (item) item.classList.toggle('selected', cb.checked);
+          updateReconcileChecklistCalculations();
+        });
+      });
+    }
+
+    updateReconcileChecklistCalculations();
+  }
+
+  function updateReconcileChecklistCalculations() {
+    if (!DOM.reconcileResultPanel || !DOM.inputReconcileAmount) return;
+    const target = parseFloat(DOM.inputReconcileAmount.value.replace(',', '.')) || 0;
+
+    let total = 0;
+    const checkedIds = [];
+    if (DOM.reconcileChecklistStream) {
+      DOM.reconcileChecklistStream.querySelectorAll('.reconcile-item-checkbox:checked').forEach(cb => {
+        total += parseFloat(cb.getAttribute('data-cost')) || 0;
+        checkedIds.push(cb.getAttribute('data-id'));
+      });
+    }
+
+    total = Math.round(total * 100) / 100;
+    const diff = Math.round((total - target) * 100) / 100;
+
+    if (DOM.reconcileSelectedTotal) DOM.reconcileSelectedTotal.textContent = formatDe(total) + ' €';
+    if (DOM.reconcileTargetAmount) DOM.reconcileTargetAmount.textContent = formatDe(target) + ' €';
+
+    if (DOM.reconcileDiffDisplay) {
+      if (Math.abs(diff) <= 0.03) {
+        DOM.reconcileDiffDisplay.className = 'summary-stat-diff zero';
+        DOM.reconcileDiffDisplay.textContent = '0,00 € (Exakt ✓)';
+      } else {
+        DOM.reconcileDiffDisplay.className = 'summary-stat-diff warn';
+        DOM.reconcileDiffDisplay.textContent = `${diff > 0 ? '+' : ''}${formatDe(diff)} €`;
+      }
+    }
+
+    if (DOM.btnConfirmReconcile) {
+      DOM.btnConfirmReconcile.disabled = checkedIds.length === 0;
+      DOM.btnConfirmReconcile.innerHTML = `<span>✓ ${checkedIds.length} Ladung${checkedIds.length === 1 ? '' : 'en'} als bezahlt verbuchen</span>`;
+    }
+  }
+
+  function handleConfirmReconcile() {
+    if (!DOM.reconcileChecklistStream) return;
+    const checkedIds = [];
+    DOM.reconcileChecklistStream.querySelectorAll('.reconcile-item-checkbox:checked').forEach(cb => {
+      checkedIds.push(cb.getAttribute('data-id'));
+    });
+
+    if (checkedIds.length === 0) {
+      showToast('⚠️ Bitte wähle mindestens eine Ladung aus');
+      return;
+    }
+
+    const idSet = new Set(checkedIds);
+    let updatedCount = 0;
+    let updatedSum = 0;
+
+    (appData.sessions || []).forEach(s => {
+      if (idSet.has(String(s.id))) {
+        s.paid = true;
+        updatedCount++;
+        updatedSum += (s.totalCost || 0);
+      }
+    });
+
+    saveData();
+    renderAll();
+    triggerHaptic();
+    showToast(`✓ ${updatedCount} Bayrhofs-Ladung${updatedCount === 1 ? '' : 'en'} (${formatDe(updatedSum)} €) als bezahlt verbucht!`);
+
+    // In Google Sheets sichern
+    postCloudPaymentUpdate(checkedIds, true);
+
+    // Reset UI
+    if (DOM.inputReconcileAmount) DOM.inputReconcileAmount.value = '';
+    if (DOM.reconcileResultPanel) DOM.reconcileResultPanel.style.display = 'none';
+  }
+
+  function handleToggleSessionPaid(id) {
+    const s = (appData.sessions || []).find(x => String(x.id).trim() === String(id).trim());
+    if (!s) return;
+    s.paid = !s.paid;
+    saveData();
+    renderAll();
+    triggerHaptic();
+    showToast(s.paid ? '✓ Ladung als bezahlt markiert' : '⏳ Ladung wieder als offen markiert');
+    postCloudPaymentUpdate([String(s.id)], s.paid);
+  }
+
   function renderLocationFilterRail() {
     if (!DOM.chargingFilterRail) return;
 
@@ -4307,6 +4849,13 @@ function createOutput(data, callback) {
 
     const locs = appData.settings.locations || [];
     let html = `<button class="chip-filter ${activeChargingFilter === 'all' ? 'active' : ''}" data-filter="all">Alle</button>`;
+
+    // Schnellfilter für offene Bayrhofs Sammelabrechnungen
+    const unpaidBayrhofsCount = (appData.sessions || []).filter(s => isBayrhofsLocation(s.location) && !s.paid).length;
+    if (unpaidBayrhofsCount > 0) {
+      const isUnpaidAct = activeChargingFilter === 'unpaid_bayrhofs';
+      html += `<button class="chip-filter chip-unpaid ${isUnpaidAct ? 'active' : ''}" data-filter="unpaid_bayrhofs">⏳ Bayrhofs Offen (${unpaidBayrhofsCount})</button>`;
+    }
 
     locs.forEach(loc => {
       const isAct = activeChargingFilter === loc.name;
@@ -4329,7 +4878,9 @@ function createOutput(data, callback) {
     if (!DOM.chargesStreamContainer) return;
 
     let list = [...appData.sessions];
-    if (activeChargingFilter !== 'all') {
+    if (activeChargingFilter === 'unpaid_bayrhofs') {
+      list = list.filter(s => isBayrhofsLocation(s.location) && !s.paid);
+    } else if (activeChargingFilter !== 'all') {
       list = list.filter(s => s.location === activeChargingFilter);
     }
 
@@ -4356,6 +4907,8 @@ function createOutput(data, callback) {
       const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
       const netKwh = (deltaSoc > 0) ? ((deltaSoc / 100) * batteryCap) : 0;
       const eff = (hasBothSoc && netKwh > 0 && s.kwh > 0) ? Math.min(100, Math.round((netKwh / s.kwh) * 1000) / 10) : null;
+      const isBayrhof = isBayrhofsLocation(s.location);
+      const isPaid = isSessionPaid(s);
 
       return `
         <div class="swift-glass-card session-swift-card" data-id="${s.id}">
@@ -4364,6 +4917,11 @@ function createOutput(data, callback) {
             <div class="session-badges-wrap">
               <span class="loc-badge-item">${locIcon} ${escapeHtml(s.location)}</span>
               ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+              ${isBayrhof
+                ? (isPaid
+                    ? '<span class="pay-status-badge paid" title="Über Sammelabrechnung abgerechnet">✓ Bezahlt</span>'
+                    : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>')
+                : '<span class="pay-status-badge direct" title="Direkt bei Ladung bezahlt">✓ Direkt bezahlt</span>'}
               ${hasBothSoc
                 ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.socStart}% → ${s.soc}% (+${deltaSoc}%)</span>`
                 : ((s.soc !== undefined && s.soc !== null) ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.soc}%</span>` : '')}
@@ -4397,12 +4955,21 @@ function createOutput(data, callback) {
           ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
 
           <div class="session-actions-bar">
+            ${isBayrhof ? `
+              <button class="btn-card-action btn-pay-toggle ${isPaid ? 'paid' : 'unpaid'}" data-id="${s.id}" title="${isPaid ? 'Als noch offen markieren' : 'Als bezahlt markieren'}">
+                ${isPaid ? '↩️ Als offen' : '💶 Als bezahlt'}
+              </button>
+            ` : ''}
             <button class="btn-card-action btn-edit-charge" data-id="${s.id}">✏️ Bearbeiten</button>
             <button class="btn-card-action danger btn-del-charge" data-id="${s.id}">🗑️ Löschen</button>
           </div>
         </div>
       `;
     }).join('');
+
+    DOM.chargesStreamContainer.querySelectorAll('.btn-pay-toggle').forEach(btn => {
+      btn.addEventListener('click', () => handleToggleSessionPaid(btn.getAttribute('data-id')));
+    });
 
     DOM.chargesStreamContainer.querySelectorAll('.btn-edit-charge').forEach(btn => {
       btn.addEventListener('click', () => openModalCharge(btn.getAttribute('data-id')));
@@ -6981,6 +7548,40 @@ function createOutput(data, callback) {
     DOM.modalLocationPickerSheet.classList.remove('open');
   }
 
+  function updateModalPaymentStatus(locName, isPaidInitial = null) {
+    if (!DOM.entryPaymentStatusRow) return;
+    const isBayrhof = isBayrhofsLocation(locName);
+
+    if (isBayrhof) {
+      if (DOM.entryPaymentHint) DOM.entryPaymentHint.textContent = 'Sammelabrechnung (Bayrhofs)';
+      if (DOM.entryPaymentPaidCheckbox) {
+        DOM.entryPaymentPaidCheckbox.disabled = false;
+        if (isPaidInitial !== null) {
+          DOM.entryPaymentPaidCheckbox.checked = Boolean(isPaidInitial);
+        }
+      }
+      if (DOM.entryPaymentOptionLabel) DOM.entryPaymentOptionLabel.classList.remove('disabled');
+      updateModalPaymentLabel();
+    } else {
+      // Wichtig: Nur bei Bayrhofs Laden wird über eine spätere Summenabrechnung gemacht. Alles andere wird immer direkt bezahlt!
+      if (DOM.entryPaymentHint) DOM.entryPaymentHint.textContent = 'Direktzahlung';
+      if (DOM.entryPaymentPaidCheckbox) {
+        DOM.entryPaymentPaidCheckbox.disabled = true;
+        DOM.entryPaymentPaidCheckbox.checked = true;
+      }
+      if (DOM.entryPaymentOptionLabel) DOM.entryPaymentOptionLabel.classList.add('disabled');
+      if (DOM.entryPaymentStatusText) DOM.entryPaymentStatusText.textContent = 'Immer direkt bezahlt ✓';
+    }
+  }
+
+  function updateModalPaymentLabel() {
+    if (!DOM.entryPaymentPaidCheckbox || !DOM.entryPaymentStatusText) return;
+    const isChecked = DOM.entryPaymentPaidCheckbox.checked;
+    DOM.entryPaymentStatusText.textContent = isChecked
+      ? 'Bereits über Sammelabrechnung bezahlt ✓'
+      : 'Noch offen (wird später abgerechnet)';
+  }
+
   function selectLocationForEntry(locId, overridePrice = true) {
     const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
     const loc = locs.find(l => l.id === locId) || locs[0] || DEFAULT_LOCATIONS[0];
@@ -6996,6 +7597,7 @@ function createOutput(data, callback) {
     if (overridePrice && DOM.entryPrice) {
       DOM.entryPrice.value = Number(loc.kwhPrice).toFixed(2);
     }
+    updateModalPaymentStatus(loc.name);
     calculateModalCost();
   }
 
@@ -7031,6 +7633,7 @@ function createOutput(data, callback) {
 
         const matchingLoc = (appData.settings.locations || []).find(l => l.name === s.location) || defaultLoc;
         selectLocationForEntry(matchingLoc.id, false);
+        updateModalPaymentStatus(matchingLoc.name, s.paid);
       }
     } else {
       DOM.modalChargeTitle.textContent = "Ladevorgang erfassen";
@@ -7048,6 +7651,7 @@ function createOutput(data, callback) {
       }
 
       selectLocationForEntry(defaultLoc.id, true);
+      updateModalPaymentStatus(defaultLoc.name, false);
       // Feature 8a: Geofence Check (< 10 Meter)
       autoDetectLocationByGps(10.0);
     }
@@ -7503,6 +8107,15 @@ function createOutput(data, callback) {
       }
     }
 
+    const isBayrhof = isBayrhofsLocation(locName);
+    let sessionPaid = true;
+    if (isBayrhof) {
+      sessionPaid = Boolean(DOM.entryPaymentPaidCheckbox && DOM.entryPaymentPaidCheckbox.checked);
+    } else {
+      // Wichtig: Nur bei Bayrhofs Laden wird über eine spätere Summenabrechnung gemacht. Alles andere wird immer direkt bezahlt!
+      sessionPaid = true;
+    }
+
     let savedSession = null;
     if (editId) {
       const cleanEditId = String(editId).trim();
@@ -7519,7 +8132,8 @@ function createOutput(data, callback) {
           totalCost: total,
           location: locName,
           pvSurplus: isPv,
-          notes
+          notes,
+          paid: sessionPaid
         };
         savedSession = appData.sessions[idx];
         removeDeletedId(cleanEditId);
@@ -7536,7 +8150,8 @@ function createOutput(data, callback) {
         totalCost: total,
         location: locName,
         pvSurplus: isPv,
-        notes
+        notes,
+        paid: sessionPaid
       };
       removeDeletedId(savedSession.id);
       appData.sessions.push(savedSession);
@@ -7685,7 +8300,8 @@ function createOutput(data, callback) {
         totalCost: 5.18,
         location: "Bayrhofs",
         pvSurplus: true,
-        notes: "100% PV-Überschuss bei Bayrhofs"
+        notes: "100% PV-Überschuss bei Bayrhofs",
+        paid: false
       },
       {
         id: `demo_${Date.now()}_2`,
@@ -7698,7 +8314,8 @@ function createOutput(data, callback) {
         totalCost: 5.60,
         location: "Arbeit",
         pvSurplus: false,
-        notes: "Bürotag Donnerstag"
+        notes: "Bürotag Donnerstag",
+        paid: true
       },
       {
         id: `demo_${Date.now()}_3`,
@@ -7711,7 +8328,8 @@ function createOutput(data, callback) {
         totalCost: 6.18,
         location: "Bayrhofs",
         pvSurplus: true,
-        notes: "Sonniger Tag bei Bayrhofs"
+        notes: "Sonniger Tag bei Bayrhofs",
+        paid: false
       },
       {
         id: `demo_${Date.now()}_4`,
@@ -7724,7 +8342,8 @@ function createOutput(data, callback) {
         totalCost: 10.08,
         location: "Zuhause",
         pvSurplus: false,
-        notes: "Nachtladung Wallbox"
+        notes: "Nachtladung Wallbox",
+        paid: true
       },
       {
         id: `demo_${Date.now()}_5`,
@@ -7737,7 +8356,8 @@ function createOutput(data, callback) {
         totalCost: 22.72,
         location: "Öffentlich",
         pvSurplus: false,
-        notes: "HPC Schnelllader Autobahn"
+        notes: "HPC Schnelllader Autobahn",
+        paid: true
       }
     ];
 
@@ -7793,5 +8413,12 @@ function createOutput(data, callback) {
       DOM.swiftToast.classList.remove('show');
     }, 2500);
   }
+
+  window.calculateBayrhofsPaymentMatch = calculateBayrhofsPaymentMatch;
+  window.renderBayrhofsReconcileCard = renderBayrhofsReconcileCard;
+  window.handleToggleSessionPaid = handleToggleSessionPaid;
+  window.handleConfirmReconcile = handleConfirmReconcile;
+  window.renderAll = renderAll;
+  window.saveData = saveData;
 
 })();

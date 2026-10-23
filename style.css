@@ -4495,5 +4495,547 @@ select option {
   vertical-align: middle;
 }
 
+/* ==========================================================================
+   BAYRHOFS ABRECHNUNG & ZAHLUNGSABGLEICH CARD
+   ========================================================================== */
+.bayrhofs-reconcile-card {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(26, 35, 50, 0.65) 0%, rgba(13, 20, 31, 0.75) 100%);
+  border: 1px solid rgba(192, 128, 81, 0.28);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+}
 
+.bayrhofs-reconcile-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--cupra-bronze), transparent);
+}
 
+.reconcile-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.reconcile-header-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reconcile-badge-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(192, 128, 81, 0.16);
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.reconcile-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reconcile-title {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+}
+
+.reconcile-status-chip {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.2);
+  color: var(--cupra-bronze-bright);
+  border: 1px solid rgba(192, 128, 81, 0.4);
+}
+
+.reconcile-status-chip.has-unpaid {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.reconcile-status-chip.all-settled {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.reconcile-subtext {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.btn-reconcile-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+
+.btn-reconcile-toggle:active {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(0.95);
+}
+
+.reconcile-chevron {
+  font-size: 0.95rem;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-block;
+}
+
+.bayrhofs-reconcile-card.collapsed .reconcile-chevron {
+  transform: rotate(-90deg);
+}
+
+.bayrhofs-reconcile-card.collapsed .reconcile-expandable-content {
+  display: none !important;
+}
+
+/* Metrics Grid: Offen vs. Abgerechnet */
+.reconcile-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.reconcile-metric-pill {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+}
+
+.reconcile-metric-pill:active {
+  transform: scale(0.98);
+}
+
+.reconcile-metric-pill.unpaid {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.reconcile-metric-pill.unpaid:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.reconcile-metric-pill.paid {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.reconcile-metric-pill.paid:hover {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.metric-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.metric-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.metric-dot.unpaid {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.metric-dot.paid {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.metric-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.metric-sum {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.3px;
+}
+
+.reconcile-metric-pill.unpaid .metric-sum {
+  color: #fbbf24;
+}
+
+.reconcile-metric-pill.paid .metric-sum {
+  color: #34d399;
+}
+
+.metric-sub {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Aufklappbarer Eingabebereich */
+.reconcile-expandable-content {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reconcile-input-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.reconcile-auto-note {
+  font-size: 0.66rem;
+  color: var(--cupra-bronze-bright);
+  font-weight: 600;
+}
+
+.reconcile-input-action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.reconcile-input-box {
+  flex: 1;
+}
+
+.btn-run-reconcile {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Dynamische Ergebnisbox */
+.reconcile-result-panel {
+  background: rgba(10, 16, 24, 0.7);
+  border: 1px solid rgba(192, 128, 81, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reconcile-result-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-badge-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(192, 128, 81, 0.2);
+  color: var(--cupra-bronze-bright);
+  border: 1px solid rgba(192, 128, 81, 0.4);
+}
+
+.result-badge-badge.exact {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.result-badge-badge.chrono {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.result-badge-badge.diff {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.result-explanation {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* Checklist Stream */
+.reconcile-checklist-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.reconcile-check-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.reconcile-check-item.selected {
+  background: rgba(192, 128, 81, 0.12);
+  border-color: rgba(192, 128, 81, 0.35);
+}
+
+.reconcile-check-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reconcile-item-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--cupra-bronze);
+  cursor: pointer;
+}
+
+.reconcile-item-date {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.reconcile-item-meta {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.reconcile-item-cost {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--cupra-bronze-bright);
+}
+
+/* Summary Bar */
+.reconcile-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.summary-stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary-stat-lbl {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.summary-stat-num {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.summary-stat-diff {
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.summary-stat-diff.zero {
+  color: #34d399;
+}
+
+.summary-stat-diff.warn {
+  color: #f87171;
+}
+
+.reconcile-actions-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.btn-confirm-reconcile {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   STATUS BADGES IN DER LADEHISTORIE STREAM
+   ========================================================================== */
+.pay-status-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.1px;
+}
+
+.pay-status-badge.unpaid {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.pay-status-badge.paid {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.pay-status-badge.direct {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.btn-card-action.btn-pay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-card-action.btn-pay-toggle.unpaid {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.btn-card-action.btn-pay-toggle.unpaid:active {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.btn-card-action.btn-pay-toggle.paid {
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   MODAL ADD CHARGE: ZAHLUNGSSTATUS SELECTOR
+   ========================================================================== */
+.pay-hint-label {
+  font-size: 0.66rem;
+  color: var(--cupra-bronze-bright);
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.payment-status-selector-box {
+  background: rgba(10, 16, 24, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.payment-status-toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.payment-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--cupra-bronze);
+  cursor: pointer;
+}
+
+.payment-toggle-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.payment-status-toggle-option.disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+/* Filter Chip for Unpaid */
+.chip-filter.chip-unpaid {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.chip-filter.chip-unpaid.active {
+  background: #f59e0b;
+  color: #0d141f;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
