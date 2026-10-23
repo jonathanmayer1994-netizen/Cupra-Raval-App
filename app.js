@@ -92,6 +92,14 @@
         year: 2026,
         amount: 110.00,
         status: 'active'
+      },
+      thgByYear: {
+        "2026": {
+          year: 2026,
+          amount: 110.00,
+          active: true,
+          status: 'active'
+        }
       }
     },
     sessions: [],
@@ -265,6 +273,18 @@
     DOM.reconcileDiffDisplay = document.getElementById('reconcileDiffDisplay');
     DOM.btnCancelReconcile = document.getElementById('btnCancelReconcile');
     DOM.btnConfirmReconcile = document.getElementById('btnConfirmReconcile');
+    DOM.segBadgeBayrhofs = document.getElementById('segBadgeBayrhofs');
+    DOM.btnBayModeOpen = document.getElementById('btnBayModeOpen');
+    DOM.btnBayModeHistory = document.getElementById('btnBayModeHistory');
+    DOM.bayBadgeOpenCount = document.getElementById('bayBadgeOpenCount');
+    DOM.bayBadgeHistoryCount = document.getElementById('bayBadgeHistoryCount');
+    DOM.baySectionOpen = document.getElementById('baySectionOpen');
+    DOM.baySectionHistory = document.getElementById('baySectionHistory');
+    DOM.bayOpenChargesCountBadge = document.getElementById('bayOpenChargesCountBadge');
+    DOM.bayrhofsOpenStreamContainer = document.getElementById('bayrhofsOpenStreamContainer');
+    DOM.bayHistoryBadgeCount = document.getElementById('bayHistoryBadgeCount');
+    DOM.bayHistorySummaryText = document.getElementById('bayHistorySummaryText');
+    DOM.bayrhofsPaidStreamContainer = document.getElementById('bayrhofsPaidStreamContainer');
 
     // Analytics
     DOM.periodPills = document.querySelectorAll('.period-pill');
@@ -591,6 +611,19 @@
       }
       if (!res.settings.thg.year) res.settings.thg.year = new Date().getFullYear();
       if (!res.settings.thg.status) res.settings.thg.status = 'active';
+    }
+
+    if (!res.settings.thgByYear || typeof res.settings.thgByYear !== 'object') {
+      res.settings.thgByYear = {};
+    }
+    const thgYrStr = String(res.settings.thg.year || new Date().getFullYear());
+    if (!res.settings.thgByYear[thgYrStr]) {
+      res.settings.thgByYear[thgYrStr] = {
+        year: parseInt(thgYrStr, 10),
+        amount: Number(res.settings.thg.amount) || 110.00,
+        active: res.settings.thg.status !== 'inactive',
+        status: res.settings.thg.status || 'active'
+      };
     }
 
     // Sessions Migration & Filter out invalid dummy rows
@@ -1072,6 +1105,9 @@
       setSyncStatus('synced');
       flushPendingSyncQueue();
 
+      // Synchronisiere auch Fahrzeug- & THG-Konfiguration aus Google Sheets
+      fetchCloudVehicleConfig();
+
       if (parsedList.length > 0) {
         showCloudDiag('success', '✅', `Google Sheets verbunden: <strong>${parsedList.length} Ladevorgänge</strong> synchronisiert.`);
         if (isManual) {
@@ -1362,6 +1398,98 @@
     }
   }
 
+  function mergeCloudVehicleConfig(cloudCfg) {
+    if (!cloudCfg || typeof cloudCfg !== 'object') return;
+
+    if (!appData.settings.thgByYear) appData.settings.thgByYear = {};
+
+    // 1. thgByYear zusammenführen
+    if (cloudCfg.thgByYear && typeof cloudCfg.thgByYear === 'object') {
+      Object.keys(cloudCfg.thgByYear).forEach(yr => {
+        const item = cloudCfg.thgByYear[yr];
+        const amt = typeof item === 'object' ? item.amount : Number(item);
+        const act = typeof item === 'object' ? (item.active !== false && item.status !== 'inactive') : true;
+        if (amt !== undefined && !isNaN(Number(amt))) {
+          appData.settings.thgByYear[String(yr)] = {
+            year: parseInt(yr, 10),
+            amount: Number(amt),
+            active: act,
+            status: act ? 'active' : 'inactive'
+          };
+        }
+      });
+    }
+
+    // 2. Aktuelles oder in Cloud hinterlegtes thgYear
+    const thgYear = cloudCfg.thgYear || (appData.settings.thg && appData.settings.thg.year) || new Date().getFullYear();
+    const yrStr = String(thgYear);
+    const yearConfig = appData.settings.thgByYear[yrStr];
+
+    const thgAmount = yearConfig ? yearConfig.amount : (cloudCfg.thgAmount !== undefined ? Number(cloudCfg.thgAmount) : (appData.settings.thg ? Number(appData.settings.thg.amount) : 110.00));
+    const thgActive = yearConfig ? yearConfig.active : (cloudCfg.thgActive !== undefined ? (cloudCfg.thgActive === true || cloudCfg.thgActive === 'true' || cloudCfg.thgActive === 'Ja') : true);
+
+    if (!appData.settings.thg) appData.settings.thg = {};
+    appData.settings.thg.year = thgYear;
+    appData.settings.thg.amount = thgAmount;
+    appData.settings.thg.status = thgActive ? 'active' : 'inactive';
+    appData.settings.thg.active = thgActive;
+
+    if (!appData.settings.thgByYear[yrStr]) {
+      appData.settings.thgByYear[yrStr] = {
+        year: parseInt(yrStr, 10),
+        amount: thgAmount,
+        active: thgActive,
+        status: thgActive ? 'active' : 'inactive'
+      };
+    }
+
+    // Falls Fahrzeugmodell oder Akku aus Cloud vorhanden sind:
+    if (cloudCfg.model && (!appData.vehicle.model || appData.vehicle.model === DEFAULT_DATA.vehicle.model)) {
+      appData.vehicle.model = cloudCfg.model;
+    }
+    if (cloudCfg.batteryKwh && !appData.vehicle.batteryKwh) {
+      appData.vehicle.batteryKwh = Number(cloudCfg.batteryKwh);
+    }
+
+    saveData();
+    renderSettingsForms();
+    renderDashboard();
+    console.log('[Cloud] THG-Konfiguration aus Google Sheet synchronisiert:', appData.settings.thgByYear);
+  }
+
+  async function fetchCloudVehicleConfig() {
+    const apiUrl = getCloudApiUrl();
+    if (!apiUrl) return null;
+
+    let cfgData = null;
+    const configUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=get_config`;
+
+    try {
+      const res = await fetch(configUrl, { cache: 'no-cache' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && (json.config || json.status === 'success')) {
+          cfgData = json.config || json;
+        }
+      }
+    } catch (eFetch) {
+      try {
+        const jsonpRes = await fetchWithJsonp(configUrl, 4000);
+        if (jsonpRes && (jsonpRes.config || jsonpRes.status === 'success')) {
+          cfgData = jsonpRes.config || jsonpRes;
+        }
+      } catch (eJsonp) {
+        // Ignorieren falls offline
+      }
+    }
+
+    if (cfgData) {
+      mergeCloudVehicleConfig(cfgData);
+      return cfgData;
+    }
+    return null;
+  }
+
   async function postCloudVehicleConfig() {
     const apiUrl = getCloudApiUrl();
     if (!apiUrl) return;
@@ -1380,7 +1508,8 @@
       thgYear: Number(thg.year) || new Date().getFullYear(),
       thgAmount: Number(thg.amount) || 110.00,
       thgActive: thg.status !== 'inactive' && thg.active !== false,
-      thgStatus: (thg.status !== 'inactive' && thg.active !== false) ? 'active' : 'inactive'
+      thgStatus: (thg.status !== 'inactive' && thg.active !== false) ? 'active' : 'inactive',
+      thgByYear: appData.settings.thgByYear || {}
     };
 
     const payload = {
@@ -1618,6 +1747,29 @@ function saveVehicleConfigToSheet(config) {
     { key: "thgStatus", label: "THG Status", desc: "Status der THG-Prämie (active/inactive)", val: config.thgStatus || "active" }
   ];
 
+  // THG Quote Einträge pro Jahr speichern (z. B. thg_2025, thg_2026)
+  if (config.thgByYear && typeof config.thgByYear === "object") {
+    Object.keys(config.thgByYear).forEach(function(yr) {
+      const item = config.thgByYear[yr];
+      const amt = typeof item === "object" ? item.amount : Number(item);
+      const isAct = typeof item === "object" ? (item.active !== false && item.status !== "inactive") : true;
+      if (amt !== undefined && !isNaN(Number(amt))) {
+        defs.push({
+          key: "thg_" + yr,
+          label: "THG Quote " + yr + " Betrag (€)",
+          desc: "Jahresprämie THG-Gutschrift für " + yr,
+          val: Number(amt)
+        });
+        defs.push({
+          key: "thg_active_" + yr,
+          label: "THG Quote " + yr + " Aktiv",
+          desc: "Wird die THG-Quote für " + yr + " gegengerechnet?",
+          val: isAct ? "Ja" : "Nein"
+        });
+      }
+    });
+  }
+
   const lastRow = sheet.getLastRow();
   const existingMap = {};
   if (lastRow > 1) {
@@ -1652,11 +1804,29 @@ function getVehicleConfigFromSheet() {
   }
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
-  const config = {};
+  const config = { thgByYear: {} };
   for (let i = 0; i < rows.length; i++) {
     const key = String(rows[i][0] || "").trim();
     const val = rows[i][1];
     if (!key) continue;
+
+    // THG Betrag pro Jahr erkennen (z. B. thg_2026 oder "THG Quote 2026 Betrag (€)")
+    const thgYearMatch = key.match(/^thg_(\d{4})$/i) || key.match(/THG Quote (\d{4}) Betrag/i);
+    if (thgYearMatch) {
+      const yr = thgYearMatch[1];
+      if (!config.thgByYear[yr]) config.thgByYear[yr] = {};
+      config.thgByYear[yr].amount = parseNum(val);
+      config.thgByYear[yr].year = parseInt(yr, 10);
+    }
+
+    // THG Status pro Jahr erkennen
+    const thgActiveMatch = key.match(/^thg_active_(\d{4})$/i) || key.match(/THG Quote (\d{4}) Aktiv/i);
+    if (thgActiveMatch) {
+      const yr = thgActiveMatch[1];
+      if (!config.thgByYear[yr]) config.thgByYear[yr] = {};
+      config.thgByYear[yr].active = (val === true || String(val).toLowerCase() === "ja" || String(val).toLowerCase() === "true");
+      config.thgByYear[yr].status = config.thgByYear[yr].active ? "active" : "inactive";
+    }
 
     if (key === "model" || key === "Fahrzeugmodell") config.model = String(val);
     else if (key === "batteryKwh" || key.indexOf("Batteriekapazität") !== -1) config.batteryKwh = parseNum(val);
@@ -1669,6 +1839,16 @@ function getVehicleConfigFromSheet() {
     else if (key === "thgActive" || key.indexOf("THG Quote Aktiv") !== -1) config.thgActive = (val === true || String(val).toLowerCase() === "ja" || String(val).toLowerCase() === "true");
     else if (key === "thgStatus" || key.indexOf("THG Status") !== -1) config.thgStatus = String(val);
   }
+
+  // Rückwärtskompatibilität: Falls thgYear & thgAmount gesetzt sind, im thgByYear eintragen
+  if (config.thgYear && config.thgAmount !== undefined) {
+    const yrStr = String(config.thgYear);
+    if (!config.thgByYear[yrStr]) config.thgByYear[yrStr] = {};
+    if (config.thgByYear[yrStr].amount === undefined) config.thgByYear[yrStr].amount = config.thgAmount;
+    if (config.thgByYear[yrStr].active === undefined) config.thgByYear[yrStr].active = config.thgActive;
+    config.thgByYear[yrStr].year = config.thgYear;
+  }
+
   return config;
 }
 
@@ -2245,6 +2425,8 @@ function createOutput(data, callback) {
 
     if (subId === 'analytics') {
       setTimeout(() => renderAnalyticsCharts(), 50);
+    } else if (subId === 'bayrhofs') {
+      renderBayrhofsReconcileCard();
     } else {
       renderChargesStream();
     }
@@ -2689,33 +2871,37 @@ function createOutput(data, callback) {
     DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
     DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
 
-    // Bayrhofs Sammelabrechnung & Zahlungsabgleich Event Listeners
-    if (DOM.btnToggleReconcileCollapse) {
-      DOM.btnToggleReconcileCollapse.addEventListener('click', () => {
-        toggleBayrhofsReconcileCard();
+    // Bayrhofs Abrechnung & Zahlungsabgleich Event Listeners
+    if (DOM.btnBayModeOpen) {
+      DOM.btnBayModeOpen.addEventListener('click', () => {
+        switchBayrhofsMode('open');
       });
     }
-    if (DOM.reconcileCardHeader) {
-      DOM.reconcileCardHeader.addEventListener('click', (e) => {
-        if (!e.target.closest('#btnToggleReconcileCollapse')) {
-          toggleBayrhofsReconcileCard();
-        }
+    if (DOM.btnBayModeHistory) {
+      DOM.btnBayModeHistory.addEventListener('click', () => {
+        switchBayrhofsMode('history');
       });
     }
     if (DOM.pillFilterUnpaidBayrhofs) {
       DOM.pillFilterUnpaidBayrhofs.addEventListener('click', () => {
-        activeChargingFilter = 'unpaid_bayrhofs';
-        renderLocationFilterRail();
-        renderChargesStream();
-        triggerHaptic();
+        switchBayrhofsMode('open');
       });
     }
     if (DOM.pillFilterPaidBayrhofs) {
       DOM.pillFilterPaidBayrhofs.addEventListener('click', () => {
-        activeChargingFilter = 'Bayrhofs';
-        renderLocationFilterRail();
-        renderChargesStream();
-        triggerHaptic();
+        switchBayrhofsMode('history');
+      });
+    }
+    if (DOM.cfgThgYear) {
+      DOM.cfgThgYear.addEventListener('input', () => {
+        const y = parseInt(DOM.cfgThgYear.value, 10);
+        if (y && y >= 2000 && y <= 2100) {
+          const yrCfg = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[String(y)]);
+          if (yrCfg) {
+            if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = Number(yrCfg.amount).toFixed(2);
+            if (DOM.cfgThgActive) DOM.cfgThgActive.checked = (yrCfg.status !== 'inactive' && yrCfg.active !== false);
+          }
+        }
       });
     }
     if (DOM.btnRunReconcile) {
@@ -3064,19 +3250,19 @@ function createOutput(data, callback) {
   // GANZHEITLICHES RENDERING
   // =========================================================================
   function renderAll() {
-    renderDashboard();
-    renderBayrhofsReconcileCard();
-    renderLocationFilterRail();
-    renderWeatherLocationFilterRail();
-    renderChargesStream();
-    renderSettingsForms();
-    renderLocationsManageList();
+    try { renderDashboard(); } catch (e) { console.error('renderDashboard error:', e); }
+    try { renderBayrhofsReconcileCard(); } catch (e) { console.error('renderBayrhofsReconcileCard error:', e); }
+    try { renderLocationFilterRail(); } catch (e) { console.error('renderLocationFilterRail error:', e); }
+    try { renderWeatherLocationFilterRail(); } catch (e) { console.error('renderWeatherLocationFilterRail error:', e); }
+    try { renderChargesStream(); } catch (e) { console.error('renderChargesStream error:', e); }
+    try { renderSettingsForms(); } catch (e) { console.error('renderSettingsForms error:', e); }
+    try { renderLocationsManageList(); } catch (e) { console.error('renderLocationsManageList error:', e); }
     if (appData && appData.settings && appData.settings.locations && appData.settings.locations.length > 0) {
       const curLocId = (DOM.entryLocationId && DOM.entryLocationId.value) || appData.settings.locations[0].id;
       selectLocationForEntry(curLocId, !DOM.entryEditId || !DOM.entryEditId.value);
     }
     if (weatherForecast14Days && weatherForecast14Days.length > 0) {
-      renderWeatherViews();
+      try { renderWeatherViews(); } catch (e) { console.error('renderWeatherViews error:', e); }
     }
   }
 
@@ -3114,10 +3300,10 @@ function createOutput(data, callback) {
       }
     });
 
-    // Feature 9a: THG-Quote Gegenrechnung
-    const thg = appData.settings && appData.settings.thg;
-    const isThgActive = thg && (thg.status === 'active' || thg.active === true) && Number(thg.amount) > 0 && (Number(thg.year) === curYear);
-    const thgAmount = isThgActive ? Number(thg.amount) : 0;
+    // Feature 9a: THG-Quote Gegenrechnung (pro Jahr)
+    const thgYearConfig = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[String(curYear)]) || (appData.settings && appData.settings.thg);
+    const isThgActive = thgYearConfig && (thgYearConfig.status === 'active' || thgYearConfig.active !== false) && Number(thgYearConfig.amount) > 0 && (Number(thgYearConfig.year || curYear) === curYear);
+    const thgAmount = isThgActive ? Number(thgYearConfig.amount) : 0;
 
     DOM.dashMonthCost.textContent = formatDe(mCost);
     DOM.dashMonthKwh.textContent = `${mKwh.toFixed(1)} kWh geladen`;
@@ -3186,18 +3372,21 @@ function createOutput(data, callback) {
       }
     }
 
-    if (appData.sessions.length > 0) {
-      const latest = appData.sessions[0];
-      const dObj = new Date(latest.date);
-      let socSpan = '';
-      if (latest.socStart !== null && latest.socStart !== undefined && latest.soc !== null && latest.soc !== undefined) {
-        socSpan = ` (${latest.socStart}% → ${latest.soc}%)`;
-      } else if (latest.soc !== null && latest.soc !== undefined) {
-        socSpan = ` (${latest.soc}% SoC)`;
+    if (DOM.dashboardLiveStatus) {
+      if (appData.sessions.length > 0) {
+        const latest = appData.sessions[0];
+        const dObj = latest.date ? new Date(latest.date) : new Date();
+        let socSpan = '';
+        if (latest.socStart !== null && latest.socStart !== undefined && latest.soc !== null && latest.soc !== undefined) {
+          socSpan = ` (${latest.socStart}% → ${latest.soc}%)`;
+        } else if (latest.soc !== null && latest.soc !== undefined) {
+          socSpan = ` (${latest.soc}% SoC)`;
+        }
+        const kwhVal = Number(latest.kwh || 0).toFixed(1);
+        DOM.dashboardLiveStatus.textContent = `Zuletzt: ${dObj.toLocaleDateString('de-DE')} • ${kwhVal} kWh${socSpan} @ ${latest.location || 'Unbekannt'}`;
+      } else {
+        DOM.dashboardLiveStatus.textContent = `Bereit für die erste Ladung`;
       }
-      DOM.dashboardLiveStatus.textContent = `Zuletzt: ${dObj.toLocaleDateString('de-DE')} • ${latest.kwh.toFixed(1)} kWh${socSpan} @ ${latest.location}`;
-    } else {
-      DOM.dashboardLiveStatus.textContent = `Bereit für die erste Ladung`;
     }
 
     updateDashboardPvDecisionWidget();
@@ -3552,9 +3741,9 @@ function createOutput(data, callback) {
     const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
     const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
 
-    const thg = appData.settings && appData.settings.thg;
-    const isThgActive = thg && (thg.status === 'active' || thg.active === true) && Number(thg.amount) > 0 && (Number(thg.year) === curYear);
-    const thgAmount = isThgActive ? Number(thg.amount) : 0;
+    const thgYearConfig = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[String(curYear)]) || (appData.settings && appData.settings.thg);
+    const isThgActive = thgYearConfig && (thgYearConfig.status === 'active' || thgYearConfig.active !== false) && Number(thgYearConfig.amount) > 0 && (Number(thgYearConfig.year || curYear) === curYear);
+    const thgAmount = isThgActive ? Number(thgYearConfig.amount) : 0;
 
     let title = "", sub = "", stat1 = {}, stat2 = {}, stat3 = {};
     let chartTitle = "Verlauf", legendHtml = "", listTitle = "Historische Datenpunkte", listHtml = "";
@@ -4477,14 +4666,72 @@ function createOutput(data, callback) {
   let isReconcileCardCollapsed = false;
   let activeReconcileMatch = null;
 
-  function toggleBayrhofsReconcileCard() {
-    if (!DOM.bayrhofsReconcileCard) return;
-    isReconcileCardCollapsed = !isReconcileCardCollapsed;
-    DOM.bayrhofsReconcileCard.classList.toggle('collapsed', isReconcileCardCollapsed);
-    if (DOM.reconcileChevronIcon) {
-      DOM.reconcileChevronIcon.textContent = isReconcileCardCollapsed ? '▸' : '▾';
-    }
+  let activeBayrhofsMode = 'open'; // 'open' | 'history'
+
+  function switchBayrhofsMode(mode) {
+    activeBayrhofsMode = mode;
+    if (DOM.btnBayModeOpen) DOM.btnBayModeOpen.classList.toggle('active', mode === 'open');
+    if (DOM.btnBayModeHistory) DOM.btnBayModeHistory.classList.toggle('active', mode === 'history');
+
+    if (DOM.pillFilterUnpaidBayrhofs) DOM.pillFilterUnpaidBayrhofs.classList.toggle('active-mode', mode === 'open');
+    if (DOM.pillFilterPaidBayrhofs) DOM.pillFilterPaidBayrhofs.classList.toggle('active-mode', mode === 'history');
+
+    if (DOM.baySectionOpen) DOM.baySectionOpen.style.display = (mode === 'open' ? 'block' : 'none');
+    if (DOM.baySectionHistory) DOM.baySectionHistory.style.display = (mode === 'history' ? 'block' : 'none');
+
     triggerHaptic();
+  }
+
+  function renderBayrhofsSessionCard(s, isPaid) {
+    const d = new Date(s.date);
+    const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
+    const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
+
+    return `
+      <div class="swift-glass-card session-swift-card bayrhofs-session-card ${isPaid ? 'is-paid' : 'is-unpaid'}" data-id="${s.id}">
+        <div class="session-top-meta">
+          <span class="session-timestamp">${dStr} • ${tStr}</span>
+          <div class="session-badges-wrap">
+            <span class="loc-badge-item">🏢 Bayrhofs</span>
+            ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+            ${isPaid
+              ? '<span class="pay-status-badge paid" title="Über Abrechnung bezahlt">✓ Bereits abgerechnet</span>'
+              : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>'}
+            ${hasBothSoc
+              ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.socStart}% → ${s.soc}% (+${deltaSoc}%)</span>`
+              : ((s.soc !== undefined && s.soc !== null) ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.soc}%</span>` : '')}
+          </div>
+        </div>
+
+        <div class="session-primary-row">
+          <div class="session-kwh-display">
+            <span class="session-kwh-val">${s.kwh.toFixed(1)}</span>
+            <span class="session-kwh-unit">kWh</span>
+          </div>
+          <div class="session-cost-val">${formatDe(s.totalCost)} €</div>
+        </div>
+
+        <div class="session-details-row">
+          <div>
+            <span>📍 ${s.odometer ? s.odometer.toLocaleString('de-DE') + ' km' : 'km nicht notiert'}</span>
+          </div>
+          <div>
+            <span>${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</span>
+          </div>
+        </div>
+
+        ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
+
+        <div class="session-actions-bar">
+          <button class="btn-card-action btn-pay-toggle ${isPaid ? 'paid' : 'unpaid'}" data-id="${s.id}" title="${isPaid ? 'Als noch offen markieren' : 'Als bezahlt verbuchen'}">
+            ${isPaid ? '↩️ Als offen markieren' : '✓ Als bezahlt verbuchen'}
+          </button>
+          <button class="btn-card-action btn-edit-charge" data-id="${s.id}">✏️ Details</button>
+        </div>
+      </div>
+    `;
   }
 
   function renderBayrhofsReconcileCard() {
@@ -4503,6 +4750,18 @@ function createOutput(data, callback) {
     if (DOM.reconcilePaidSum) DOM.reconcilePaidSum.textContent = formatDe(paidSum) + ' €';
     if (DOM.reconcilePaidCount) DOM.reconcilePaidCount.textContent = `${paidSessions.length} Ladung${paidSessions.length === 1 ? '' : 'en'}`;
 
+    if (DOM.segBadgeBayrhofs) {
+      if (unpaidSessions.length > 0) {
+        DOM.segBadgeBayrhofs.textContent = unpaidSessions.length;
+        DOM.segBadgeBayrhofs.style.display = 'inline-flex';
+      } else {
+        DOM.segBadgeBayrhofs.style.display = 'none';
+      }
+    }
+
+    if (DOM.bayBadgeOpenCount) DOM.bayBadgeOpenCount.textContent = unpaidSessions.length;
+    if (DOM.bayBadgeHistoryCount) DOM.bayBadgeHistoryCount.textContent = paidSessions.length;
+
     if (DOM.reconcileStatusChip) {
       if (unpaidSessions.length > 0) {
         DOM.reconcileStatusChip.className = 'reconcile-status-chip has-unpaid';
@@ -4515,9 +4774,62 @@ function createOutput(data, callback) {
 
     if (DOM.reconcileHeaderSubtext) {
       if (unpaidSessions.length > 0) {
-        DOM.reconcileHeaderSubtext.textContent = `Offener Sammelbetrag: ${formatDe(unpaidSum)} € zur späteren Abrechnung`;
+        DOM.reconcileHeaderSubtext.textContent = `Offener Betrag: ${formatDe(unpaidSum)} € zur späteren Abrechnung`;
       } else {
-        DOM.reconcileHeaderSubtext.textContent = 'Aktuell keine offenen Sammelabrechnungen bei Bayrhofs';
+        DOM.reconcileHeaderSubtext.textContent = 'Aktuell keine offenen Abrechnungen bei Bayrhofs';
+      }
+    }
+
+    if (DOM.bayOpenChargesCountBadge) {
+      DOM.bayOpenChargesCountBadge.textContent = `${unpaidSessions.length} offen`;
+    }
+    if (DOM.bayHistoryBadgeCount) {
+      DOM.bayHistoryBadgeCount.textContent = `${paidSessions.length} abgerechnet`;
+    }
+    if (DOM.bayHistorySummaryText) {
+      DOM.bayHistorySummaryText.textContent = `${paidSessions.length} Ladung${paidSessions.length === 1 ? '' : 'en'} • ${formatDe(paidSum)} € abgerechnet`;
+    }
+
+    // Offene Ladungen rendern
+    if (DOM.bayrhofsOpenStreamContainer) {
+      if (unpaidSessions.length === 0) {
+        DOM.bayrhofsOpenStreamContainer.innerHTML = `
+          <div class="swift-glass-card" style="text-align:center; padding: 28px 16px; color: var(--text-muted);">
+            <div style="font-size: 2rem; margin-bottom: 6px;">🎉</div>
+            <div style="font-weight: 700; color: #fff;">Alles abgerechnet!</div>
+            <div style="font-size: 0.76rem; margin-top: 4px;">Aktuell gibt es keine offenen Bayrhofs-Ladungen.</div>
+          </div>
+        `;
+      } else {
+        DOM.bayrhofsOpenStreamContainer.innerHTML = unpaidSessions.map(s => renderBayrhofsSessionCard(s, false)).join('');
+        DOM.bayrhofsOpenStreamContainer.querySelectorAll('.btn-pay-toggle').forEach(btn => {
+          btn.addEventListener('click', () => handleToggleSessionPaid(btn.getAttribute('data-id')));
+        });
+        DOM.bayrhofsOpenStreamContainer.querySelectorAll('.btn-edit-charge').forEach(btn => {
+          btn.addEventListener('click', () => openModalCharge(btn.getAttribute('data-id')));
+        });
+      }
+    }
+
+    // Bereits abgerechnete Historie rendern
+    if (DOM.bayrhofsPaidStreamContainer) {
+      if (paidSessions.length === 0) {
+        DOM.bayrhofsPaidStreamContainer.innerHTML = `
+          <div class="swift-glass-card" style="text-align:center; padding: 28px 16px; color: var(--text-muted);">
+            <div style="font-size: 2rem; margin-bottom: 6px;">📜</div>
+            <div style="font-weight: 700; color: #fff;">Noch keine Zahlungen verbucht</div>
+            <div style="font-size: 0.76rem; margin-top: 4px;">Sobald du Bayrhofs-Ladungen als bezahlt markierst, erscheinen sie hier.</div>
+          </div>
+        `;
+      } else {
+        const sortedPaid = [...paidSessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        DOM.bayrhofsPaidStreamContainer.innerHTML = sortedPaid.map(s => renderBayrhofsSessionCard(s, true)).join('');
+        DOM.bayrhofsPaidStreamContainer.querySelectorAll('.btn-pay-toggle').forEach(btn => {
+          btn.addEventListener('click', () => handleToggleSessionPaid(btn.getAttribute('data-id')));
+        });
+        DOM.bayrhofsPaidStreamContainer.querySelectorAll('.btn-edit-charge').forEach(btn => {
+          btn.addEventListener('click', () => openModalCharge(btn.getAttribute('data-id')));
+        });
       }
     }
   }
@@ -8186,11 +8498,22 @@ function createOutput(data, callback) {
       DOM.cfgCurrentSoc.value = (v.currentSoc !== null && v.currentSoc !== undefined) ? v.currentSoc : '';
     }
 
-    // Feature 9a: THG-Quote Settings Form befüllen
+    // Feature 9a: THG-Quote Settings Form befüllen (aus thgByYear pro Jahr)
     const thg = (appData.settings && appData.settings.thg) || {};
-    if (DOM.cfgThgYear) DOM.cfgThgYear.value = thg.year || new Date().getFullYear();
-    if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = (thg.amount !== undefined && thg.amount !== null) ? Number(thg.amount).toFixed(2) : '110.00';
-    if (DOM.cfgThgActive) DOM.cfgThgActive.checked = thg.status !== 'inactive';
+    const defaultYear = thg.year || new Date().getFullYear();
+    const curYear = DOM.cfgThgYear ? (parseInt(DOM.cfgThgYear.value, 10) || defaultYear) : defaultYear;
+    const yrStr = String(curYear);
+    const yrCfg = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[yrStr]) || thg;
+
+    if (DOM.cfgThgYear) DOM.cfgThgYear.value = curYear;
+    if (DOM.cfgThgAmount) {
+      const amt = (yrCfg && yrCfg.amount !== undefined && yrCfg.amount !== null) ? Number(yrCfg.amount) : 110.00;
+      DOM.cfgThgAmount.value = amt.toFixed(2);
+    }
+    if (DOM.cfgThgActive) {
+      const act = yrCfg ? (yrCfg.status !== 'inactive' && yrCfg.active !== false) : true;
+      DOM.cfgThgActive.checked = act;
+    }
 
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();
@@ -8215,20 +8538,34 @@ function createOutput(data, callback) {
       }
     }
 
-    // Feature 9a: THG-Quote speichern
+    // Feature 9a: THG-Quote speichern (pro Jahr)
     if (!appData.settings.thg) appData.settings.thg = {};
+    if (!appData.settings.thgByYear) appData.settings.thgByYear = {};
+
+    let chosenYear = new Date().getFullYear();
     if (DOM.cfgThgYear) {
-      appData.settings.thg.year = parseInt(DOM.cfgThgYear.value, 10) || new Date().getFullYear();
+      chosenYear = parseInt(DOM.cfgThgYear.value, 10) || new Date().getFullYear();
+      appData.settings.thg.year = chosenYear;
     }
+    let chosenAmount = 110.00;
     if (DOM.cfgThgAmount) {
       const parsedAmount = parseFloat(DOM.cfgThgAmount.value.replace(',', '.'));
-      appData.settings.thg.amount = !isNaN(parsedAmount) ? Math.max(0, parsedAmount) : 110.00;
+      chosenAmount = !isNaN(parsedAmount) ? Math.max(0, parsedAmount) : 110.00;
+      appData.settings.thg.amount = chosenAmount;
     }
+    let chosenActive = true;
     if (DOM.cfgThgActive) {
-      const isActive = DOM.cfgThgActive.checked;
-      appData.settings.thg.status = isActive ? 'active' : 'inactive';
-      appData.settings.thg.active = isActive;
+      chosenActive = DOM.cfgThgActive.checked;
+      appData.settings.thg.status = chosenActive ? 'active' : 'inactive';
+      appData.settings.thg.active = chosenActive;
     }
+
+    appData.settings.thgByYear[String(chosenYear)] = {
+      year: chosenYear,
+      amount: chosenAmount,
+      active: chosenActive,
+      status: chosenActive ? 'active' : 'inactive'
+    };
 
     saveData();
     renderDashboard();
@@ -8416,9 +8753,16 @@ function createOutput(data, callback) {
 
   window.calculateBayrhofsPaymentMatch = calculateBayrhofsPaymentMatch;
   window.renderBayrhofsReconcileCard = renderBayrhofsReconcileCard;
+  window.switchBayrhofsMode = switchBayrhofsMode;
   window.handleToggleSessionPaid = handleToggleSessionPaid;
   window.handleConfirmReconcile = handleConfirmReconcile;
   window.renderAll = renderAll;
   window.saveData = saveData;
+
+  Object.defineProperty(window, 'appData', {
+    get() { return appData; },
+    set(v) { appData = v; },
+    configurable: true
+  });
 
 })();

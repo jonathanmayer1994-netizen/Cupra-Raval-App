@@ -805,11 +805,33 @@ body {
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 600;
   border-radius: calc(var(--radius-md) - 3px);
   cursor: pointer;
   transition: all 0.2s var(--ease-swift);
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.subtab-unpaid-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.95);
+  color: #0b0f14;
+  font-size: 0.65rem;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.4);
 }
 
 .picker-seg:active { transform: scale(0.97); }
@@ -5038,4 +5060,156 @@ select option {
   color: #0d141f;
   font-weight: 800;
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+/* ==========================================================================
+   BAYRHOFS ABRECHNUNG: MODUS-SWITCH & HISTORIE DER ZAHLUNGEN
+   ========================================================================== */
+.reconcile-metric-pill.active {
+  box-shadow: 0 0 0 2px rgba(192, 128, 81, 0.45);
+}
+
+.reconcile-metric-pill.unpaid.active {
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.55);
+}
+
+.reconcile-metric-pill.paid.active {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.55);
+}
+
+.bayrhofs-mode-switch {
+  display: flex;
+  gap: 8px;
+  background: rgba(10, 16, 24, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-top: 12px;
+}
+
+.btn-bay-mode {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-bay-mode:active {
+  transform: scale(0.98);
+}
+
+.btn-bay-mode.active {
+  background: rgba(30, 44, 60, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(192, 128, 81, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-weight: 700;
+}
+
+.bay-mode-count {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.btn-bay-mode.active .bay-mode-count {
+  background: rgba(192, 128, 81, 0.25);
+  color: #ffb888;
+}
+
+.bayrhofs-charges-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.bayrhofs-charges-section-header .section-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.section-badge {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+}
+
+.section-badge.unpaid {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.section-badge.paid {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* Historie der Zahlungen Bereich */
+.bayrhofs-history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.bayrhofs-history-header-box {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-header-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #34d399;
+}
+
+.history-header-sub {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.bayrhofs-empty-note {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
 }

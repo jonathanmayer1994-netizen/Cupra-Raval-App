@@ -63,6 +63,29 @@ function saveVehicleConfigToSheet(config) {
     { key: "thgStatus", label: "THG Status", desc: "Status der THG-Prämie (active/inactive)", val: config.thgStatus || "active" }
   ];
 
+  // THG Quote Einträge pro Jahr speichern (z. B. thg_2025, thg_2026)
+  if (config.thgByYear && typeof config.thgByYear === "object") {
+    Object.keys(config.thgByYear).forEach(function(yr) {
+      const item = config.thgByYear[yr];
+      const amt = typeof item === "object" ? item.amount : Number(item);
+      const isAct = typeof item === "object" ? (item.active !== false && item.status !== "inactive") : true;
+      if (amt !== undefined && !isNaN(Number(amt))) {
+        defs.push({
+          key: "thg_" + yr,
+          label: "THG Quote " + yr + " Betrag (€)",
+          desc: "Jahresprämie THG-Gutschrift für " + yr,
+          val: Number(amt)
+        });
+        defs.push({
+          key: "thg_active_" + yr,
+          label: "THG Quote " + yr + " Aktiv",
+          desc: "Wird die THG-Quote für " + yr + " gegengerechnet?",
+          val: isAct ? "Ja" : "Nein"
+        });
+      }
+    });
+  }
+
   const lastRow = sheet.getLastRow();
   const existingMap = {};
   if (lastRow > 1) {
@@ -97,11 +120,29 @@ function getVehicleConfigFromSheet() {
   }
 
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
-  const config = {};
+  const config = { thgByYear: {} };
   for (let i = 0; i < rows.length; i++) {
     const key = String(rows[i][0] || "").trim();
     const val = rows[i][1];
     if (!key) continue;
+
+    // THG Betrag pro Jahr erkennen (z. B. thg_2026 oder "THG Quote 2026 Betrag (€)")
+    const thgYearMatch = key.match(/^thg_(\d{4})$/i) || key.match(/THG Quote (\d{4}) Betrag/i);
+    if (thgYearMatch) {
+      const yr = thgYearMatch[1];
+      if (!config.thgByYear[yr]) config.thgByYear[yr] = {};
+      config.thgByYear[yr].amount = parseNum(val);
+      config.thgByYear[yr].year = parseInt(yr, 10);
+    }
+
+    // THG Status pro Jahr erkennen
+    const thgActiveMatch = key.match(/^thg_active_(\d{4})$/i) || key.match(/THG Quote (\d{4}) Aktiv/i);
+    if (thgActiveMatch) {
+      const yr = thgActiveMatch[1];
+      if (!config.thgByYear[yr]) config.thgByYear[yr] = {};
+      config.thgByYear[yr].active = (val === true || String(val).toLowerCase() === "ja" || String(val).toLowerCase() === "true");
+      config.thgByYear[yr].status = config.thgByYear[yr].active ? "active" : "inactive";
+    }
 
     if (key === "model" || key === "Fahrzeugmodell") config.model = String(val);
     else if (key === "batteryKwh" || key.indexOf("Batteriekapazität") !== -1) config.batteryKwh = parseNum(val);
@@ -114,6 +155,16 @@ function getVehicleConfigFromSheet() {
     else if (key === "thgActive" || key.indexOf("THG Quote Aktiv") !== -1) config.thgActive = (val === true || String(val).toLowerCase() === "ja" || String(val).toLowerCase() === "true");
     else if (key === "thgStatus" || key.indexOf("THG Status") !== -1) config.thgStatus = String(val);
   }
+
+  // Rückwärtskompatibilität: Falls thgYear & thgAmount gesetzt sind, im thgByYear eintragen
+  if (config.thgYear && config.thgAmount !== undefined) {
+    const yrStr = String(config.thgYear);
+    if (!config.thgByYear[yrStr]) config.thgByYear[yrStr] = {};
+    if (config.thgByYear[yrStr].amount === undefined) config.thgByYear[yrStr].amount = config.thgAmount;
+    if (config.thgByYear[yrStr].active === undefined) config.thgByYear[yrStr].active = config.thgActive;
+    config.thgByYear[yrStr].year = config.thgYear;
+  }
+
   return config;
 }
 

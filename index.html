@@ -25,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=42">
+  <link rel="stylesheet" href="./style.css?v=44">
 
   <style id="critical-form-grid-fix">
     /* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerechte Ausrichtung) */
@@ -377,14 +377,33 @@
         </div>
 
         <!-- SwiftUI Style Segmented Control: [Historie] | [Auswertung & Graphen] -->
+        <!-- SwiftUI Style Segmented Control: [Ladehistorie] | [Bayrhofs Abrechnung] | [Auswertung & Graphen] -->
         <div class="swift-segmented-picker">
-          <button class="picker-seg active" data-sub="history">Ladehistorie</button>
-          <button class="picker-seg" data-sub="analytics">Auswertung & Graphen</button>
+          <button class="picker-seg active" data-sub="history" id="segBtnHistory">Ladehistorie</button>
+          <button class="picker-seg" data-sub="bayrhofs" id="segBtnBayrhofs">
+            <span>Bayrhofs Abrechnung</span>
+            <span class="subtab-unpaid-badge" id="segBadgeBayrhofs" style="display: none;">0</span>
+          </button>
+          <button class="picker-seg" data-sub="analytics" id="segBtnAnalytics">Auswertung & Graphen</button>
         </div>
 
         <!-- Unteransicht A: Ladehistorie -->
         <div id="sub-history" class="charging-sub-view active">
+          <!-- Dynamische Filter-Pills nach Ladeorten & PV -->
+          <div class="history-filter-scroll-wrapper">
+            <div class="filter-chips-rail" id="chargingFilterRail">
+              <button class="chip-filter active" data-filter="all">Alle</button>
+            </div>
+          </div>
 
+          <!-- Ladeliste Stream -->
+          <div class="charges-stream" id="chargesStreamContainer">
+            <!-- Sessions werden per JS gerendert -->
+          </div>
+        </div>
+
+        <!-- Unteransicht B: Bayrhofs Abrechnung -->
+        <div id="sub-bayrhofs" class="charging-sub-view">
           <!-- ======================================================= -->
           <!-- BAYRHOFS ABRECHNUNG & INTELLIGENTER ZAHLUNGSABGLEICH    -->
           <!-- ======================================================= -->
@@ -394,20 +413,17 @@
                 <div class="reconcile-badge-icon">💶</div>
                 <div class="reconcile-header-text">
                   <div class="reconcile-title-row">
-                    <span class="reconcile-title">Bayrhofs Sammelabrechnung</span>
+                    <span class="reconcile-title">Bayrhofs Abrechnung</span>
                     <span class="reconcile-status-chip" id="reconcileStatusChip">Berechne...</span>
                   </div>
                   <div class="reconcile-subtext" id="reconcileHeaderSubtext">Spätere Summenabrechnung für Bayrhofs</div>
                 </div>
               </div>
-              <button type="button" class="btn-reconcile-toggle" id="btnToggleReconcileCollapse" aria-label="Abrechnungs-Bereich öffnen oder schließen">
-                <span class="reconcile-chevron" id="reconcileChevronIcon">▾</span>
-              </button>
             </div>
 
             <!-- Schnellübersicht: Offen vs. Abgerechnet -->
             <div class="reconcile-metrics-grid">
-              <div class="reconcile-metric-pill unpaid" id="pillFilterUnpaidBayrhofs" title="Tippen um nur offene Bayrhofs-Ladungen anzuzeigen">
+              <div class="reconcile-metric-pill unpaid active" id="pillFilterUnpaidBayrhofs" title="Tippen um offene Bayrhofs-Ladungen zuzuordnen">
                 <div class="metric-top">
                   <span class="metric-dot unpaid"></span>
                   <span class="metric-label">Offen bei Bayrhofs</span>
@@ -416,7 +432,7 @@
                 <div class="metric-sub" id="reconcileUnpaidCount">0 Ladungen</div>
               </div>
 
-              <div class="reconcile-metric-pill paid" id="pillFilterPaidBayrhofs" title="Tippen um bereits abgerechnete Bayrhofs-Ladungen anzuzeigen">
+              <div class="reconcile-metric-pill paid" id="pillFilterPaidBayrhofs" title="Tippen für Historie der bereits abgerechneten Ladungen">
                 <div class="metric-top">
                   <span class="metric-dot paid"></span>
                   <span class="metric-label">Bereits abgerechnet</span>
@@ -426,8 +442,20 @@
               </div>
             </div>
 
-            <!-- Aufklappbarer Bereich: Intelligenter Zahlungsabgleich -->
-            <div class="reconcile-expandable-content" id="reconcileExpandableContent">
+            <!-- Modus-Umschaltung: Offene Ladungen abgleichen vs. Historie der Zahlungen -->
+            <div class="bayrhofs-mode-switch">
+              <button type="button" class="btn-bay-mode active" id="btnBayModeOpen" data-baymode="open">
+                <span>⏳ Offene Ladungen abgleichen</span>
+                <span class="bay-mode-count" id="bayBadgeOpenCount">0</span>
+              </button>
+              <button type="button" class="btn-bay-mode" id="btnBayModeHistory" data-baymode="history">
+                <span>📜 Historie der Zahlungen</span>
+                <span class="bay-mode-count" id="bayBadgeHistoryCount">0</span>
+              </button>
+            </div>
+
+            <!-- ABSCHNITT 1: Offene Ladungen & Intelligenter Zahlungsabgleich -->
+            <div class="reconcile-expandable-content" id="baySectionOpen">
               <div class="reconcile-input-container">
                 <div class="reconcile-input-title-row">
                   <label class="form-touch-label" for="inputReconcileAmount" style="margin-bottom:0;">
@@ -482,23 +510,36 @@
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- Dynamische Filter-Pills nach Ladeorten & PV -->
-          <div class="history-filter-scroll-wrapper">
-            <div class="filter-chips-rail" id="chargingFilterRail">
-              <button class="chip-filter active" data-filter="all">Alle</button>
+              <!-- Liste offener Bayrhofs-Ladungen -->
+              <div class="bayrhofs-charges-section-header">
+                <span class="section-title">Offene Bayrhofs-Ladungen</span>
+                <span class="section-badge unpaid" id="bayOpenChargesCountBadge">0 offen</span>
+              </div>
+              <div class="charges-stream bayrhofs-open-stream" id="bayrhofsOpenStreamContainer">
+                <!-- Dynamisch gerendert -->
+              </div>
             </div>
-          </div>
 
-          <!-- Ladeliste Stream -->
-          <div class="charges-stream" id="chargesStreamContainer">
-            <!-- Sessions werden per JS gerendert -->
+            <!-- ABSCHNITT 2: Historie der Zahlungen (bereits abgerechnet) -->
+            <div class="bayrhofs-history-section" id="baySectionHistory" style="display: none;">
+              <div class="bayrhofs-history-header-box">
+                <div class="history-header-top">
+                  <span class="history-header-title">Bereits abgerechnete Zahlungen</span>
+                  <span class="section-badge paid" id="bayHistoryBadgeCount">0 bezahlt</span>
+                </div>
+                <div class="history-header-sub" id="bayHistorySummaryText">
+                  Gesamtsumme aller abgerechneten Bayrhofs-Ladungen: 0,00 €
+                </div>
+              </div>
+              <div class="charges-stream bayrhofs-paid-stream" id="bayrhofsPaidStreamContainer">
+                <!-- Dynamisch gerendert -->
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Unteransicht B: Auswertung & Chart.js Graphen -->
+        <!-- Unteransicht C: Auswertung & Chart.js Graphen -->
         <div id="sub-analytics" class="charging-sub-view">
           <!-- Zeitintervall Tabs -->
           <div class="period-pills-bar">
@@ -1459,8 +1500,8 @@
   </div>
 
   <!-- Weather Service Module -->
-  <script src="./weatherService.js?v=42"></script>
+  <script src="./weatherService.js?v=44"></script>
   <!-- App Script -->
-  <script src="./app.js?v=42"></script>
+  <script src="./app.js?v=44"></script>
 </body>
 </html>

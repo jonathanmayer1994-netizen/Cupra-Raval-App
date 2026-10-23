@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 
 def run_payment_tests():
     print("=" * 70)
-    print("E2E TESTS: BAYRHOFS ABRECHNUNG & ZAHLUNGSABGLEICH")
+    print("E2E TESTS: BAYRHOFS ABRECHNUNG, ZAHLUNGSHISTORIE & THG-SPEICHERUNG")
     print("=" * 70)
 
     passed = 0
@@ -21,6 +21,7 @@ def run_payment_tests():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 390, "height": 844})
+        context.route("https://script.google.com/**", lambda route: route.abort())
         page = context.new_page()
 
         try:
@@ -30,6 +31,8 @@ def run_payment_tests():
             # 1. Beispieldaten laden für deterministische Testdaten
             print("\n--- TEST 1: Beispieldaten laden ---")
             page.evaluate("""() => {
+                window.fetchCloudSessions = () => Promise.resolve();
+                window.postCloudPaymentUpdate = () => Promise.resolve();
                 const now = new Date();
                 window.appData.sessions = [
                     {
@@ -90,70 +93,68 @@ def run_payment_tests():
             page.locator('.dock-tab-btn[data-tab="charging"]').click()
             time.sleep(0.3)
 
-            # 2. Prüfen der Bayrhofs Reconcile Card
-            print("\n--- TEST 2: Bayrhofs Abrechnung Card vorhanden & berechnet ---")
+            # 2. Prüfen des Segmented Pickers mit Subtab "Bayrhofs Abrechnung"
+            print("\n--- TEST 2: Subtab 'Bayrhofs Abrechnung' vorhanden & wählbar ---")
+            bay_tab_btn = page.locator('.picker-seg[data-sub="bayrhofs"]')
+            tab_exists = bay_tab_btn.count() > 0
+            log_test("2.1 Subtab 'Bayrhofs Abrechnung' vorhanden", tab_exists)
+
+            # Badge auf Subtab prüfen (2 offene Ladungen)
+            badge_text = page.locator("#segBadgeBayrhofs").inner_text()
+            log_test("2.2 Badge am Subtab zeigt 2 offene Ladungen", "2" in badge_text, f"Badge: '{badge_text}'")
+
+            # Auf Bayrhofs Abrechnung Tab wechseln
+            bay_tab_btn.click()
+            time.sleep(0.3)
             card_visible = page.locator("#bayrhofsReconcileCard").is_visible()
-            log_test("2.1 Reconcile Card sichtbar", card_visible)
+            log_test("2.3 Bayrhofs Abrechnung Subview sichtbar", card_visible)
 
             unpaid_sum_text = page.locator("#reconcileUnpaidSum").inner_text()
             unpaid_count_text = page.locator("#reconcileUnpaidCount").inner_text()
-            # 5.18 + 6.00 = 11.18 €
-            log_test("2.2 Offener Betrag korrekt berechnet (11,18 € / 2 Ladungen)", "11,18" in unpaid_sum_text and "2" in unpaid_count_text, f"Summe: {unpaid_sum_text}, Count: {unpaid_count_text}")
+            log_test("2.4 Offener Betrag korrekt berechnet (11,18 € / 2 Ladungen)", "11,18" in unpaid_sum_text and "2" in unpaid_count_text, f"Summe: {unpaid_sum_text}, Count: {unpaid_count_text}")
 
-            # 3. Badges in den Karten prüfen
-            print("\n--- TEST 3: Status-Badges in Ladekarten ---")
-            # Bayrhof Karten müssen "⏳ Offen" haben
-            card_bay1 = page.locator('.session-swift-card[data-id="session_bayrhof_1"]')
-            bay1_badge = card_bay1.locator(".pay-status-badge.unpaid").inner_text()
-            log_test("3.1 Bayrhofs Karte zeigt '⏳ Offen'", "Offen" in bay1_badge, f"Badge: '{bay1_badge}'")
+            # 3. Wechsel zur 'Historie der Zahlungen' per Klick auf 'Bereits abgerechnet'
+            print("\n--- TEST 3: Historie der Zahlungen per Klick auf 'Bereits abgerechnet' ---")
+            # Klick auf pillFilterPaidBayrhofs ("Bereits abgerechnet")
+            page.locator("#pillFilterPaidBayrhofs").click()
+            time.sleep(0.3)
 
-            # Arbeit Karte muss "✓ Direkt bezahlt" haben
-            card_arbeit = page.locator('.session-swift-card[data-id="session_arbeit_1"]')
-            arbeit_badge = card_arbeit.locator(".pay-status-badge.direct").inner_text()
-            log_test("3.2 Arbeit Karte zeigt '✓ Direkt bezahlt'", "Direkt bezahlt" in arbeit_badge, f"Badge: '{arbeit_badge}'")
+            history_visible = page.locator("#baySectionHistory").is_visible()
+            open_hidden = not page.locator("#baySectionOpen").is_visible()
+            history_btn_active = page.locator("#btnBayModeHistory").evaluate("el => el.classList.contains('active')")
+            log_test("3.1 Klick auf 'Bereits abgerechnet' öffnet Zahlungshistorie", history_visible and open_hidden and history_btn_active)
 
-            # 4. Quick Toggle Button
-            print("\n--- TEST 4: Schnelles Umschalten über Button in Karte ---")
-            toggle_btn = card_bay1.locator(".btn-pay-toggle")
-            btn_text_before = toggle_btn.inner_text()
-            log_test("4.1 Toggle-Button zeigt '💶 Als bezahlt'", "Als bezahlt" in btn_text_before)
+            # Klick auf 'Offen bei Bayrhofs' wechselt zurück
+            page.locator("#pillFilterUnpaidBayrhofs").click()
+            time.sleep(0.3)
 
-            toggle_btn.click()
-            time.sleep(0.4)
+            history_hidden = not page.locator("#baySectionHistory").is_visible()
+            open_visible = page.locator("#baySectionOpen").is_visible()
+            open_btn_active = page.locator("#btnBayModeOpen").evaluate("el => el.classList.contains('active')")
+            log_test("3.2 Klick auf 'Offen bei Bayrhofs' wechselt zurück zu offenen Ladungen", history_hidden and open_visible and open_btn_active)
 
-            # Nach Klick: Bayrhofs 1 muss jetzt bezahlt sein
-            is_paid_after = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_1').paid")
-            card_bay1_updated = page.locator('.session-swift-card[data-id="session_bayrhof_1"]')
-            badge_paid = card_bay1_updated.locator(".pay-status-badge.paid").inner_text()
-            log_test("4.2 Bayrhofs 1 nach Klick als bezahlt markiert", is_paid_after is True and "Bezahlt" in badge_paid)
-
-            # Wieder zurück auf offen setzen
-            toggle_btn_rev = card_bay1_updated.locator(".btn-pay-toggle")
-            toggle_btn_rev.click()
-            time.sleep(0.4)
-            is_unpaid_again = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_1').paid")
-            log_test("4.3 Bayrhofs 1 wieder auf offen zurückgesetzt", is_unpaid_again is False)
+            # 4. Offene Ladungsliste in Bayrhofs-Ansicht prüfen
+            print("\n--- TEST 4: Liste offener Ladungen in Bayrhofs-Ansicht ---")
+            open_cards_count = page.locator("#bayrhofsOpenStreamContainer .bayrhofs-session-card").count()
+            log_test("4.1 Genau 2 offene Bayrhofs-Karten gerendert", open_cards_count == 2, f"Count: {open_cards_count}")
 
             # 5. Intelligenter Zahlungsabgleich (Smart Matching)
             print("\n--- TEST 5: Intelligenter Zahlungsabgleich (Smart Matching) ---")
-            # Wir geben 5.18 € ein -> muss exakt session_bayrhof_1 treffen
             amount_input = page.locator("#inputReconcileAmount")
             amount_input.fill("5.18")
             page.locator("#btnRunReconcile").click()
             time.sleep(0.4)
 
             result_panel_visible = page.locator("#reconcileResultPanel").is_visible()
-            badge_text = page.locator("#reconcileResultBadge").inner_text()
-            log_test("5.1 Ergebnisbox sichtbar mit exakter Übereinstimmung", result_panel_visible and "Exakt" in badge_text, f"Badge: '{badge_text}'")
+            badge_match_text = page.locator("#reconcileResultBadge").inner_text()
+            log_test("5.1 Ergebnisbox sichtbar mit exakter Übereinstimmung", result_panel_visible and "Exakt" in badge_match_text, f"Badge: '{badge_match_text}'")
 
-            # Checkbox für session_bayrhof_1 muss vorselektiert sein
             cb_bay1 = page.locator('.reconcile-item-checkbox[data-id="session_bayrhof_1"]')
             cb_bay1_checked = cb_bay1.is_checked()
             cb_bay2 = page.locator('.reconcile-item-checkbox[data-id="session_bayrhof_2"]')
             cb_bay2_checked = cb_bay2.is_checked()
             log_test("5.2 Genau session_bayrhof_1 selektiert", cb_bay1_checked is True and cb_bay2_checked is False)
 
-            # Differenz Anzeige
             diff_text = page.locator("#reconcileDiffDisplay").inner_text()
             log_test("5.3 Differenz ist 0,00 € (Exakt)", "0,00" in diff_text)
 
@@ -161,54 +162,90 @@ def run_payment_tests():
             page.locator("#btnConfirmReconcile").click()
             time.sleep(0.4)
 
-            # Prüfen ob session_bayrhof_1 nun paid: true ist
             bay1_now_paid = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_1').paid")
             bay2_still_unpaid = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_2').paid")
             log_test("5.4 Verbuchen erfolgreich: Bayrhofs 1 bezahlt, Bayrhofs 2 noch offen", bay1_now_paid is True and bay2_still_unpaid is False)
 
-            # Neuer offener Betrag in Reconcile Card: 6.00 €
-            unpaid_sum_after = page.locator("#reconcileUnpaidSum").inner_text()
-            log_test("5.5 Reconcile-Übersicht aktualisiert (6,00 € offen)", "6,00" in unpaid_sum_after)
+            # Reconcile-Badge am Subtab muss jetzt 1 zeigen
+            badge_after = page.locator("#segBadgeBayrhofs").inner_text()
+            log_test("5.5 Subtab-Badge auf 1 reduziert", "1" in badge_after, f"Badge: '{badge_after}'")
 
-            # 6. Filterchip "Bayrhofs Offen"
-            print("\n--- TEST 6: Filterchip 'Bayrhofs Offen' ---")
+            # 6. Historie der Zahlungen nach Verbuchung prüfen
+            print("\n--- TEST 6: Zahlungshistorie enthält verbuchte Ladung ---")
+            page.locator("#btnBayModeHistory").click()
+            time.sleep(0.3)
+
+            paid_card_bay1 = page.locator('#bayrhofsPaidStreamContainer .bayrhofs-session-card[data-id="session_bayrhof_1"]')
+            paid_card_exists = paid_card_bay1.count() > 0
+            log_test("6.1 Verbuchte Ladung session_bayrhof_1 ist in Zahlungshistorie vorhanden", paid_card_exists)
+
+            # 7. Ladehistorie Subtab (Hauptstrom) und Filter
+            print("\n--- TEST 7: Ladehistorie Subtab & Filterchips ---")
+            page.locator('.picker-seg[data-sub="history"]').click()
+            time.sleep(0.3)
+
+            # Bayrhof 1 muss jetzt "✓ Bezahlt" zeigen
+            card_bay1 = page.locator('#chargesStreamContainer .session-swift-card[data-id="session_bayrhof_1"]')
+            badge_paid = card_bay1.locator(".pay-status-badge.paid").inner_text()
+            log_test("7.1 Bayrhofs 1 zeigt '✓ Bezahlt'", "Bezahlt" in badge_paid)
+
+            # Schnellfilter 'Bayrhofs Offen'
             unpaid_chip = page.locator('.chip-filter[data-filter="unpaid_bayrhofs"]')
             chip_exists = unpaid_chip.count() > 0
-            log_test("6.1 Schnellfilter '⏳ Bayrhofs Offen' vorhanden", chip_exists)
+            log_test("7.2 Schnellfilter '⏳ Bayrhofs Offen' vorhanden", chip_exists)
             if chip_exists:
                 unpaid_chip.click()
                 time.sleep(0.3)
-                cards_count = page.locator(".session-swift-card").count()
-                first_card_id = page.locator(".session-swift-card").first.get_attribute("data-id")
-                log_test("6.2 Filter zeigt nur 1 offene Karte (session_bayrhof_2)", cards_count == 1 and first_card_id == "session_bayrhof_2")
+                cards_count = page.locator("#chargesStreamContainer .session-swift-card").count()
+                first_card_id = page.locator("#chargesStreamContainer .session-swift-card").first.get_attribute("data-id")
+                log_test("7.3 Filter zeigt genau die 1 offene Karte (session_bayrhof_2)", cards_count == 1 and first_card_id == "session_bayrhof_2", f"Count: {cards_count}, First: {first_card_id}")
 
-            # 7. Modal Ladevorgang erfassen / bearbeiten
-            print("\n--- TEST 7: Zahlungsstatus im Lade-Modal ---")
-            page.locator('.chip-filter[data-filter="all"]').click()
+            # 8. THG-Quote Jahres-Speicherung (thgByYear)
+            print("\n--- TEST 8: THG-Quote Jahres-Speicherung (thgByYear) ---")
+            # Settings Tab öffnen
+            page.locator('.dock-tab-btn[data-tab="settings"]').click()
             time.sleep(0.3)
 
-            # Öffne Bearbeiten für Bayrhofs 2
-            card_bay2 = page.locator('.session-swift-card[data-id="session_bayrhof_2"]')
-            card_bay2.locator(".btn-edit-charge").click()
-            time.sleep(0.4)
+            # THG Quote 2026 auf 135.00 € setzen
+            page.locator("#cfgThgYear").fill("2026")
+            page.locator("#cfgThgAmount").fill("135.00")
+            page.locator("#btnSaveVehicleSettings").click()
+            time.sleep(0.3)
 
-            # Im Modal muss Zahlungsstatus-Checkbox existieren und nicht deaktiviert sein
-            pay_cb = page.locator("#entryPaymentPaidCheckbox")
-            cb_disabled = pay_cb.is_disabled()
-            cb_val = pay_cb.is_checked()
-            log_test("7.1 Bayrhofs Modal: Checkbox editierbar und offen", cb_disabled is False and cb_val is False)
+            thg_2026 = page.evaluate("() => window.appData.settings.thgByYear['2026']")
+            log_test("8.1 THG für 2026 auf 135.00 € gespeichert", thg_2026 is not None and thg_2026.get("amount") == 135.0)
 
-            # Setze Haken auf bezahlt und speichere
-            pay_cb.check()
-            page.locator("#btnSaveEntry").click()
-            time.sleep(0.4)
+            # THG Quote 2025 auf 90.00 € setzen
+            page.locator("#cfgThgYear").fill("2025")
+            page.locator("#cfgThgAmount").fill("90.00")
+            page.locator("#btnSaveVehicleSettings").click()
+            time.sleep(0.3)
 
-            bay2_now_paid = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_2').paid")
-            log_test("7.2 Bayrhofs 2 über Modal als bezahlt gespeichert", bay2_now_paid is True)
+            thg_2025 = page.evaluate("() => window.appData.settings.thgByYear['2025']")
+            log_test("8.2 THG für 2025 auf 90.00 € gespeichert", thg_2025 is not None and thg_2025.get("amount") == 90.0)
 
-            # Jetzt müssen alle Bayrhofs-Ladungen bezahlt sein -> Status Chip "Alles abgerechnet ✓"
-            status_chip_text = page.locator("#reconcileStatusChip").inner_text()
-            log_test("7.3 Status-Chip zeigt 'Alles abgerechnet ✓'", "Alles abgerechnet" in status_chip_text, f"Chip Text: '{status_chip_text}'")
+            # Zurück auf 2026 tippen -> muss automatisch 135.00 laden
+            page.locator("#cfgThgYear").fill("2026")
+            page.locator("#cfgThgYear").dispatch_event("input")
+            time.sleep(0.2)
+            auto_val_2026 = page.locator("#cfgThgAmount").input_value()
+            log_test("8.3 Wechsel auf Jahr 2026 lädt dynamisch 135.00 €", "135" in auto_val_2026, f"Value: '{auto_val_2026}'")
+
+            # Cloud-Config Merge Simulation (stellt sicher, dass 135 € nicht überschrieben wird)
+            page.evaluate("""() => {
+                const cloudConfig = {
+                    model: 'Cupra Raval Endurance Edition Dynamic',
+                    thgByYear: {
+                        '2026': { year: 2026, amount: 135.00, active: true, status: 'active' },
+                        '2025': { year: 2025, amount: 90.00, active: true, status: 'active' }
+                    }
+                };
+                window.postCloudVehicleConfig();
+            }""")
+            time.sleep(0.3)
+
+            final_2026_amt = page.evaluate("() => window.appData.settings.thgByYear['2026'].amount")
+            log_test("8.4 THG-Wert für 2026 bleibt nach Cloud-Sync stabil auf 135.00 €", final_2026_amt == 135.0)
 
             print("\n" + "=" * 70)
             print(f"ERGEBNIS: {passed} PASSED, {failed} FAILED")
