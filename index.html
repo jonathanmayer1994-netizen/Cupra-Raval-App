@@ -884,8 +884,31 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Quick Action & Status Feedback -->
+              <div class="thg-card-actions">
+                <div class="thg-saved-status" id="thgSavedStatus">
+                  <span class="status-icon">✓</span>
+                  <span class="status-text">Für 2026 gespeichert</span>
+                </div>
+                <button type="button" class="btn-thg-quick-save" id="btnSaveThgYear" title="Aktuellen THG-Betrag für dieses Jahr sofort speichern">
+                  <span>Jahr sichern ✓</span>
+                </button>
+              </div>
+
+              <!-- Gespeicherte Jahre Chips -->
+              <div class="thg-years-overview" id="thgYearsOverview">
+                <div class="thg-years-header">
+                  <span class="thg-years-label">Gespeicherte Jahre:</span>
+                  <span class="thg-years-hint">Klick zum Umschalten</span>
+                </div>
+                <div class="thg-years-pills" id="thgYearsPills">
+                  <!-- Dynamisch gerendert -->
+                </div>
+              </div>
+
               <div class="thg-card-hint">
-                Der Ertrag wird automatisch mit den Ladekosten des Jahres gegengerechnet und senkt den effektiven Strompreis je kWh.
+                Der Ertrag wird automatisch mit den Ladekosten des jeweiligen Jahres gegengerechnet und senkt den effektiven Strompreis je kWh.
               </div>
             </div>
 

@@ -353,6 +353,9 @@
     DOM.cfgThgYear = document.getElementById('cfgThgYear');
     DOM.cfgThgAmount = document.getElementById('cfgThgAmount');
     DOM.cfgThgActive = document.getElementById('cfgThgActive');
+    DOM.btnSaveThgYear = document.getElementById('btnSaveThgYear');
+    DOM.thgSavedStatus = document.getElementById('thgSavedStatus');
+    DOM.thgYearsPills = document.getElementById('thgYearsPills');
     DOM.btnSaveVehicleSettings = document.getElementById('btnSaveVehicleSettings');
     DOM.btnToggleLocationEditMode = document.getElementById('btnToggleLocationEditMode');
     DOM.editModeIcon = document.getElementById('editModeIcon');
@@ -598,32 +601,62 @@
       res.settings.locations = JSON.parse(JSON.stringify(DEFAULT_LOCATIONS));
     }
 
-    // THG-Quote Settings Defaults & Migration (Feature 9a)
-    if (!res.settings.thg || typeof res.settings.thg !== 'object') {
-      res.settings.thg = {
-        year: new Date().getFullYear(),
-        amount: 110.00,
-        status: 'active'
-      };
-    } else {
-      if (res.settings.thg.amount === undefined || res.settings.thg.amount === null || isNaN(Number(res.settings.thg.amount))) {
-        res.settings.thg.amount = 110.00;
-      }
-      if (!res.settings.thg.year) res.settings.thg.year = new Date().getFullYear();
-      if (!res.settings.thg.status) res.settings.thg.status = 'active';
-    }
+    // THG-Quote Settings Defaults & Migration (Feature 9a) - Persistenz pro Jahr garantieren
+    const rawThg = (data.settings && data.settings.thg && typeof data.settings.thg === 'object') ? data.settings.thg : {};
+    const rawThgByYear = (data.settings && data.settings.thgByYear && typeof data.settings.thgByYear === 'object') ? data.settings.thgByYear : {};
 
-    if (!res.settings.thgByYear || typeof res.settings.thgByYear !== 'object') {
-      res.settings.thgByYear = {};
-    }
-    const thgYrStr = String(res.settings.thg.year || new Date().getFullYear());
+    const curYr = new Date().getFullYear();
+    const fallbackYear = (rawThg.year && !isNaN(Number(rawThg.year))) ? Number(rawThg.year) : curYr;
+    const fallbackAmount = (rawThg.amount !== undefined && rawThg.amount !== null && !isNaN(Number(rawThg.amount))) ? Number(rawThg.amount) : 110.00;
+    const fallbackActive = (rawThg.status !== 'inactive' && rawThg.active !== false);
+
+    res.settings.thg = {
+      year: fallbackYear,
+      amount: fallbackAmount,
+      active: fallbackActive,
+      status: fallbackActive ? 'active' : 'inactive'
+    };
+
+    res.settings.thgByYear = {};
+
+    // Alle gespeicherten Jahre aus data.settings.thgByYear vollständig übernehmen
+    Object.keys(rawThgByYear).forEach(yr => {
+      const item = rawThgByYear[yr];
+      if (item && typeof item === 'object') {
+        const yrNum = parseInt(yr, 10) || parseInt(item.year, 10) || fallbackYear;
+        const itemAmt = (item.amount !== undefined && item.amount !== null && !isNaN(Number(item.amount))) ? Number(item.amount) : fallbackAmount;
+        const itemAct = (item.status !== 'inactive' && item.active !== false);
+        res.settings.thgByYear[String(yr)] = {
+          year: yrNum,
+          amount: itemAmt,
+          active: itemAct,
+          status: itemAct ? 'active' : 'inactive'
+        };
+      } else if (typeof item === 'number' || (!isNaN(Number(item)) && item !== '')) {
+        const yrNum = parseInt(yr, 10) || fallbackYear;
+        res.settings.thgByYear[String(yr)] = {
+          year: yrNum,
+          amount: Number(item),
+          active: true,
+          status: 'active'
+        };
+      }
+    });
+
+    // Sicherstellen, dass das aktive Jahr in thgByYear existiert
+    const thgYrStr = String(res.settings.thg.year);
     if (!res.settings.thgByYear[thgYrStr]) {
       res.settings.thgByYear[thgYrStr] = {
-        year: parseInt(thgYrStr, 10),
-        amount: Number(res.settings.thg.amount) || 110.00,
-        active: res.settings.thg.status !== 'inactive',
-        status: res.settings.thg.status || 'active'
+        year: res.settings.thg.year,
+        amount: res.settings.thg.amount,
+        active: res.settings.thg.active,
+        status: res.settings.thg.status
       };
+    } else {
+      // Synchronisiere res.settings.thg mit dem Wert im thgByYear
+      res.settings.thg.amount = res.settings.thgByYear[thgYrStr].amount;
+      res.settings.thg.active = res.settings.thgByYear[thgYrStr].active;
+      res.settings.thg.status = res.settings.thgByYear[thgYrStr].status;
     }
 
     // Sessions Migration & Filter out invalid dummy rows
@@ -1454,6 +1487,7 @@
     saveData();
     renderSettingsForms();
     renderDashboard();
+    renderThgYearChips();
     console.log('[Cloud] THG-Konfiguration aus Google Sheet synchronisiert:', appData.settings.thgByYear);
   }
 
@@ -2896,12 +2930,40 @@ function createOutput(data, callback) {
       DOM.cfgThgYear.addEventListener('input', () => {
         const y = parseInt(DOM.cfgThgYear.value, 10);
         if (y && y >= 2000 && y <= 2100) {
-          const yrCfg = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[String(y)]);
-          if (yrCfg) {
-            if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = Number(yrCfg.amount).toFixed(2);
-            if (DOM.cfgThgActive) DOM.cfgThgActive.checked = (yrCfg.status !== 'inactive' && yrCfg.active !== false);
-          }
+          switchThgYear(y);
         }
+      });
+      DOM.cfgThgYear.addEventListener('change', () => {
+        const y = parseInt(DOM.cfgThgYear.value, 10);
+        if (y && y >= 2000 && y <= 2100) {
+          switchThgYear(y);
+        }
+      });
+    }
+
+    if (DOM.cfgThgAmount) {
+      let thgDebounceTimer = null;
+      DOM.cfgThgAmount.addEventListener('input', () => {
+        clearTimeout(thgDebounceTimer);
+        thgDebounceTimer = setTimeout(() => {
+          saveCurrentThgSettings(true);
+        }, 350);
+      });
+      DOM.cfgThgAmount.addEventListener('change', () => {
+        clearTimeout(thgDebounceTimer);
+        saveCurrentThgSettings(true);
+      });
+    }
+
+    if (DOM.cfgThgActive) {
+      DOM.cfgThgActive.addEventListener('change', () => {
+        saveCurrentThgSettings(true);
+      });
+    }
+
+    if (DOM.btnSaveThgYear) {
+      DOM.btnSaveThgYear.addEventListener('click', () => {
+        saveCurrentThgSettings(false);
       });
     }
     if (DOM.btnRunReconcile) {
@@ -4691,17 +4753,40 @@ function createOutput(data, callback) {
 
     return `
       <div class="swift-glass-card session-swift-card bayrhofs-session-card ${isPaid ? 'is-paid' : 'is-unpaid'}" data-id="${s.id}">
-        <div class="session-top-meta">
-          <span class="session-timestamp">${dStr} • ${tStr}</span>
-          <div class="session-badges-wrap">
-            <span class="loc-badge-item">🏢 Bayrhofs</span>
-            ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
-            ${isPaid
-              ? '<span class="pay-status-badge paid" title="Über Abrechnung bezahlt">✓ Bereits abgerechnet</span>'
-              : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>'}
-            ${hasBothSoc
-              ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.socStart}% → ${s.soc}% (+${deltaSoc}%)</span>`
-              : ((s.soc !== undefined && s.soc !== null) ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.soc}%</span>` : '')}
+        <div class="session-top-meta session-header-block">
+          <div class="session-header-row">
+            <div class="session-timestamp">
+              <span class="timestamp-calendar-icon">📅</span>
+              <span>${dStr}</span>
+              <span class="timestamp-separator">•</span>
+              <span class="timestamp-clock-val">${tStr}</span>
+            </div>
+            <div class="session-header-tags session-badges-wrap">
+              <span class="loc-badge-item" title="Bayrhofs">🏢 Bayrhofs</span>
+              ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+            </div>
+          </div>
+
+          <div class="session-status-row">
+            <div class="session-status-left">
+              ${isPaid
+                ? '<span class="pay-status-badge paid" title="Über Abrechnung bezahlt">✓ Bereits abgerechnet</span>'
+                : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>'}
+            </div>
+            <div class="session-status-right">
+              ${hasBothSoc
+                ? `<span class="soc-badge-item">
+                    <span class="soc-icon">🔋</span>
+                    <span class="soc-range">${s.socStart}% <span class="soc-arrow">→</span> ${s.soc}%</span>
+                    <span class="soc-delta">+${deltaSoc}%</span>
+                   </span>`
+                : ((s.soc !== undefined && s.soc !== null)
+                    ? `<span class="soc-badge-item">
+                        <span class="soc-icon">🔋</span>
+                        <span class="soc-range">${s.soc}%</span>
+                       </span>`
+                    : '')}
+            </div>
           </div>
         </div>
 
@@ -5224,20 +5309,44 @@ function createOutput(data, callback) {
 
       return `
         <div class="swift-glass-card session-swift-card" data-id="${s.id}">
-          <div class="session-top-meta">
-            <span class="session-timestamp">${dStr} • ${tStr}</span>
-            <div class="session-badges-wrap">
-              <span class="loc-badge-item">${locIcon} ${escapeHtml(s.location)}</span>
-              ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
-              ${isBayrhof
-                ? (isPaid
-                    ? '<span class="pay-status-badge paid" title="Über Sammelabrechnung abgerechnet">✓ Bezahlt</span>'
-                    : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>')
-                : '<span class="pay-status-badge direct" title="Direkt bei Ladung bezahlt">✓ Direkt bezahlt</span>'}
-              ${hasBothSoc
-                ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.socStart}% → ${s.soc}% (+${deltaSoc}%)</span>`
-                : ((s.soc !== undefined && s.soc !== null) ? `<span class="soc-badge-item" style="background: rgba(192, 128, 81, 0.2); border: 1px solid rgba(192, 128, 81, 0.4); border-radius: 999px; font-size: 0.65rem; padding: 2px 7px; color: #fff; font-weight: 700;">🔋 ${s.soc}%</span>` : '')}
+          <div class="session-top-meta session-header-block">
+            <div class="session-header-row">
+              <div class="session-timestamp">
+                <span class="timestamp-calendar-icon">📅</span>
+                <span>${dStr}</span>
+                <span class="timestamp-separator">•</span>
+                <span class="timestamp-clock-val">${tStr}</span>
+              </div>
+              <div class="session-header-tags session-badges-wrap">
+                <span class="loc-badge-item" title="${escapeHtml(s.location)}">${locIcon} ${escapeHtml(s.location)}</span>
+                ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+              </div>
             </div>
+
+            ${(isBayrhof || hasBothSoc || (s.soc !== undefined && s.soc !== null)) ? `
+            <div class="session-status-row">
+              <div class="session-status-left">
+                ${isBayrhof
+                  ? (isPaid
+                      ? '<span class="pay-status-badge paid" title="Über Sammelabrechnung abgerechnet">✓ Bezahlt</span>'
+                      : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>')
+                  : '<span class="pay-status-badge direct" title="Direkt bei Ladung bezahlt">✓ Direkt bezahlt</span>'}
+              </div>
+              <div class="session-status-right">
+                ${hasBothSoc
+                  ? `<span class="soc-badge-item">
+                      <span class="soc-icon">🔋</span>
+                      <span class="soc-range">${s.socStart}% <span class="soc-arrow">→</span> ${s.soc}%</span>
+                      <span class="soc-delta">+${deltaSoc}%</span>
+                     </span>`
+                  : ((s.soc !== undefined && s.soc !== null)
+                      ? `<span class="soc-badge-item">
+                          <span class="soc-icon">🔋</span>
+                          <span class="soc-range">${s.soc}%</span>
+                         </span>`
+                      : '')}
+              </div>
+            </div>` : ''}
           </div>
 
           <div class="session-primary-row">
@@ -8483,6 +8592,134 @@ function createOutput(data, callback) {
     }
   }
 
+  function renderThgYearChips() {
+    if (!DOM.thgYearsPills) return;
+    DOM.thgYearsPills.innerHTML = '';
+
+    const thgByYear = (appData.settings && appData.settings.thgByYear) || {};
+    const curYear = DOM.cfgThgYear ? (parseInt(DOM.cfgThgYear.value, 10) || (appData.settings.thg && appData.settings.thg.year) || new Date().getFullYear()) : new Date().getFullYear();
+
+    const years = Object.keys(thgByYear).filter(y => !isNaN(parseInt(y, 10))).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    const yearList = [...new Set([...years, String(curYear)])].sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+    yearList.forEach(yr => {
+      const yrData = thgByYear[yr];
+      const isCur = String(yr) === String(curYear);
+      const isSaved = Boolean(yrData);
+      const amt = yrData ? Number(yrData.amount) : 110.00;
+      const isAct = yrData ? (yrData.status !== 'inactive' && yrData.active !== false) : true;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `thg-year-pill ${isCur ? 'active' : ''} ${!isAct ? 'inactive' : ''}`;
+      btn.setAttribute('data-year', yr);
+
+      const icon = isCur ? '📍' : (isAct ? '🌿' : '⚪');
+      const amtText = isSaved ? `${amt.toFixed(2).replace('.', ',')} €` : 'neu';
+      btn.innerHTML = `<span>${icon} ${yr}:</span> <strong>${amtText}</strong>`;
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchThgYear(parseInt(yr, 10));
+      });
+
+      DOM.thgYearsPills.appendChild(btn);
+    });
+
+    if (DOM.thgSavedStatus) {
+      const yrData = thgByYear[String(curYear)];
+      if (yrData) {
+        const isAct = yrData.status !== 'inactive' && yrData.active !== false;
+        DOM.thgSavedStatus.innerHTML = `<span class="status-icon">✓</span> <span class="status-text">Jahr ${curYear}: <strong>${Number(yrData.amount).toFixed(2).replace('.', ',')} €</strong> ${isAct ? '(Aktiv)' : '(Inaktiv)'} gespeichert</span>`;
+        DOM.thgSavedStatus.className = 'thg-saved-status saved';
+      } else {
+        DOM.thgSavedStatus.innerHTML = `<span class="status-icon">ℹ️</span> <span class="status-text">Jahr ${curYear}: Noch nicht gesichert (Standard: 110,00 €)</span>`;
+        DOM.thgSavedStatus.className = 'thg-saved-status unsaved';
+      }
+    }
+  }
+
+  function switchThgYear(targetYear) {
+    if (!targetYear || targetYear < 2000 || targetYear > 2100) return;
+
+    if (DOM.cfgThgYear && DOM.cfgThgYear.value !== String(targetYear)) {
+      DOM.cfgThgYear.value = targetYear;
+    }
+
+    const yrStr = String(targetYear);
+    const yrCfg = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[yrStr]);
+
+    if (yrCfg) {
+      if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = Number(yrCfg.amount).toFixed(2);
+      if (DOM.cfgThgActive) DOM.cfgThgActive.checked = (yrCfg.status !== 'inactive' && yrCfg.active !== false);
+    } else {
+      if (DOM.cfgThgAmount) DOM.cfgThgAmount.value = '110.00';
+      if (DOM.cfgThgActive) DOM.cfgThgActive.checked = true;
+    }
+
+    if (!appData.settings.thg) appData.settings.thg = {};
+    appData.settings.thg.year = targetYear;
+    if (yrCfg) {
+      appData.settings.thg.amount = Number(yrCfg.amount);
+      appData.settings.thg.active = (yrCfg.status !== 'inactive' && yrCfg.active !== false);
+      appData.settings.thg.status = yrCfg.status || 'active';
+    } else {
+      appData.settings.thg.amount = 110.00;
+      appData.settings.thg.active = true;
+      appData.settings.thg.status = 'active';
+    }
+
+    renderThgYearChips();
+    renderDashboard();
+    renderChargesStream();
+    renderAnalyticsCharts();
+  }
+
+  function saveCurrentThgSettings(quiet = false) {
+    if (!appData || !appData.settings) return;
+    if (!appData.settings.thg) appData.settings.thg = {};
+    if (!appData.settings.thgByYear) appData.settings.thgByYear = {};
+
+    let chosenYear = new Date().getFullYear();
+    if (DOM.cfgThgYear) {
+      chosenYear = parseInt(DOM.cfgThgYear.value, 10) || new Date().getFullYear();
+    }
+    let chosenAmount = 110.00;
+    if (DOM.cfgThgAmount) {
+      const parsedAmount = parseFloat(DOM.cfgThgAmount.value.replace(',', '.'));
+      chosenAmount = !isNaN(parsedAmount) ? Math.max(0, parsedAmount) : 110.00;
+    }
+    let chosenActive = true;
+    if (DOM.cfgThgActive) {
+      chosenActive = DOM.cfgThgActive.checked;
+    }
+
+    const yrStr = String(chosenYear);
+    appData.settings.thg.year = chosenYear;
+    appData.settings.thg.amount = chosenAmount;
+    appData.settings.thg.active = chosenActive;
+    appData.settings.thg.status = chosenActive ? 'active' : 'inactive';
+
+    appData.settings.thgByYear[yrStr] = {
+      year: chosenYear,
+      amount: chosenAmount,
+      active: chosenActive,
+      status: chosenActive ? 'active' : 'inactive'
+    };
+
+    saveData();
+    renderDashboard();
+    renderChargesStream();
+    renderAnalyticsCharts();
+    renderThgYearChips();
+
+    if (!quiet) {
+      triggerHaptic();
+      showToast(`THG-Quote ${chosenYear} (${chosenAmount.toFixed(2).replace('.', ',')} €) gespeichert ✓`);
+      postCloudVehicleConfig();
+    }
+  }
+
   // =========================================================================
   // FAHRZEUG-EINSTELLUNGEN
   // =========================================================================
@@ -8501,7 +8738,7 @@ function createOutput(data, callback) {
     // Feature 9a: THG-Quote Settings Form befüllen (aus thgByYear pro Jahr)
     const thg = (appData.settings && appData.settings.thg) || {};
     const defaultYear = thg.year || new Date().getFullYear();
-    const curYear = DOM.cfgThgYear ? (parseInt(DOM.cfgThgYear.value, 10) || defaultYear) : defaultYear;
+    const curYear = defaultYear;
     const yrStr = String(curYear);
     const yrCfg = (appData.settings && appData.settings.thgByYear && appData.settings.thgByYear[yrStr]) || thg;
 
@@ -8514,6 +8751,8 @@ function createOutput(data, callback) {
       const act = yrCfg ? (yrCfg.status !== 'inactive' && yrCfg.active !== false) : true;
       DOM.cfgThgActive.checked = act;
     }
+
+    renderThgYearChips();
 
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();
@@ -8538,40 +8777,9 @@ function createOutput(data, callback) {
       }
     }
 
-    // Feature 9a: THG-Quote speichern (pro Jahr)
-    if (!appData.settings.thg) appData.settings.thg = {};
-    if (!appData.settings.thgByYear) appData.settings.thgByYear = {};
+    // Feature 9a: THG-Quote für das aktuell gewählte Jahr speichern
+    saveCurrentThgSettings(true);
 
-    let chosenYear = new Date().getFullYear();
-    if (DOM.cfgThgYear) {
-      chosenYear = parseInt(DOM.cfgThgYear.value, 10) || new Date().getFullYear();
-      appData.settings.thg.year = chosenYear;
-    }
-    let chosenAmount = 110.00;
-    if (DOM.cfgThgAmount) {
-      const parsedAmount = parseFloat(DOM.cfgThgAmount.value.replace(',', '.'));
-      chosenAmount = !isNaN(parsedAmount) ? Math.max(0, parsedAmount) : 110.00;
-      appData.settings.thg.amount = chosenAmount;
-    }
-    let chosenActive = true;
-    if (DOM.cfgThgActive) {
-      chosenActive = DOM.cfgThgActive.checked;
-      appData.settings.thg.status = chosenActive ? 'active' : 'inactive';
-      appData.settings.thg.active = chosenActive;
-    }
-
-    appData.settings.thgByYear[String(chosenYear)] = {
-      year: chosenYear,
-      amount: chosenAmount,
-      active: chosenActive,
-      status: chosenActive ? 'active' : 'inactive'
-    };
-
-    saveData();
-    renderDashboard();
-    renderChargesStream();
-    renderAnalyticsCharts();
-    updateSmartChargingRecommendation();
     triggerHaptic();
     showToast('Fahrzeugdaten aktualisiert ✓');
 

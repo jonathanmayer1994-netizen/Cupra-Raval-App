@@ -247,6 +247,14 @@ def run_payment_tests():
             final_2026_amt = page.evaluate("() => window.appData.settings.thgByYear['2026'].amount")
             log_test("8.4 THG-Wert für 2026 bleibt nach Cloud-Sync stabil auf 135.00 €", final_2026_amt == 135.0)
 
+            # 8.5 App-Neustart / Reload Persistenz-Test
+            page.reload()
+            page.wait_for_function("() => window.appData")
+            reloaded_thg = page.evaluate("() => window.appData.settings.thgByYear")
+            has_2026 = reloaded_thg and "2026" in reloaded_thg and reloaded_thg["2026"].get("amount") == 135.0
+            has_2025 = reloaded_thg and "2025" in reloaded_thg and reloaded_thg["2025"].get("amount") == 90.0
+            log_test("8.5 THG-Quoten bleiben nach App-Neustart/Reload pro Jahr erhalten (2026: 135€, 2025: 90€)", has_2026 and has_2025)
+
             print("\n" + "=" * 70)
             print(f"ERGEBNIS: {passed} PASSED, {failed} FAILED")
             print("=" * 70)
