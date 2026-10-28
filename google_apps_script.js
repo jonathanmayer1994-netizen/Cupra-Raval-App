@@ -209,6 +209,7 @@ function getHeaderColumnMap(sheet) {
     consumption: -1,
     efficiency: -1,
     paid: -1,
+    status: -1,
     updatedAt: -1,
     rawHeaders: headers
   };
@@ -243,11 +244,22 @@ function getHeaderColumnMap(sheet) {
       map.notes = i;
     } else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) {
       map.odometer = i;
-    } else if (h.includes("bezahlt") || h.includes("zahlung") || h.includes("paid") || h.includes("status")) {
+    } else if (h.includes("bezahlt") || h.includes("zahlung") || h.includes("paid") || h.includes("zahlungsstatus")) {
       map.paid = i;
+    } else if (h.includes("erfassung") || h.includes("vollständig") || h.includes("vollstaendig") || h === "status") {
+      map.status = i;
     } else if (h.includes("updated") || h.includes("aktualisiert")) {
       map.updatedAt = i;
     }
+  }
+
+  // Falls noch keine Status-Spalte vorhanden ist, legen wir diese automatisch in Zeile 1 an
+  if (map.status < 0 && sheet.getLastRow() >= 1) {
+    const targetCol = Math.max(headers.length + 1, 15);
+    sheet.getRange(1, targetCol).setValue("Status").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    headers[targetCol - 1] = "Status";
+    map.status = targetCol - 1;
+    map.rawHeaders = headers;
   }
 
   // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
@@ -414,10 +426,24 @@ function doGet(e) {
           paidVal = !isBayrhof;
         }
 
-        // Dummy-Zeilen mit 0 kWh überspringen
-        if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
+        // Nur völlig leere Dummy-Zeilen ohne jegliche Daten oder ID überspringen
+        const hasAnyData = Boolean(
+          (idVal && String(idVal).trim() !== "") ||
+          (dateVal && String(dateVal).trim() !== "") ||
+          kwhVal > 0 ||
+          odoVal > 0 ||
+          (notesVal && String(notesVal).trim() !== "") ||
+          (socVal !== null) ||
+          (socStartVal !== null) ||
+          priceVal > 0 ||
+          totalVal > 0
+        );
+        if (!hasAnyData) {
           continue;
         }
+
+        const rawStatus = (colMap.status >= 0 && row[colMap.status]) ? String(row[colMap.status]).trim() : null;
+        const isComplete = rawStatus ? (rawStatus.indexOf("Vollständig") !== -1 && rawStatus.indexOf("Unvollständig") === -1) : Boolean(kwhVal > 0 && odoVal > 0 && totalVal > 0 && socVal !== null);
 
         sessions.push({
           id: String(idVal || ("ses_cloud_" + i)),
@@ -428,6 +454,9 @@ function doGet(e) {
           Ort: locVal,
           kwh: kwhVal,
           kWh: kwhVal,
+          status: rawStatus || (isComplete ? "✓ Vollständig" : "⏳ Unvollständig"),
+          Status: rawStatus || (isComplete ? "✓ Vollständig" : "⏳ Unvollständig"),
+          isComplete: isComplete,
           pricePerKwh: priceVal,
           preis: priceVal,
           "Preis (€/kWh)": priceVal,
@@ -565,21 +594,63 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
   if (s.action === "delete" || s.action === "cleanup") return;
 
-  const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
-  const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
-  const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+  const rawKwh = s.kwh !== undefined ? s.kwh : (s.kWh !== undefined ? s.kWh : (s.energie !== undefined ? s.energie : s.lademenge));
+  const hasRawKwh = rawKwh !== undefined && rawKwh !== null && String(rawKwh).trim() !== "";
+  const kwhNum = hasRawKwh ? parseNum(rawKwh) : 0;
 
-  // WICHTIG: Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
-  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) {
+  const rawPrice = s.preis !== undefined ? s.preis : (s.Preis !== undefined ? s.Preis : (s.pricePerKwh !== undefined ? s.pricePerKwh : (s.price !== undefined ? s.price : s["Preis (€/kWh)"])));
+  const hasRawPrice = rawPrice !== undefined && rawPrice !== null && String(rawPrice).trim() !== "";
+  const priceNum = hasRawPrice ? parseNum(rawPrice) : 0;
+
+  const rawCost = s.kosten !== undefined ? s.kosten : (s.Kosten !== undefined ? s.Kosten : (s.totalCost !== undefined ? s.totalCost : (s.gesamtkosten !== undefined ? s.gesamtkosten : (s.Gesamtkosten !== undefined ? s.Gesamtkosten : s["Gesamtkosten (€)"]))));
+  const hasRawCost = rawCost !== undefined && rawCost !== null && String(rawCost).trim() !== "";
+  const costNum = hasRawCost ? parseNum(rawCost) : ((hasRawKwh && hasRawPrice) ? Number((kwhNum * priceNum).toFixed(2)) : 0);
+
+  const rawOdo = s.odometer !== undefined ? s.odometer : (s["km-Stand"] !== undefined ? s["km-Stand"] : (s.km !== undefined ? s.km : (s.kmStand !== undefined ? s.kmStand : s.kilometer)));
+  const hasRawOdo = rawOdo !== undefined && rawOdo !== null && String(rawOdo).trim() !== "";
+  const odoNum = hasRawOdo ? parseNum(rawOdo) : 0;
+
+  const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
+  const hasRawSoc = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "");
+  const socNum = hasRawSoc ? parseNum(rawSoc) : null;
+
+  const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s.startSoc !== undefined ? s.startSoc : (s["Akkustand Start (%)"] !== undefined ? s["Akkustand Start (%)"] : null)));
+  const hasRawSocStart = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "");
+  const socStartNum = hasRawSocStart ? parseNum(rawSocStart) : null;
+
+  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
+  const id = String(s.id || s.ID || ("session_" + Date.now()));
+  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
+
+  // WICHTIG: Nur völlig leere Dummy-Einträge ohne jegliche ID oder Daten verwerfen
+  const hasAnyData = Boolean(
+    (s.id || s.ID) ||
+    (hasRawKwh && kwhNum > 0) ||
+    (hasRawOdo && odoNum > 0) ||
+    hasRawSoc ||
+    hasRawSocStart ||
+    hasRawPrice ||
+    hasRawCost ||
+    notesStr.trim() !== ""
+  );
+  if (!hasAnyData) {
     return;
   }
+
+  // Vollständigkeit prüfen:
+  // Alle Felder optional! Nicht vollständig erfasste Ladungen dezent kennzeichnen:
+  const isComplete = Boolean(
+    (hasRawKwh && kwhNum > 0) &&
+    (hasRawOdo && odoNum > 0) &&
+    (hasRawCost || hasRawPrice) &&
+    (hasRawSoc && socNum !== null && !isNaN(socNum))
+  );
+  const statusStr = isComplete ? "✓ Vollständig" : "⏳ Unvollständig";
 
   const lastRow = sheet.getLastRow();
   const numCols = colMap.rawHeaders.length;
   const rowData = new Array(numCols).fill("");
 
-  const id = String(s.id || s.ID || ("session_" + Date.now()));
-  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
   const locStr = typeof s.location === 'object' 
     ? (s.location.name || 'Bayrhofs') 
     : String(s.ort || s.Ort || s.location || s.Location || s.standort || s.Standort || "Bayrhofs");
@@ -587,11 +658,7 @@ function upsertSessionWithMap(sheet, colMap, s) {
   const rawPv = s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : (s.pv_ladung !== undefined ? s.pv_ladung : s["PV-Ladung"]));
   const isPv = rawPv === true || rawPv === "true" || String(rawPv).toLowerCase() === "ja";
 
-  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
-  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
-
   // Zahlungsstatus bestimmen:
-  // Wichtig: Nur bei Bayrhofs Laden wird über eine spätere Summenabrechnung gemacht. Alles andere wird immer direkt bezahlt!
   const isBayrhof = locStr.toLowerCase().indexOf("bayrhof") !== -1;
   let isPaid = true;
   if (isBayrhof) {
@@ -601,22 +668,17 @@ function upsertSessionWithMap(sheet, colMap, s) {
     isPaid = true; // Andere Standorte sind immer direkt bezahlt
   }
 
-  // Werte in die passenden Spalten schreiben
+  // Werte in die passenden Spalten schreiben (nicht erfasste Felder bleiben sauber "")
   if (colMap.id >= 0) rowData[colMap.id] = id;
   if (colMap.date >= 0) rowData[colMap.date] = dateStr;
   if (colMap.location >= 0) rowData[colMap.location] = locStr;
-  if (colMap.kwh >= 0) rowData[colMap.kwh] = kwhNum;
-  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = priceNum;
-  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = costNum;
+  if (colMap.kwh >= 0) rowData[colMap.kwh] = (hasRawKwh && kwhNum > 0) ? kwhNum : "";
+  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = (hasRawPrice && priceNum > 0) ? priceNum : "";
+  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = (hasRawCost || (hasRawKwh && hasRawPrice)) ? costNum : "";
   if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
   if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
-  if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
+  if (colMap.odometer >= 0) rowData[colMap.odometer] = (hasRawOdo && odoNum > 0) ? odoNum : "";
   if (colMap.paid >= 0) rowData[colMap.paid] = isPaid ? (isBayrhof ? "Ja" : "Ja (Direkt)") : "Nein";
-
-  const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
-  const socNum = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "") ? parseNum(rawSoc) : null;
-  const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s.startSoc !== undefined ? s.startSoc : (s["Akkustand Start (%)"] !== undefined ? s["Akkustand Start (%)"] : null)));
-  const socStartNum = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "") ? parseNum(rawSocStart) : null;
 
   if (colMap.socStart >= 0) rowData[colMap.socStart] = (socStartNum !== null && !isNaN(socStartNum)) ? socStartNum : "";
   if (colMap.soc >= 0) rowData[colMap.soc] = (socNum !== null && !isNaN(socNum)) ? socNum : "";
@@ -626,29 +688,45 @@ function upsertSessionWithMap(sheet, colMap, s) {
   }
   if (colMap.consumption >= 0) {
     const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
-    // Niemals die geladene kWh-Menge in die Verbrauch-Spalte schreiben
     rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0 && cVal !== kwhNum) ? cVal : "";
   }
   if (colMap.efficiency >= 0) {
     const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);
     rowData[colMap.efficiency] = (!isNaN(eVal) && eVal > 0) ? eVal : "";
   }
+  if (colMap.status >= 0) rowData[colMap.status] = statusStr;
   if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
 
   // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
+  let targetRowIndex = -1;
   if (lastRow > 1) {
     const colIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
     const ids = sheet.getRange(2, colIdx, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
       if (String(ids[i][0]).trim() === id.trim()) {
-        sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
-        return;
+        targetRowIndex = i + 2;
+        sheet.getRange(targetRowIndex, 1, 1, numCols).setValues([rowData]);
+        break;
       }
     }
   }
 
   // Ansonsten neue Zeile anhängen
-  sheet.appendRow(rowData);
+  if (targetRowIndex < 0) {
+    sheet.appendRow(rowData);
+    targetRowIndex = sheet.getLastRow();
+  }
+
+  // Dezent kennzeichnen: Unvollständige Ladungen erhalten eine dezente warme Pastelltönung (#fffbeb),
+  // vollständige Ladungen den regulären neutralen Hintergrund (#ffffff).
+  try {
+    const rowRange = sheet.getRange(targetRowIndex, 1, 1, numCols);
+    if (!isComplete) {
+      rowRange.setBackground("#fffbeb");
+    } else {
+      rowRange.setBackground("#ffffff");
+    }
+  } catch (eColor) {}
 }
 
 /**
@@ -680,7 +758,7 @@ function deleteSessionById(sheet, colMap, targetId) {
 }
 
 /**
- * Bereinigt fehlerhafte Dummy-Zeilen mit 0 kWh, 0 Preis und 0 Kosten
+ * Bereinigt fehlerhafte Dummy-Zeilen, die keinerlei ID oder Daten aufweisen
  */
 function cleanDummyRows(sheet, colMap) {
   const lastRow = sheet.getLastRow();
@@ -692,11 +770,17 @@ function cleanDummyRows(sheet, colMap) {
 
   for (let i = data.length - 1; i >= 0; i--) {
     const row = data[i];
-    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : parseNum(row[3]);
-    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : parseNum(row[4]);
-    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : parseNum(row[5]);
+    const id = colMap.id >= 0 ? String(row[colMap.id] || "").trim() : "";
+    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0;
+    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0;
+    const odo = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
+    const notes = colMap.notes >= 0 ? String(row[colMap.notes] || "").trim() : "";
+    const soc = colMap.soc >= 0 ? row[colMap.soc] : null;
 
-    if (kwh <= 0 && price <= 0 && cost <= 0) {
+    // Nur Zeilen löschen, die keinerlei ID, kWh, km-Stand, Preis, Kosten, Notizen oder SoC besitzen
+    const hasAnyData = Boolean(id || kwh > 0 || price > 0 || cost > 0 || odo > 0 || notes || (soc !== null && String(soc).trim() !== ""));
+    if (!hasAnyData) {
       sheet.deleteRow(i + 2);
       cleanedCount++;
     }

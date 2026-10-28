@@ -406,6 +406,8 @@
     DOM.entryPaymentHint = document.getElementById('entryPaymentHint');
     DOM.entryPaymentOptionLabel = document.getElementById('entryPaymentOptionLabel');
     DOM.entryPaymentStatusText = document.getElementById('entryPaymentStatusText');
+    DOM.modalIncompleteHint = document.getElementById('modalIncompleteHint');
+    DOM.modalIncompleteText = document.getElementById('modalIncompleteText');
 
     // Location Picker Sheet
     DOM.modalLocationPickerSheet = document.getElementById('modalLocationPickerSheet');
@@ -663,13 +665,15 @@
     res.sessions = res.sessions
       .filter(s => {
         const id = String(s.id || s.ID || '');
+        if (id.includes('d8074cf3')) return false;
         const kwh = Number(s.kwh || s.kWh || 0);
         const price = Number(s.pricePerKwh || s.preis || 0);
         const cost = Number(s.totalCost || s.kosten || 0);
-        if (id.includes('d8074cf3') || (kwh <= 0 && price <= 0 && cost <= 0)) {
-          return false;
-        }
-        return true;
+        const odo = Number(s.odometer || s['km-Stand'] || 0);
+        const hasSoc = (s.soc !== undefined && s.soc !== null && s.soc !== '') || (s.socStart !== undefined && s.socStart !== null && s.socStart !== '');
+        const hasNotes = Boolean(s.notes || s.notiz || s.Notiz);
+        const hasAny = Boolean(kwh > 0 || price > 0 || cost > 0 || odo > 0 || hasSoc || hasNotes || id.startsWith('session_'));
+        return hasAny;
       })
       .map((s, idx) => {
         const locName = typeof s.location === 'object' ? s.location.name : (s.location || s.Ort || s.ort || 'Bayrhofs');
@@ -678,9 +682,14 @@
         if (locName.toLowerCase() === 'arbeit') {
           isPv = false;
         }
-        const price = Number(s.pricePerKwh || s.preis) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
-        const kwh = Number(s.kwh || s.kWh) || 0;
-        const total = Number(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
+        const hasPrice = (s.pricePerKwh !== undefined && s.pricePerKwh !== null && s.pricePerKwh !== '') || (s.preis !== undefined && s.preis !== null && s.preis !== '');
+        const price = hasPrice ? Number(s.pricePerKwh || s.preis) : (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+
+        const hasKwh = (s.kwh !== undefined && s.kwh !== null && s.kwh !== '') || (s.kWh !== undefined && s.kWh !== null && s.kWh !== '');
+        const kwh = hasKwh && !isNaN(Number(s.kwh || s.kWh)) ? Number(s.kwh || s.kWh) : null;
+
+        const hasCost = (s.totalCost !== undefined && s.totalCost !== null && s.totalCost !== '') || (s.kosten !== undefined && s.kosten !== null && s.kosten !== '');
+        const total = hasCost ? Number(s.totalCost || s.kosten) : (kwh !== null && price !== null ? Number((kwh * price).toFixed(2)) : null);
 
         const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s['Akkustand Ende (%)'] !== undefined ? s['Akkustand Ende (%)'] : s.akkustand)));
         const socNum = (rawSoc !== undefined && rawSoc !== null && String(rawSoc).trim() !== '') ? parseNum(rawSoc) : null;
@@ -688,11 +697,14 @@
         const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s['Akkustand Start (%)'] !== undefined ? s['Akkustand Start (%)'] : s.startSoc));
         const socStartNum = (rawSocStart !== undefined && rawSocStart !== null && String(rawSocStart).trim() !== '') ? parseNum(rawSocStart) : null;
 
+        const hasOdo = (s.odometer !== undefined && s.odometer !== null && s.odometer !== '') || (s['km-Stand'] !== undefined && s['km-Stand'] !== null && s['km-Stand'] !== '');
+        const odo = hasOdo && !isNaN(Number(s.odometer || s['km-Stand'])) ? Number(s.odometer || s['km-Stand']) : null;
+
         return {
           id: s.id || `session_${Date.now()}_${idx}`,
           date: s.date || s.Datum || s.datum || new Date().toISOString(),
           kwh,
-          odometer: Number(s.odometer || s['km-Stand']) || 0,
+          odometer: odo,
           soc: (socNum !== null && !isNaN(socNum) && socNum >= 0 && socNum <= 100) ? Math.round(socNum) : null,
           socStart: (socStartNum !== null && !isNaN(socStartNum) && socStartNum >= 0 && socStartNum <= 100) ? Math.round(socStartNum) : null,
           pricePerKwh: price,
@@ -732,6 +744,41 @@
     }
 
     return res;
+  }
+
+  /**
+   * Prüft, ob ein Ladevorgang vollständig erfasst ist oder welche Felder noch fehlen.
+   * Gibt { isComplete: boolean, missing: string[] } zurück.
+   */
+  function getSessionCompleteness(s) {
+    if (!s) return { isComplete: false, missing: ['Alle Felder'] };
+    const missing = [];
+
+    const kwhNum = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '') ? Number(s.kwh) : null;
+    if (kwhNum === null || isNaN(kwhNum) || kwhNum <= 0) {
+      missing.push('kWh');
+    }
+
+    const odoNum = (s.odometer !== null && s.odometer !== undefined && s.odometer !== '') ? Number(s.odometer) : null;
+    if (odoNum === null || isNaN(odoNum) || odoNum <= 0) {
+      missing.push('km-Stand');
+    }
+
+    const costNum = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? Number(s.totalCost) : null;
+    const priceNum = (s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? Number(s.pricePerKwh) : null;
+    if ((costNum === null || isNaN(costNum)) && (priceNum === null || isNaN(priceNum))) {
+      missing.push('Kosten');
+    }
+
+    const socEndNum = (s.soc !== null && s.soc !== undefined && s.soc !== '') ? Number(s.soc) : null;
+    if (socEndNum === null || isNaN(socEndNum)) {
+      missing.push('Akkustand');
+    }
+
+    return {
+      isComplete: missing.length === 0,
+      missing
+    };
   }
 
   function syncVehicleStateFromSessions() {
@@ -840,6 +887,9 @@
     const kwh = parseNum(s.kwh || s.kWh);
     const price = parseNum(s.pricePerKwh || s.preis);
     const cost = parseNum(s.totalCost || s.kosten);
+    const odo = parseNum(s.odometer || s.km || s['km-Stand']);
+    const hasSoc = (s.soc !== undefined && s.soc !== null && s.soc !== '') || (s.socStart !== undefined && s.socStart !== null && s.socStart !== '');
+    const notesStr = String(s.notes || s.notiz || s.Notiz || '').trim();
 
     // 1. Spezifische Dummy-Einträge aus früheren Fehlübertragungen entfernen
     if (id.includes('d8074cf3') || id.includes('4b9be1ef')) return false;
@@ -847,8 +897,9 @@
     // 2. Test-Einträge aus Debugging entfernen
     if (id.startsWith('test_') || id.startsWith('pv_')) return false;
 
-    // 3. Dummy-Einträge ohne kWh, Preis und Kosten verwerfen
-    if (kwh <= 0 && price <= 0 && cost <= 0) return false;
+    // 3. Nur Zeilen ohne jegliche Daten oder Kennung verwerfen
+    const hasAny = Boolean(kwh > 0 || price > 0 || cost > 0 || odo > 0 || hasSoc || notesStr !== '' || id.startsWith('session_'));
+    if (!hasAny) return false;
 
     return true;
   }
@@ -871,11 +922,20 @@
     }
 
     const price = parseNum(s.pricePerKwh || s.preis || s.Preis || s['Preis (€/kWh)']) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
-    const kwh = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
-    const cost = parseNum(s.totalCost || s.kosten || s.Kosten || s.gesamtkosten || s['Gesamtkosten (€)']) || Number((kwh * price).toFixed(2));
+    const rawKwhVal = s.kwh !== undefined ? s.kwh : (s.kWh !== undefined ? s.kWh : (s.energie !== undefined ? s.energie : s.lademenge));
+    const hasKwhVal = rawKwhVal !== undefined && rawKwhVal !== null && String(rawKwhVal).trim() !== '';
+    const kwh = hasKwhVal && parseNum(rawKwhVal) > 0 ? parseNum(rawKwhVal) : null;
+
+    const rawCostVal = s.totalCost !== undefined ? s.totalCost : (s.kosten !== undefined ? s.kosten : (s.Kosten !== undefined ? s.Kosten : (s.gesamtkosten !== undefined ? s.gesamtkosten : s['Gesamtkosten (€)'])));
+    const hasCostVal = rawCostVal !== undefined && rawCostVal !== null && String(rawCostVal).trim() !== '';
+    const cost = hasCostVal ? parseNum(rawCostVal) : (kwh !== null && price > 0 ? Number((kwh * price).toFixed(2)) : null);
+
     const rawDate = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
     const notesStr = String(s.notes || s.notiz || s.Notiz || s.notizen || s.bemerkung || '');
-    const odoNum = parseNum(s.odometer || s.km || s.kmstand || s['km-Stand'] || s.kilometer);
+    
+    const rawOdoVal = s.odometer !== undefined ? s.odometer : (s.km !== undefined ? s.km : (s.kmstand !== undefined ? s.kmstand : (s['km-Stand'] !== undefined ? s['km-Stand'] : s.kilometer)));
+    const hasOdoVal = rawOdoVal !== undefined && rawOdoVal !== null && String(rawOdoVal).trim() !== '';
+    const odoNum = hasOdoVal && parseNum(rawOdoVal) > 0 ? parseNum(rawOdoVal) : null;
 
     const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s['Akkustand Ende (%)'] !== undefined ? s['Akkustand Ende (%)'] : s.akkustand)));
     const socNum = (rawSoc !== undefined && rawSoc !== null && String(rawSoc).trim() !== '') ? parseNum(rawSoc) : null;
@@ -1182,9 +1242,18 @@
   }
 
   function formatSessionForCloud(s) {
-    const kwh = parseNum(s.kwh || s.kWh);
-    const price = parseNum(s.pricePerKwh || s.preis);
-    const cost = parseNum(s.totalCost || s.kosten) || Number((kwh * price).toFixed(2));
+    const hasRawKwh = (s.kwh !== undefined && s.kwh !== null && String(s.kwh).trim() !== '') || (s.kWh !== undefined && s.kWh !== null && String(s.kWh).trim() !== '');
+    const kwhNum = hasRawKwh ? parseNum(s.kwh || s.kWh) : 0;
+    const kwh = (hasRawKwh && kwhNum > 0) ? kwhNum : '';
+
+    const hasRawPrice = (s.pricePerKwh !== undefined && s.pricePerKwh !== null && String(s.pricePerKwh).trim() !== '') || (s.preis !== undefined && s.preis !== null && String(s.preis).trim() !== '');
+    const priceNum = hasRawPrice ? parseNum(s.pricePerKwh || s.preis) : 0;
+    const price = (hasRawPrice && priceNum > 0) ? priceNum : '';
+
+    const hasRawCost = (s.totalCost !== undefined && s.totalCost !== null && String(s.totalCost).trim() !== '') || (s.kosten !== undefined && s.kosten !== null && String(s.kosten).trim() !== '');
+    const costNum = hasRawCost ? parseNum(s.totalCost || s.kosten) : ((hasRawKwh && hasRawPrice) ? Number((kwhNum * priceNum).toFixed(2)) : 0);
+    const cost = (hasRawCost || (hasRawKwh && hasRawPrice)) ? costNum : '';
+
     const isPv = Boolean(s.pvSurplus);
     const loc = typeof s.location === 'object'
       ? (s.location.name || 'Bayrhofs')
@@ -1192,7 +1261,11 @@
     const dateStr = s.date || s.Datum || new Date().toISOString();
     const id = String(s.id || s.ID || ('session_' + Date.now()));
     const notes = String(s.notes || s.notiz || s.Notiz || '');
-    const odo = parseNum(s.odometer || s['km-Stand']);
+    
+    const hasRawOdo = (s.odometer !== undefined && s.odometer !== null && String(s.odometer).trim() !== '') || (s['km-Stand'] !== undefined && s['km-Stand'] !== null && String(s['km-Stand']).trim() !== '');
+    const odoNum = hasRawOdo ? parseNum(s.odometer || s['km-Stand']) : 0;
+    const odo = (hasRawOdo && odoNum > 0) ? odoNum : '';
+
     const startSoc = (s.socStart !== undefined && s.socStart !== null && s.socStart !== '') ? parseNum(s.socStart) : '';
     const endSoc = (s.soc !== undefined && s.soc !== null && s.soc !== '') ? parseNum(s.soc) : '';
 
@@ -1209,7 +1282,7 @@
     }
 
     let eff = '';
-    if (startSoc !== '' && endSoc !== '' && endSoc > startSoc && kwh > 0) {
+    if (startSoc !== '' && endSoc !== '' && endSoc > startSoc && kwh !== '' && kwh > 0) {
       const deltaSoc = endSoc - startSoc;
       const batteryCap = (appData && appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
       const netKwh = (deltaSoc / 100) * batteryCap;
@@ -1218,6 +1291,10 @@
 
     const isBayrhof = isBayrhofsLocation(loc);
     const isPaid = isBayrhof ? Boolean(s.paid) : true;
+
+    const compInfo = typeof getSessionCompleteness === 'function' ? getSessionCompleteness(s) : { isComplete: Boolean(kwhNum > 0 && odoNum > 0 && costNum > 0), missing: [] };
+    const statusText = compInfo.isComplete ? 'Vollständig' : 'Unvollständig';
+    const statusBadge = compInfo.isComplete ? '✓ Vollständig' : '⏳ Unvollständig';
 
     return {
       id,
@@ -1270,7 +1347,16 @@
       paid: isPaid,
       bezahlt: isPaid,
       Bezahlt: isPaid ? (isBayrhof ? 'Ja' : 'Ja (Direkt)') : 'Nein',
-      'Zahlungsstatus': isPaid ? 'Bezahlt' : 'Offen'
+      'Zahlungsstatus': isPaid ? 'Bezahlt' : 'Offen',
+      status: statusBadge,
+      Status: statusBadge,
+      'Status': statusBadge,
+      erfassung: statusText,
+      Erfassung: statusBadge,
+      'Erfassung': statusBadge,
+      'Erfassungsstatus': statusBadge,
+      isComplete: compInfo.isComplete,
+      missingFields: compInfo.missing.join(', ')
     };
   }
 
@@ -1902,7 +1988,7 @@ function getHeaderColumnMap(sheet) {
   if (!headers || headers.every(h => !h || String(h).trim() === "")) {
     const defaultHeaders = [
       "ID", "Datum", "Ort", "kWh", "Preis (€/kWh)", "Gesamtkosten (€)", "PV-Ladung", "Notiz",
-      "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)", "Gefahrene km", "Verbrauch (kWh/100km)", "Wirkungsgrad (%)"
+      "km-Stand", "Akkustand Start (%)", "Akkustand Ende (%)", "Gefahrene km", "Verbrauch (kWh/100km)", "Wirkungsgrad (%)", "Bezahlt"
     ];
     sheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
     sheet.getRange(1, 1, 1, defaultHeaders.length).setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
@@ -1926,6 +2012,8 @@ function getHeaderColumnMap(sheet) {
     deltaKm: -1,
     consumption: -1,
     efficiency: -1,
+    paid: -1,
+    status: -1,
     updatedAt: -1,
     rawHeaders: headers
   };
@@ -1960,9 +2048,22 @@ function getHeaderColumnMap(sheet) {
       map.notes = i;
     } else if ((h.includes("km") && !h.includes("gefahren") && !h.includes("delta") && !h.includes("verbrauch")) || h.includes("odo") || h.includes("kilometer")) {
       map.odometer = i;
+    } else if (h.includes("bezahlt") || h.includes("zahlung") || h.includes("paid") || h.includes("zahlungsstatus")) {
+      map.paid = i;
+    } else if (h.includes("erfassung") || h.includes("vollständig") || h.includes("vollstaendig") || h === "status") {
+      map.status = i;
     } else if (h.includes("updated") || h.includes("aktualisiert")) {
       map.updatedAt = i;
     }
+  }
+
+  // Falls noch keine Status-Spalte vorhanden ist, legen wir diese automatisch in Zeile 1 an
+  if (map.status < 0 && sheet.getLastRow() >= 1) {
+    const targetCol = Math.max(headers.length + 1, 15);
+    sheet.getRange(1, targetCol).setValue("Status").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+    headers[targetCol - 1] = "Status";
+    map.status = targetCol - 1;
+    map.rawHeaders = headers;
   }
 
   // Standard-Fallback: Spalte 1 (Index 0) ist die ID-Spalte
@@ -1994,8 +2095,8 @@ function getHeaderColumnMap(sheet) {
     }
   }
 
-  // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand oder Akkustand-Spalten, automatisch anfügen
-  if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0)) {
+  // Auto-Upgrade bestehender Tabellen: Fehlen km-Stand, Akkustand oder Bezahlt-Spalten, automatisch anfügen
+  if (sheet.getLastRow() >= 1 && (map.odometer < 0 || map.socStart < 0 || map.soc < 0 || map.paid < 0)) {
     let curCols = sheet.getLastColumn();
     if (map.odometer < 0) {
       curCols++;
@@ -2014,6 +2115,12 @@ function getHeaderColumnMap(sheet) {
       sheet.getRange(1, curCols).setValue("Akkustand Ende (%)").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
       map.soc = curCols - 1;
       headers.push("Akkustand Ende (%)");
+    }
+    if (map.paid < 0) {
+      curCols++;
+      sheet.getRange(1, curCols).setValue("Bezahlt").setFontWeight("bold").setBackground("#1a2332").setFontColor("#c08051");
+      map.paid = curCols - 1;
+      headers.push("Bezahlt");
     }
     map.rawHeaders = headers;
   }
@@ -2061,13 +2168,13 @@ function doGet(e) {
       return createOutput({ status: "success", action: "delete", id: targetId, deleted: count }, callback);
     }
 
-    // 3. Dummy-Zeilen (0 kWh) bereinigen
+    // 4. Dummy-Zeilen (0 kWh) bereinigen
     if (action === "cleanup") {
       const count = cleanDummyRows(sheet, colMap);
       return createOutput({ status: "success", action: "cleanup", cleaned: count }, callback);
     }
 
-    // 4. Ladedaten liefern
+    // 5. Ladedaten liefern
     const lastRow = sheet.getLastRow();
     const sessions = [];
 
@@ -2108,10 +2215,39 @@ function doGet(e) {
         const deltaKmVal = colMap.deltaKm >= 0 ? parseNum(row[colMap.deltaKm]) : null;
         const effVal = colMap.efficiency >= 0 ? parseNum(row[colMap.efficiency]) : null;
 
-        // Dummy-Zeilen mit 0 kWh überspringen
-        if (kwhVal <= 0 && priceVal <= 0 && totalVal <= 0) {
+        const isBayrhof = locVal.toLowerCase().indexOf("bayrhof") !== -1;
+        let paidVal = true;
+        if (colMap.paid >= 0) {
+          const rawPaid = row[colMap.paid];
+          if (rawPaid !== "" && rawPaid !== null && rawPaid !== undefined) {
+            const sPaid = String(rawPaid).toLowerCase().trim();
+            paidVal = (sPaid === "ja" || sPaid === "true" || sPaid === "1" || sPaid.indexOf("bezahlt") !== -1);
+          } else {
+            // Nur Bayrhofs wird summenabgerechnet (Default: offen), alles andere immer direkt bezahlt (true)
+            paidVal = !isBayrhof;
+          }
+        } else {
+          paidVal = !isBayrhof;
+        }
+
+        // Nur völlig leere Dummy-Zeilen ohne jegliche Daten oder ID überspringen
+        const hasAnyData = Boolean(
+          (idVal && String(idVal).trim() !== "") ||
+          (dateVal && String(dateVal).trim() !== "") ||
+          kwhVal > 0 ||
+          odoVal > 0 ||
+          (notesVal && String(notesVal).trim() !== "") ||
+          (socVal !== null) ||
+          (socStartVal !== null) ||
+          priceVal > 0 ||
+          totalVal > 0
+        );
+        if (!hasAnyData) {
           continue;
         }
+
+        const rawStatus = (colMap.status >= 0 && row[colMap.status]) ? String(row[colMap.status]).trim() : null;
+        const isComplete = rawStatus ? (rawStatus.indexOf("Vollständig") !== -1 && rawStatus.indexOf("Unvollständig") === -1) : Boolean(kwhVal > 0 && odoVal > 0 && totalVal > 0 && socVal !== null);
 
         sessions.push({
           id: String(idVal || ("ses_cloud_" + i)),
@@ -2122,6 +2258,9 @@ function doGet(e) {
           Ort: locVal,
           kwh: kwhVal,
           kWh: kwhVal,
+          status: rawStatus || (isComplete ? "✓ Vollständig" : "⏳ Unvollständig"),
+          Status: rawStatus || (isComplete ? "✓ Vollständig" : "⏳ Unvollständig"),
+          isComplete: isComplete,
           pricePerKwh: priceVal,
           preis: priceVal,
           "Preis (€/kWh)": priceVal,
@@ -2149,7 +2288,11 @@ function doGet(e) {
           consumption: consVal,
           "Verbrauch (kWh/100km)": consVal,
           efficiency: effVal,
-          "Wirkungsgrad (%)": effVal
+          "Wirkungsgrad (%)": effVal,
+          paid: paidVal,
+          bezahlt: paidVal,
+          Bezahlt: paidVal ? (isBayrhof ? "Ja" : "Ja (Direkt)") : "Nein",
+          "Zahlungsstatus": paidVal ? "Bezahlt" : "Offen"
         });
       }
     }
@@ -2218,6 +2361,26 @@ function doPost(e) {
       return createOutput({ status: "success", action: "bulk_sync", count: savedCount });
     }
 
+    // AKTION: Zahlungsstatus aktualisieren (z.B. für Bayrhofs Sammelabrechnung)
+    if (action === "mark_paid" || action === "update_payment") {
+      const targetIds = Array.isArray(payload.ids) ? payload.ids.map(String) : (payload.id ? [String(payload.id)] : []);
+      const paidState = payload.paid !== undefined ? (payload.paid === true || payload.paid === "true" || payload.paid === "Ja") : true;
+      let updatedCount = 0;
+      if (targetIds.length > 0 && colMap.paid >= 0 && sheet.getLastRow() > 1) {
+        const numRows = sheet.getLastRow() - 1;
+        const idColIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
+        const ids = sheet.getRange(2, idColIdx, numRows, 1).getValues();
+        for (let r = 0; r < ids.length; r++) {
+          const rowId = String(ids[r][0] || "").trim();
+          if (targetIds.includes(rowId)) {
+            sheet.getRange(r + 2, colMap.paid + 1).setValue(paidState ? "Ja" : "Nein");
+            updatedCount++;
+          }
+        }
+      }
+      return createOutput({ status: "success", action: "mark_paid", count: updatedCount, ids: targetIds });
+    }
+
     // AKTION: Einzelner Ladevorgang (Erstellen oder Aktualisieren)
     const session = payload.session || payload;
     upsertSessionWithMap(sheet, colMap, session);
@@ -2235,21 +2398,63 @@ function upsertSessionWithMap(sheet, colMap, s) {
   if (!s) return;
   if (s.action === "delete" || s.action === "cleanup") return;
 
-  const kwhNum = parseNum(s.kwh || s.kWh || s.energie || s.lademenge);
-  const priceNum = parseNum(s.preis || s.Preis || s.pricePerKwh || s.price || s["Preis (€/kWh)"]);
-  const costNum = parseNum(s.kosten || s.Kosten || s.totalCost || s.gesamtkosten || s.Gesamtkosten || s["Gesamtkosten (€)"]) || Number((kwhNum * priceNum).toFixed(2));
+  const rawKwh = s.kwh !== undefined ? s.kwh : (s.kWh !== undefined ? s.kWh : (s.energie !== undefined ? s.energie : s.lademenge));
+  const hasRawKwh = rawKwh !== undefined && rawKwh !== null && String(rawKwh).trim() !== "";
+  const kwhNum = hasRawKwh ? parseNum(rawKwh) : 0;
 
-  // WICHTIG: Leere Dummy-Einträge ohne kWh, Preis und Kosten komplett ignorieren
-  if (kwhNum <= 0 && priceNum <= 0 && costNum <= 0 && (!s.kwh && !s.kWh)) {
+  const rawPrice = s.preis !== undefined ? s.preis : (s.Preis !== undefined ? s.Preis : (s.pricePerKwh !== undefined ? s.pricePerKwh : (s.price !== undefined ? s.price : s["Preis (€/kWh)"])));
+  const hasRawPrice = rawPrice !== undefined && rawPrice !== null && String(rawPrice).trim() !== "";
+  const priceNum = hasRawPrice ? parseNum(rawPrice) : 0;
+
+  const rawCost = s.kosten !== undefined ? s.kosten : (s.Kosten !== undefined ? s.Kosten : (s.totalCost !== undefined ? s.totalCost : (s.gesamtkosten !== undefined ? s.gesamtkosten : (s.Gesamtkosten !== undefined ? s.Gesamtkosten : s["Gesamtkosten (€)"]))));
+  const hasRawCost = rawCost !== undefined && rawCost !== null && String(rawCost).trim() !== "";
+  const costNum = hasRawCost ? parseNum(rawCost) : ((hasRawKwh && hasRawPrice) ? Number((kwhNum * priceNum).toFixed(2)) : 0);
+
+  const rawOdo = s.odometer !== undefined ? s.odometer : (s["km-Stand"] !== undefined ? s["km-Stand"] : (s.km !== undefined ? s.km : (s.kmStand !== undefined ? s.kmStand : s.kilometer)));
+  const hasRawOdo = rawOdo !== undefined && rawOdo !== null && String(rawOdo).trim() !== "";
+  const odoNum = hasRawOdo ? parseNum(rawOdo) : 0;
+
+  const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
+  const hasRawSoc = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "");
+  const socNum = hasRawSoc ? parseNum(rawSoc) : null;
+
+  const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s.startSoc !== undefined ? s.startSoc : (s["Akkustand Start (%)"] !== undefined ? s["Akkustand Start (%)"] : null)));
+  const hasRawSocStart = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "");
+  const socStartNum = hasRawSocStart ? parseNum(rawSocStart) : null;
+
+  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
+  const id = String(s.id || s.ID || ("session_" + Date.now()));
+  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
+
+  // WICHTIG: Nur völlig leere Dummy-Einträge ohne jegliche ID oder Daten verwerfen
+  const hasAnyData = Boolean(
+    (s.id || s.ID) ||
+    (hasRawKwh && kwhNum > 0) ||
+    (hasRawOdo && odoNum > 0) ||
+    hasRawSoc ||
+    hasRawSocStart ||
+    hasRawPrice ||
+    hasRawCost ||
+    notesStr.trim() !== ""
+  );
+  if (!hasAnyData) {
     return;
   }
+
+  // Vollständigkeit prüfen:
+  // Alle Felder optional! Nicht vollständig erfasste Ladungen dezent kennzeichnen:
+  const isComplete = Boolean(
+    (hasRawKwh && kwhNum > 0) &&
+    (hasRawOdo && odoNum > 0) &&
+    (hasRawCost || hasRawPrice) &&
+    (hasRawSoc && socNum !== null && !isNaN(socNum))
+  );
+  const statusStr = isComplete ? "✓ Vollständig" : "⏳ Unvollständig";
 
   const lastRow = sheet.getLastRow();
   const numCols = colMap.rawHeaders.length;
   const rowData = new Array(numCols).fill("");
 
-  const id = String(s.id || s.ID || ("session_" + Date.now()));
-  const dateStr = s.date || s.Datum || s.datum || s.timestamp || new Date().toISOString();
   const locStr = typeof s.location === 'object' 
     ? (s.location.name || 'Bayrhofs') 
     : String(s.ort || s.Ort || s.location || s.Location || s.standort || s.Standort || "Bayrhofs");
@@ -2257,24 +2462,27 @@ function upsertSessionWithMap(sheet, colMap, s) {
   const rawPv = s.pvSurplus !== undefined ? s.pvSurplus : (s.pv !== undefined ? s.pv : (s.pv_ladung !== undefined ? s.pv_ladung : s["PV-Ladung"]));
   const isPv = rawPv === true || rawPv === "true" || String(rawPv).toLowerCase() === "ja";
 
-  const notesStr = String(s.notiz || s.Notiz || s.notes || s.note || s.bemerkung || "");
-  const odoNum = parseNum(s.odometer || s["km-Stand"] || s.km || s.kmStand || s.kilometer);
+  // Zahlungsstatus bestimmen:
+  const isBayrhof = locStr.toLowerCase().indexOf("bayrhof") !== -1;
+  let isPaid = true;
+  if (isBayrhof) {
+    const rawPaid = s.paid !== undefined ? s.paid : (s.Bezahlt !== undefined ? s.Bezahlt : (s.bezahlt !== undefined ? s.bezahlt : false));
+    isPaid = (rawPaid === true || rawPaid === "true" || String(rawPaid).toLowerCase() === "ja" || String(rawPaid).toLowerCase().indexOf("bezahlt") !== -1);
+  } else {
+    isPaid = true; // Andere Standorte sind immer direkt bezahlt
+  }
 
-  // Werte in die passenden Spalten schreiben
+  // Werte in die passenden Spalten schreiben (nicht erfasste Felder bleiben sauber "")
   if (colMap.id >= 0) rowData[colMap.id] = id;
   if (colMap.date >= 0) rowData[colMap.date] = dateStr;
   if (colMap.location >= 0) rowData[colMap.location] = locStr;
-  if (colMap.kwh >= 0) rowData[colMap.kwh] = kwhNum;
-  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = priceNum;
-  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = costNum;
+  if (colMap.kwh >= 0) rowData[colMap.kwh] = (hasRawKwh && kwhNum > 0) ? kwhNum : "";
+  if (colMap.pricePerKwh >= 0) rowData[colMap.pricePerKwh] = (hasRawPrice && priceNum > 0) ? priceNum : "";
+  if (colMap.totalCost >= 0) rowData[colMap.totalCost] = (hasRawCost || (hasRawKwh && hasRawPrice)) ? costNum : "";
   if (colMap.pvSurplus >= 0) rowData[colMap.pvSurplus] = isPv ? "Ja" : "Nein";
   if (colMap.notes >= 0) rowData[colMap.notes] = notesStr;
-  if (colMap.odometer >= 0) rowData[colMap.odometer] = odoNum;
-
-  const rawSoc = s.soc !== undefined ? s.soc : (s.SoC !== undefined ? s.SoC : (s.socEnd !== undefined ? s.socEnd : (s["Akkustand Ende (%)"] !== undefined ? s["Akkustand Ende (%)"] : null)));
-  const socNum = (rawSoc !== null && rawSoc !== undefined && String(rawSoc).trim() !== "") ? parseNum(rawSoc) : null;
-  const rawSocStart = s.socStart !== undefined ? s.socStart : (s.SoCStart !== undefined ? s.SoCStart : (s.startSoc !== undefined ? s.startSoc : (s["Akkustand Start (%)"] !== undefined ? s["Akkustand Start (%)"] : null)));
-  const socStartNum = (rawSocStart !== null && rawSocStart !== undefined && String(rawSocStart).trim() !== "") ? parseNum(rawSocStart) : null;
+  if (colMap.odometer >= 0) rowData[colMap.odometer] = (hasRawOdo && odoNum > 0) ? odoNum : "";
+  if (colMap.paid >= 0) rowData[colMap.paid] = isPaid ? (isBayrhof ? "Ja" : "Ja (Direkt)") : "Nein";
 
   if (colMap.socStart >= 0) rowData[colMap.socStart] = (socStartNum !== null && !isNaN(socStartNum)) ? socStartNum : "";
   if (colMap.soc >= 0) rowData[colMap.soc] = (socNum !== null && !isNaN(socNum)) ? socNum : "";
@@ -2284,29 +2492,45 @@ function upsertSessionWithMap(sheet, colMap, s) {
   }
   if (colMap.consumption >= 0) {
     const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
-    // Niemals die geladene kWh-Menge in die Verbrauch-Spalte schreiben
     rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0 && cVal !== kwhNum) ? cVal : "";
   }
   if (colMap.efficiency >= 0) {
     const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);
     rowData[colMap.efficiency] = (!isNaN(eVal) && eVal > 0) ? eVal : "";
   }
+  if (colMap.status >= 0) rowData[colMap.status] = statusStr;
   if (colMap.updatedAt >= 0) rowData[colMap.updatedAt] = new Date().toISOString();
 
   // Prüfen, ob ID bereits in der Tabelle existiert -> dann Update
+  let targetRowIndex = -1;
   if (lastRow > 1) {
     const colIdx = colMap.id >= 0 ? colMap.id + 1 : 1;
     const ids = sheet.getRange(2, colIdx, lastRow - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) {
       if (String(ids[i][0]).trim() === id.trim()) {
-        sheet.getRange(i + 2, 1, 1, numCols).setValues([rowData]);
-        return;
+        targetRowIndex = i + 2;
+        sheet.getRange(targetRowIndex, 1, 1, numCols).setValues([rowData]);
+        break;
       }
     }
   }
 
   // Ansonsten neue Zeile anhängen
-  sheet.appendRow(rowData);
+  if (targetRowIndex < 0) {
+    sheet.appendRow(rowData);
+    targetRowIndex = sheet.getLastRow();
+  }
+
+  // Dezent kennzeichnen: Unvollständige Ladungen erhalten eine dezente warme Pastelltönung (#fffbeb),
+  // vollständige Ladungen den regulären neutralen Hintergrund (#ffffff).
+  try {
+    const rowRange = sheet.getRange(targetRowIndex, 1, 1, numCols);
+    if (!isComplete) {
+      rowRange.setBackground("#fffbeb");
+    } else {
+      rowRange.setBackground("#ffffff");
+    }
+  } catch (eColor) {}
 }
 
 /**
@@ -2338,7 +2562,7 @@ function deleteSessionById(sheet, colMap, targetId) {
 }
 
 /**
- * Bereinigt fehlerhafte Dummy-Zeilen mit 0 kWh, 0 Preis und 0 Kosten
+ * Bereinigt fehlerhafte Dummy-Zeilen, die keinerlei ID oder Daten aufweisen
  */
 function cleanDummyRows(sheet, colMap) {
   const lastRow = sheet.getLastRow();
@@ -2350,11 +2574,17 @@ function cleanDummyRows(sheet, colMap) {
 
   for (let i = data.length - 1; i >= 0; i--) {
     const row = data[i];
-    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : parseNum(row[3]);
-    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : parseNum(row[4]);
-    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : parseNum(row[5]);
+    const id = colMap.id >= 0 ? String(row[colMap.id] || "").trim() : "";
+    const kwh = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
+    const price = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0;
+    const cost = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : 0;
+    const odo = colMap.odometer >= 0 ? parseNum(row[colMap.odometer]) : 0;
+    const notes = colMap.notes >= 0 ? String(row[colMap.notes] || "").trim() : "";
+    const soc = colMap.soc >= 0 ? row[colMap.soc] : null;
 
-    if (kwh <= 0 && price <= 0 && cost <= 0) {
+    // Nur Zeilen löschen, die keinerlei ID, kWh, km-Stand, Preis, Kosten, Notizen oder SoC besitzen
+    const hasAnyData = Boolean(id || kwh > 0 || price > 0 || cost > 0 || odo > 0 || notes || (soc !== null && String(soc).trim() !== ""));
+    if (!hasAnyData) {
       sheet.deleteRow(i + 2);
       cleanedCount++;
     }
@@ -2384,7 +2614,8 @@ function createOutput(data, callback) {
   }
   return ContentService.createTextOutput(jsonStr)
     .setMimeType(ContentService.MimeType.JSON);
-}`;
+}
+`;
 
   function handleCopyScriptCode() {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -4750,9 +4981,14 @@ function createOutput(data, callback) {
     const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
     const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
+    const compInfo = getSessionCompleteness(s);
+    const isComplete = compInfo.isComplete;
+    const kwhDisplay = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '' && Number(s.kwh) > 0) ? Number(s.kwh).toFixed(1) : '--';
+    const costDisplay = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? `${formatDe(s.totalCost)} €` : '-- €';
+    const priceDisplay = (s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? `${Number(s.pricePerKwh).toFixed(2).replace('.', ',')} €/kWh` : '-- €/kWh';
 
     return `
-      <div class="swift-glass-card session-swift-card bayrhofs-session-card ${isPaid ? 'is-paid' : 'is-unpaid'}" data-id="${s.id}">
+      <div class="swift-glass-card session-swift-card bayrhofs-session-card ${isPaid ? 'is-paid' : 'is-unpaid'} ${!isComplete ? 'is-incomplete' : ''}" data-id="${s.id}">
         <div class="session-top-meta session-header-block">
           <div class="session-header-row">
             <div class="session-timestamp">
@@ -4764,6 +5000,7 @@ function createOutput(data, callback) {
             <div class="session-header-tags session-badges-wrap">
               <span class="loc-badge-item" title="Bayrhofs">🏢 Bayrhofs</span>
               ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+              ${!isComplete ? `<span class="session-incomplete-badge" title="Noch unvollständig erfasst – fehlend: ${escapeHtml(compInfo.missing.join(', '))}">⏳ Unvollständig</span>` : ''}
             </div>
           </div>
 
@@ -4792,10 +5029,10 @@ function createOutput(data, callback) {
 
         <div class="session-primary-row">
           <div class="session-kwh-display">
-            <span class="session-kwh-val">${s.kwh.toFixed(1)}</span>
+            <span class="session-kwh-val">${kwhDisplay}</span>
             <span class="session-kwh-unit">kWh</span>
           </div>
-          <div class="session-cost-val">${formatDe(s.totalCost)} €</div>
+          <div class="session-cost-val">${costDisplay}</div>
         </div>
 
         <div class="session-details-row">
@@ -4803,7 +5040,7 @@ function createOutput(data, callback) {
             <span>📍 ${s.odometer ? s.odometer.toLocaleString('de-DE') + ' km' : 'km nicht notiert'}</span>
           </div>
           <div>
-            <span>${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</span>
+            <span>${priceDisplay}</span>
           </div>
         </div>
 
@@ -4813,7 +5050,7 @@ function createOutput(data, callback) {
           <button class="btn-card-action btn-pay-toggle ${isPaid ? 'paid' : 'unpaid'}" data-id="${s.id}" title="${isPaid ? 'Als noch offen markieren' : 'Als bezahlt verbuchen'}">
             ${isPaid ? '↩️ Als offen markieren' : '✓ Als bezahlt verbuchen'}
           </button>
-          <button class="btn-card-action btn-edit-charge" data-id="${s.id}">✏️ Details</button>
+          <button class="btn-card-action btn-edit-charge" data-id="${s.id}">${!isComplete ? '✏️ Ergänzen' : '✏️ Details'}</button>
         </div>
       </div>
     `;
@@ -5306,9 +5543,14 @@ function createOutput(data, callback) {
       const eff = (hasBothSoc && netKwh > 0 && s.kwh > 0) ? Math.min(100, Math.round((netKwh / s.kwh) * 1000) / 10) : null;
       const isBayrhof = isBayrhofsLocation(s.location);
       const isPaid = isSessionPaid(s);
+      const compInfo = getSessionCompleteness(s);
+      const isComplete = compInfo.isComplete;
+      const kwhDisplay = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '' && Number(s.kwh) > 0) ? Number(s.kwh).toFixed(1) : '--';
+      const costDisplay = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? `${formatDe(s.totalCost)} €` : '-- €';
+      const priceDisplay = (s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? `${Number(s.pricePerKwh).toFixed(2).replace('.', ',')} €/kWh` : '-- €/kWh';
 
       return `
-        <div class="swift-glass-card session-swift-card" data-id="${s.id}">
+        <div class="swift-glass-card session-swift-card ${!isComplete ? 'is-incomplete' : ''}" data-id="${s.id}">
           <div class="session-top-meta session-header-block">
             <div class="session-header-row">
               <div class="session-timestamp">
@@ -5320,6 +5562,7 @@ function createOutput(data, callback) {
               <div class="session-header-tags session-badges-wrap">
                 <span class="loc-badge-item" title="${escapeHtml(s.location)}">${locIcon} ${escapeHtml(s.location)}</span>
                 ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+                ${!isComplete ? `<span class="session-incomplete-badge" title="Noch unvollständig erfasst – fehlend: ${escapeHtml(compInfo.missing.join(', '))}">⏳ Unvollständig</span>` : ''}
               </div>
             </div>
 
@@ -5351,10 +5594,10 @@ function createOutput(data, callback) {
 
           <div class="session-primary-row">
             <div class="session-kwh-display">
-              <span class="session-kwh-val">${s.kwh.toFixed(1)}</span>
+              <span class="session-kwh-val">${kwhDisplay}</span>
               <span class="session-kwh-unit">kWh</span>
             </div>
-            <div class="session-cost-val">${formatDe(s.totalCost)} €</div>
+            <div class="session-cost-val">${costDisplay}</div>
           </div>
 
           <div class="session-details-row">
@@ -5363,7 +5606,7 @@ function createOutput(data, callback) {
               ${deltaInfo.deltaKm > 0 ? `<span class="delta-tag-live" style="margin-left: 6px;">+${deltaInfo.deltaKm} km</span>` : ''}
             </div>
             <div>
-              <span>${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</span>
+              <span>${priceDisplay}</span>
               ${deltaInfo.consumption ? `<span style="margin-left: 4px; color: var(--cupra-bronze-light);">(${deltaInfo.consumption.toFixed(1)} kWh/100)</span>` : ''}
             </div>
           </div>
@@ -5381,7 +5624,7 @@ function createOutput(data, callback) {
                 ${isPaid ? '↩️ Als offen' : '💶 Als bezahlt'}
               </button>
             ` : ''}
-            <button class="btn-card-action btn-edit-charge" data-id="${s.id}">✏️ Bearbeiten</button>
+            <button class="btn-card-action btn-edit-charge" data-id="${s.id}">${!isComplete ? '✏️ Ergänzen' : '✏️ Bearbeiten'}</button>
             <button class="btn-card-action danger btn-del-charge" data-id="${s.id}">🗑️ Löschen</button>
           </div>
         </div>
@@ -8040,16 +8283,28 @@ function createOutput(data, callback) {
         DOM.entryEditId.value = cleanEditId;
         DOM.modalChargeTitle.textContent = "Ladung bearbeiten";
         DOM.entryDateTime.value = formatDateTimeLocal(new Date(s.date));
-        DOM.entryKwh.value = s.kwh;
-        DOM.entryOdometer.value = s.odometer || '';
-        DOM.entryPrice.value = Number(s.pricePerKwh).toFixed(2);
-        DOM.entryTotalCost.value = s.totalCost.toFixed(2);
+        DOM.entryKwh.value = (s.kwh !== undefined && s.kwh !== null && s.kwh !== '') ? s.kwh : '';
+        DOM.entryOdometer.value = (s.odometer !== undefined && s.odometer !== null && s.odometer !== '') ? s.odometer : '';
+        DOM.entryPrice.value = (s.pricePerKwh !== undefined && s.pricePerKwh !== null && s.pricePerKwh !== '') ? Number(s.pricePerKwh).toFixed(2) : '';
+        DOM.entryTotalCost.value = (s.totalCost !== undefined && s.totalCost !== null && s.totalCost !== '') ? Number(s.totalCost).toFixed(2) : '';
         DOM.entryNotes.value = s.notes || '';
         if (DOM.entryBatterySocStart) {
           DOM.entryBatterySocStart.value = (s.socStart !== undefined && s.socStart !== null) ? s.socStart : '';
         }
         if (DOM.entryBatterySoc) {
           DOM.entryBatterySoc.value = (s.soc !== undefined && s.soc !== null) ? s.soc : '';
+        }
+
+        const compInfo = getSessionCompleteness(s);
+        if (DOM.modalIncompleteHint) {
+          if (!compInfo.isComplete) {
+            DOM.modalIncompleteHint.style.display = 'flex';
+            if (DOM.modalIncompleteText) {
+              DOM.modalIncompleteText.textContent = `⏳ Unvollständige Ladung – noch fehlend: ${compInfo.missing.join(', ')}`;
+            }
+          } else {
+            DOM.modalIncompleteHint.style.display = 'none';
+          }
         }
 
         const matchingLoc = (appData.settings.locations || []).find(l => l.name === s.location) || defaultLoc;
@@ -8071,6 +8326,10 @@ function createOutput(data, callback) {
         DOM.entryBatterySoc.value = '';
       }
 
+      if (DOM.modalIncompleteHint) {
+        DOM.modalIncompleteHint.style.display = 'none';
+      }
+
       selectLocationForEntry(defaultLoc.id, true);
       updateModalPaymentStatus(defaultLoc.name, false);
       // Feature 8a: Geofence Check (< 10 Meter)
@@ -8090,9 +8349,14 @@ function createOutput(data, callback) {
   }
 
   function calculateModalCost() {
-    const k = parseFloat(DOM.entryKwh.value) || 0;
-    const p = parseFloat(DOM.entryPrice.value) || 0;
-    DOM.entryTotalCost.value = (k * p).toFixed(2);
+    const kStr = (DOM.entryKwh && DOM.entryKwh.value) ? DOM.entryKwh.value.trim() : '';
+    const pStr = (DOM.entryPrice && DOM.entryPrice.value) ? DOM.entryPrice.value.trim() : '';
+    if (kStr === '' || pStr === '') return;
+    const k = parseFloat(kStr);
+    const p = parseFloat(pStr);
+    if (!isNaN(k) && !isNaN(p) && k > 0) {
+      DOM.entryTotalCost.value = (k * p).toFixed(2);
+    }
   }
 
   function calculateModalOdoDelta() {
@@ -8485,6 +8749,8 @@ function createOutput(data, callback) {
   window.autoDetectLocationByGps = autoDetectLocationByGps;
   window.updateDashboardWinterRangeSimulation = updateDashboardWinterRangeSimulation;
   window.postCloudVehicleConfig = postCloudVehicleConfig;
+  window.formatSessionForCloud = formatSessionForCloud;
+  window.getSessionCompleteness = getSessionCompleteness;
   Object.defineProperty(window, 'appData', {
     get: () => appData,
     set: (v) => { appData = v; },
@@ -8495,22 +8761,31 @@ function createOutput(data, callback) {
     e.preventDefault();
 
     const editId = DOM.entryEditId.value;
-    const dt = DOM.entryDateTime.value || new Date().toISOString();
-    const kwh = parseFloat(DOM.entryKwh.value) || 0;
-    const odo = parseInt(DOM.entryOdometer.value, 10) || 0;
-    const price = parseFloat(DOM.entryPrice.value) || 0.35;
-    const total = parseFloat(DOM.entryTotalCost.value) || (kwh * price);
-    const notes = DOM.entryNotes.value.trim();
+    const dt = (DOM.entryDateTime && DOM.entryDateTime.value) ? DOM.entryDateTime.value : new Date().toISOString();
+
+    const rawKwh = (DOM.entryKwh && DOM.entryKwh.value) ? DOM.entryKwh.value.trim() : '';
+    const kwh = (rawKwh !== '' && !isNaN(parseFloat(rawKwh))) ? parseFloat(rawKwh) : null;
+
+    const rawOdo = (DOM.entryOdometer && DOM.entryOdometer.value) ? DOM.entryOdometer.value.trim() : '';
+    const odo = (rawOdo !== '' && !isNaN(parseInt(rawOdo, 10))) ? parseInt(rawOdo, 10) : null;
 
     const locId = DOM.entryLocationId.value;
     const locObj = appData.settings.locations.find(l => l.id === locId) || appData.settings.locations[0];
     const locName = locObj ? locObj.name : 'Bayrhofs';
     const isPv = locObj ? locObj.powerType === 'pv' : false;
 
-    if (kwh <= 0) {
-      showToast('⚠️ Bitte Lademenge in kWh eingeben');
-      return;
+    const rawPrice = (DOM.entryPrice && DOM.entryPrice.value) ? DOM.entryPrice.value.trim() : '';
+    const price = (rawPrice !== '' && !isNaN(parseFloat(rawPrice))) ? parseFloat(rawPrice) : (locObj ? locObj.kwhPrice : null);
+
+    const rawTotal = (DOM.entryTotalCost && DOM.entryTotalCost.value) ? DOM.entryTotalCost.value.trim() : '';
+    let total = null;
+    if (rawTotal !== '' && !isNaN(parseFloat(rawTotal))) {
+      total = parseFloat(rawTotal);
+    } else if (kwh !== null && price !== null) {
+      total = Number((kwh * price).toFixed(2));
     }
+
+    const notes = DOM.entryNotes ? DOM.entryNotes.value.trim() : '';
 
     let enteredStartSoc = null;
     if (DOM.entryBatterySocStart && DOM.entryBatterySocStart.value.trim() !== '') {
@@ -8537,6 +8812,15 @@ function createOutput(data, callback) {
       sessionPaid = true;
     }
 
+    const compInfo = getSessionCompleteness({
+      kwh,
+      odometer: odo,
+      totalCost: total,
+      pricePerKwh: price,
+      soc: enteredSoc,
+      socStart: enteredStartSoc
+    });
+
     let savedSession = null;
     if (editId) {
       const cleanEditId = String(editId).trim();
@@ -8554,7 +8838,8 @@ function createOutput(data, callback) {
           location: locName,
           pvSurplus: isPv,
           notes,
-          paid: sessionPaid
+          paid: sessionPaid,
+          isComplete: compInfo.isComplete
         };
         savedSession = appData.sessions[idx];
         removeDeletedId(cleanEditId);
@@ -8572,7 +8857,8 @@ function createOutput(data, callback) {
         location: locName,
         pvSurplus: isPv,
         notes,
-        paid: sessionPaid
+        paid: sessionPaid,
+        isComplete: compInfo.isComplete
       };
       removeDeletedId(savedSession.id);
       appData.sessions.push(savedSession);
@@ -8584,7 +8870,12 @@ function createOutput(data, callback) {
     closeModalCharge();
     renderAll();
     triggerHaptic();
-    showToast(editId ? 'Ladung aktualisiert ✓' : 'Ladevorgang gespeichert ⚡️');
+
+    if (compInfo.isComplete) {
+      showToast(editId ? 'Ladung aktualisiert ✓' : 'Ladevorgang gespeichert ⚡️');
+    } else {
+      showToast(editId ? 'Ladung aktualisiert (⏳ Unvollständig)' : 'Teil-Ladung gespeichert (⏳ Unvollständig)');
+    }
 
     // Im Hintergrund an Google Sheets senden (Optimistic UI)
     if (savedSession) {

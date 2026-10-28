@@ -1176,10 +1176,16 @@
       <form id="formChargeEntry" class="sheet-form">
         <input type="hidden" id="entryEditId" value="">
 
+        <!-- Dezent gestalteter Info-Banner bei unvollständigen Einträgen -->
+        <div class="modal-incomplete-hint" id="modalIncompleteHint" style="display: none;">
+          <span class="incomplete-icon">⏳</span>
+          <span id="modalIncompleteText">Unvollständige Ladung – fehlende Angaben können jetzt ergänzt werden.</span>
+        </div>
+
         <!-- Datum & Uhrzeit -->
         <div class="form-touch-row">
           <label class="form-touch-label" for="entryDateTime">Datum & Uhrzeit</label>
-          <input type="datetime-local" id="entryDateTime" class="form-touch-input" required>
+          <input type="datetime-local" id="entryDateTime" class="form-touch-input">
         </div>
 
         <!-- Touch-optimierter Apple Action-Sheet Ladeort Selector -->
@@ -1211,11 +1217,11 @@
             <span class="delta-tag-live" id="entryDeltaKmTag">+0 km</span>
           </label>
           <div class="input-addon-box box-kwh">
-            <input type="number" id="entryKwh" class="form-touch-input" placeholder="38.5" step="0.1" min="0.1" max="100" required>
+            <input type="number" id="entryKwh" class="form-touch-input" placeholder="38.5" step="0.1" min="0" max="100">
             <span class="addon-suffix">kWh</span>
           </div>
           <div class="input-addon-box box-odo">
-            <input type="number" id="entryOdometer" class="form-touch-input" placeholder="0" step="1" min="0" required>
+            <input type="number" id="entryOdometer" class="form-touch-input" placeholder="0" step="1" min="0">
             <span class="addon-suffix">km</span>
           </div>
         </div>
@@ -1229,11 +1235,11 @@
             <span>Gesamtpreis (€)</span>
           </label>
           <div class="input-addon-box">
-            <input type="number" id="entryPrice" class="form-touch-input" placeholder="0.35" step="0.01" min="0" required>
+            <input type="number" id="entryPrice" class="form-touch-input" placeholder="0.35" step="0.01" min="0">
             <span class="addon-suffix">€</span>
           </div>
           <div class="input-addon-box">
-            <input type="number" id="entryTotalCost" class="form-touch-input bronze-highlight-input" placeholder="0.00" step="0.01" min="0" required>
+            <input type="number" id="entryTotalCost" class="form-touch-input bronze-highlight-input" placeholder="0.00" step="0.01" min="0">
             <span class="addon-suffix">€</span>
           </div>
         </div>
