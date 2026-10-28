@@ -1254,6 +1254,53 @@ def run_tests():
                      cfg_sync_available,
                      f"Funktion postCloudVehicleConfig: {cfg_sync_available}")
 
+            # 14.8: Smart GPS Caching: getSmartGpsCache und setSmartGpsCache
+            gps_cache_test = page.evaluate("""() => {
+                window.setSmartGpsCache({ lat: 47.7468, lon: 10.3094, accuracy: 12 }, "Bayrhofs Test");
+                const cached = window.getSmartGpsCache();
+                return {
+                    lat: cached.lat,
+                    lon: cached.lon,
+                    isFresh: cached.isFresh,
+                    name: cached.name
+                };
+            }""")
+            log_test("14.8 Smart GPS Caching: getSmartGpsCache & setSmartGpsCache aktiv",
+                     gps_cache_test["lat"] == 47.7468 and gps_cache_test["lon"] == 10.3094 and gps_cache_test["isFresh"],
+                     f"Cache: {gps_cache_test}")
+
+            # 14.9: Startup-Schutz: autoRequestGpsAndFetchWeather ohne Benutzerinteraktion ruft bei 'prompt' kein getCurrentPosition auf
+            silent_gps_check = page.evaluate("""async () => {
+                let liveGpsCalled = false;
+                const origGetPos = navigator.geolocation.getCurrentPosition;
+                navigator.geolocation.getCurrentPosition = () => { liveGpsCalled = true; };
+                try {
+                    // Aufruf wie beim Start (isUserGesture = false)
+                    await window.autoRequestGpsAndFetchWeather(false, false);
+                    return { liveGpsCalled };
+                } finally {
+                    navigator.geolocation.getCurrentPosition = origGetPos;
+                }
+            }""")
+            log_test("14.9 Startup ohne Permission-Popup: autoRequestGpsAndFetchWeather ruft lautlos Smart-Cache ohne live GPS-Prompt auf",
+                     silent_gps_check["liveGpsCalled"] is False,
+                     f"Live GPS aufgerufen: {silent_gps_check['liveGpsCalled']} (Soll: False)")
+
+            # 14.10: Geofence nutzt Smart GPS Cache ohne Browser-Popup
+            geofence_cache_check = page.evaluate("""() => {
+                // Bayrhofs Koordinaten im Smart Cache hinterlegen
+                window.setSmartGpsCache({ lat: 47.7468, lon: 10.3094 }, "Bayrhofs Cache");
+                // Geofence ohne Override aufrufen
+                const match = window.autoDetectLocationByGps(10.0);
+                return {
+                    matched: match ? match.loc.name : null,
+                    distance: match ? match.distance : null
+                };
+            }""")
+            log_test("14.10 Geofencing nutzt Smart GPS Cache sofort und ohne Browser-Popup",
+                     geofence_cache_check["matched"] is not None and "Bayrhof" in geofence_cache_check["matched"],
+                     f"Match: {geofence_cache_check['matched']}, Dist: {geofence_cache_check['distance']}")
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:

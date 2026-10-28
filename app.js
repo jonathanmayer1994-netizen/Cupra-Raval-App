@@ -174,7 +174,7 @@
     initWeatherCache();
     setupEvents();
     renderAll();
-    autoRequestGpsAndFetchWeather();
+    autoRequestGpsAndFetchWeather(false, false);
     fetchCloudSessions(false);
   });
 
@@ -2760,7 +2760,7 @@ function createOutput(data, callback) {
 
     // Wetter Refresh Button
     DOM.btnRefreshWeather.addEventListener('click', () => {
-      autoRequestGpsAndFetchWeather(true);
+      autoRequestGpsAndFetchWeather(true, true);
       triggerHaptic();
     });
 
@@ -3341,7 +3341,7 @@ function createOutput(data, callback) {
           releaseText: 'Loslassen zum Aktualisieren',
           refreshingText: 'Wetterdaten werden aktualisiert...',
           successText: 'Wetter aktualisiert ✓',
-          action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true) : fetchWeatherCluster(true))
+          action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true, true) : fetchWeatherCluster(true))
         };
       }
       return null;
@@ -3368,7 +3368,7 @@ function createOutput(data, callback) {
             idleText: 'Zum Aktualisieren nach unten ziehen',
             refreshingText: 'Wetterdaten werden aktualisiert...',
             successText: 'Wetter aktualisiert ✓',
-            action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true) : fetchWeatherCluster(true))
+            action: () => (activeWeatherLocationId === 'gps' ? autoRequestGpsAndFetchWeather(true, true) : fetchWeatherCluster(true))
           };
 
       if (!config.banner) return;
@@ -6009,14 +6009,18 @@ function createOutput(data, callback) {
     const activeId = activeWeatherLocationId || (appData && appData.settings && appData.settings.activeWeatherLocationId) || 'gps';
 
     if (activeId === 'gps') {
+      const cached = typeof getSmartGpsCache === 'function' ? getSmartGpsCache() : null;
       const gps = (appData && appData.settings && appData.settings.weatherGps) || DEFAULT_DATA.settings.weatherGps;
+      const lat = (cached && typeof cached.lat === 'number') ? cached.lat : (Number(gps.lat) || 47.72);
+      const lon = (cached && typeof cached.lon === 'number') ? cached.lon : (Number(gps.lon) || 10.31);
+      const name = (cached && cached.name) ? cached.name : (gps.name || 'GPS: Bayrhofs / Kempten');
       return {
         id: 'gps',
         name: 'Aktueller GPS-Standort',
         icon: '📍',
-        address: 'GPS: Bayrhofs / Kempten',
-        lat: Number(gps.lat) || 47.72,
-        lon: Number(gps.lon) || 10.31,
+        address: name,
+        lat: lat,
+        lon: lon,
         isGps: true,
         powerType: 'pv'
       };
@@ -6138,7 +6142,7 @@ function createOutput(data, callback) {
 
     if (locId === 'gps') {
       showToast('Wetter für aktuellen GPS-Standort wird geladen 📍');
-      await autoRequestGpsAndFetchWeather(false);
+      await autoRequestGpsAndFetchWeather(false, true);
     } else {
       const loc = getActiveWeatherLocation();
       showToast(`Wetter für ${loc.name} wird geladen ${loc.icon || '☀️'}`);
@@ -6213,16 +6217,149 @@ function createOutput(data, callback) {
     fetchWeatherCluster(true);
   }
 
-  function autoRequestGpsAndFetchWeather(forceNotification = false) {
-    return new Promise((resolve) => {
-      if (navigator.geolocation) {
+  // =========================================================================
+  // SMART GPS CACHING & HINTERGRUND-PERMISSIONS
+  // =========================================================================
+  const GPS_CACHE_KEY = 'cupra_raval_gps_cache';
+  const GPS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 Stunde Cache-Gültigkeit
+
+  function getSmartGpsCache() {
+    try {
+      const raw = localStorage.getItem(GPS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lon === 'number') {
+          const age = Date.now() - (parsed.timestamp || 0);
+          return {
+            lat: parsed.lat,
+            lon: parsed.lon,
+            accuracy: parsed.accuracy || 0,
+            timestamp: parsed.timestamp || 0,
+            name: parsed.name || "GPS: Bayrhofs / Kempten",
+            ageMs: age,
+            isFresh: age < GPS_CACHE_TTL_MS
+          };
+        }
+      }
+    } catch (_) {}
+
+    if (appData && appData.settings && appData.settings.weatherGps) {
+      const wg = appData.settings.weatherGps;
+      if (typeof wg.lat === 'number' && typeof wg.lon === 'number') {
+        return {
+          lat: Number(wg.lat),
+          lon: Number(wg.lon),
+          accuracy: 25,
+          timestamp: wg.lastCached || Date.now(),
+          name: wg.name || "GPS: Bayrhofs / Kempten",
+          ageMs: 0,
+          isFresh: true
+        };
+      }
+    }
+
+    return {
+      lat: 47.7267,
+      lon: 10.3139,
+      accuracy: 25,
+      timestamp: Date.now(),
+      name: "GPS: Bayrhofs / Kempten",
+      ageMs: 0,
+      isFresh: true
+    };
+  }
+
+  function setSmartGpsCache(coords, name = null) {
+    if (!coords || typeof coords.lat !== 'number' || typeof coords.lon !== 'number') return null;
+    const resolvedName = name || coords.name || "GPS: Bayrhofs / Kempten";
+    const entry = {
+      lat: Number(coords.lat.toFixed(4)),
+      lon: Number(coords.lon.toFixed(4)),
+      accuracy: Math.round(coords.accuracy || 0),
+      timestamp: Date.now(),
+      name: resolvedName
+    };
+    try {
+      localStorage.setItem(GPS_CACHE_KEY, JSON.stringify(entry));
+    } catch (_) {}
+
+    if (appData && appData.settings) {
+      if (!appData.settings.weatherGps) appData.settings.weatherGps = {};
+      appData.settings.weatherGps.lat = entry.lat;
+      appData.settings.weatherGps.lon = entry.lon;
+      appData.settings.weatherGps.name = entry.name;
+      appData.settings.weatherGps.lastCached = entry.timestamp;
+      saveData();
+    }
+    return entry;
+  }
+
+  async function checkGeolocationPermission() {
+    if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      try {
+        const p = await navigator.permissions.query({ name: 'geolocation' });
+        return p.state; // 'granted' | 'prompt' | 'denied'
+      } catch (_) {
+        return 'unknown';
+      }
+    }
+    return 'unknown';
+  }
+
+  async function autoRequestGpsAndFetchWeather(forceNotification = false, isUserGesture = false) {
+    // 1. Smarter Cache: Wetter sofort anhand der gecachten GPS-Koordinaten abrufen (0ms Latenz, kein Popup!)
+    const cached = getSmartGpsCache();
+    if (appData && appData.settings && appData.settings.weatherGps) {
+      appData.settings.weatherGps.lat = cached.lat;
+      appData.settings.weatherGps.lon = cached.lon;
+      appData.settings.weatherGps.name = cached.name;
+    }
+
+    // Wetter mit gecachten Werten laden (Feedback-Toast nur bei echter manueller Geste)
+    await fetchWeatherCluster(forceNotification && isUserGesture);
+
+    // 2. Automatischer Hintergrund-Refresh beim Start:
+    // ABSOLUTE REGEL: Wenn NICHT durch Benutzeraktion ausgelöst (z. B. beim Start der App),
+    // darf navigator.geolocation.getCurrentPosition() NUR DANN aufgerufen werden, wenn die
+    // Berechtigung bereits dauerhaft erteilt ist ('granted').
+    // Bei 'prompt', 'denied' oder 'unknown' wird KEIN getCurrentPosition() aufgerufen!
+    // Dadurch erscheint niemals ein nerviges Browser-Popup beim Start.
+    if (!isUserGesture) {
+      const perm = await checkGeolocationPermission();
+      if (perm === 'granted' && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const updated = setSmartGpsCache({
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
+            });
+            if (updated) {
+              const dLat = Math.abs(updated.lat - cached.lat);
+              const dLon = Math.abs(updated.lon - cached.lon);
+              if (dLat > 0.02 || dLon > 0.02) {
+                await fetchWeatherCluster(false);
+              }
+            }
+          },
+          () => {},
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 }
+        );
+      }
+      return;
+    }
+
+    // 3. Explizite Benutzeraktion (z. B. Refresh-Button geklickt, Pull-to-refresh oder GPS-Chip)
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      return new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
             try {
-              appData.settings.weatherGps.lat = Number(pos.coords.latitude.toFixed(4));
-              appData.settings.weatherGps.lon = Number(pos.coords.longitude.toFixed(4));
-              appData.settings.weatherGps.name = "GPS: Bayrhofs Umgebung";
-              saveData();
+              setSmartGpsCache({
+                lat: pos.coords.latitude,
+                lon: pos.coords.longitude,
+                accuracy: pos.coords.accuracy
+              });
               await fetchWeatherCluster(forceNotification);
             } catch (_) {}
             resolve();
@@ -6233,12 +6370,10 @@ function createOutput(data, callback) {
             } catch (_) {}
             resolve();
           },
-          { timeout: 5000 }
+          { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
         );
-      } else {
-        fetchWeatherCluster(forceNotification).then(resolve).catch(resolve);
-      }
-    });
+      });
+    }
   }
 
   async function fetchWeatherCluster(showFeedback = false) {
@@ -7366,11 +7501,11 @@ function createOutput(data, callback) {
     return R * c;
   }
 
-  function autoDetectLocationByGps(maxMeters = 10.0, overrideLat = null, overrideLon = null) {
+  function autoDetectLocationByGps(maxMeters = 10.0, overrideLat = null, overrideLon = null, isUserGesture = false) {
     const ind = document.getElementById('locGeofenceIndicator');
     if (ind) ind.style.display = 'none';
 
-    const processCoords = (uLat, uLon) => {
+    const processCoords = (uLat, uLon, showToastFeedback = false) => {
       const locs = (appData && appData.settings && appData.settings.locations) || DEFAULT_LOCATIONS;
       let closestLoc = null;
       let minDistance = Infinity;
@@ -7398,7 +7533,9 @@ function createOutput(data, callback) {
           }
         }
         triggerHaptic();
-        showToast(`📍 Ladeort "${closestLoc.name}" automatisch erkannt (<10m)`);
+        if (showToastFeedback && isUserGesture) {
+          showToast(`📍 Ladeort "${closestLoc.name}" automatisch erkannt (<10m)`);
+        }
         return { loc: closestLoc, distance: minDistance };
       } else if (closestLoc) {
         console.log(`[Geofence] Nächster Ladeort "${closestLoc.name}" ist ${minDistance.toFixed(1)}m entfernt (Schwellenwert < ${maxMeters}m). Kein Auto-Switch.`);
@@ -7408,20 +7545,41 @@ function createOutput(data, callback) {
     };
 
     if (overrideLat !== null && overrideLon !== null) {
-      return processCoords(overrideLat, overrideLon);
+      return processCoords(overrideLat, overrideLon, false);
     }
 
-    if (!navigator.geolocation) return;
+    // 1. Smart GPS Cache zuerst prüfen: schnell, präzise & OHNE störendes Permission-Popup!
+    const cached = typeof getSmartGpsCache === 'function' ? getSmartGpsCache() : null;
+    let cacheMatch = null;
+    if (cached && typeof cached.lat === 'number' && typeof cached.lon === 'number') {
+      cacheMatch = processCoords(cached.lat, cached.lon, false);
+    }
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        processCoords(pos.coords.latitude, pos.coords.longitude);
-      },
-      (err) => {
-        console.warn('[Geofence] GPS nicht verfügbar oder abgelehnt:', err.message);
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
-    );
+    // 2. Nur wenn Permission bereits dauerhaft gewährt ist oder explizite Benutzeraktion: live GPS im Hintergrund abfragen
+    if (!navigator.geolocation) return cacheMatch;
+
+    if (typeof checkGeolocationPermission === 'function') {
+      checkGeolocationPermission().then((perm) => {
+        if (perm === 'granted' || isUserGesture) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const uLat = Number(pos.coords.latitude.toFixed(6));
+              const uLon = Number(pos.coords.longitude.toFixed(6));
+              if (typeof setSmartGpsCache === 'function') {
+                setSmartGpsCache({ lat: uLat, lon: uLon, accuracy: Math.round(pos.coords.accuracy || 0) });
+              }
+              processCoords(uLat, uLon, isUserGesture);
+            },
+            (err) => {
+              console.warn('[Geofence] GPS nicht verfügbar oder abgelehnt:', err.message);
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+          );
+        }
+      }).catch(() => {});
+    }
+
+    return cacheMatch;
   }
 
   // =========================================================================
@@ -8740,6 +8898,10 @@ function createOutput(data, callback) {
   window.syncVehicleStateFromSessions = syncVehicleStateFromSessions;
   window.getGpsDistanceMeters = getGpsDistanceMeters;
   window.autoDetectLocationByGps = autoDetectLocationByGps;
+  window.getSmartGpsCache = getSmartGpsCache;
+  window.setSmartGpsCache = setSmartGpsCache;
+  window.checkGeolocationPermission = checkGeolocationPermission;
+  window.autoRequestGpsAndFetchWeather = autoRequestGpsAndFetchWeather;
   window.updateDashboardWinterRangeSimulation = updateDashboardWinterRangeSimulation;
   window.postCloudVehicleConfig = postCloudVehicleConfig;
   window.formatSessionForCloud = formatSessionForCloud;
