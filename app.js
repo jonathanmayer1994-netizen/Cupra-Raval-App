@@ -8320,7 +8320,7 @@ function createOutput(data, callback) {
       }
       DOM.entryNotes.value = '';
       if (DOM.entryBatterySocStart) {
-        DOM.entryBatterySocStart.value = (appData.vehicle && appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) ? appData.vehicle.currentSoc : '';
+        DOM.entryBatterySocStart.value = '';
       }
       if (DOM.entryBatterySoc) {
         DOM.entryBatterySoc.value = '';
@@ -8675,14 +8675,7 @@ function createOutput(data, callback) {
     let foundCount = 0;
     const filledLabels = [];
 
-    if (data.kwh !== null && DOM.entryKwh) {
-      DOM.entryKwh.value = data.kwh;
-      DOM.entryKwh.classList.remove('auto-filled-glow');
-      void DOM.entryKwh.offsetWidth;
-      DOM.entryKwh.classList.add('auto-filled-glow');
-      foundCount++;
-      filledLabels.push(`${data.kwh} kWh`);
-    }
+    // Hinweis: Gemäß Vorgabe wird die kWh-Menge beim Erfassen nicht mehr aus dem Screenshot übernommen.
 
     if (data.startSoc !== null && DOM.entryBatterySocStart) {
       DOM.entryBatterySocStart.value = data.startSoc;

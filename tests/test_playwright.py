@@ -208,6 +208,11 @@ def run_tests():
             add_modal_open = page.locator("#modalAddCharge").evaluate("el => el.classList.contains('open')")
             log_test("4.1 Modal Ladevorgang erfassen öffnet sich", add_modal_open, "Klasse .open vorhanden")
 
+            # 4.1b: Akkustand Start & Ende müssen beim Neuerfassen leer sein
+            init_start_soc = page.locator("#entryBatterySocStart").input_value()
+            init_end_soc = page.locator("#entryBatterySoc").input_value()
+            log_test("4.1b Beim Neuerfassen sind Akkustand Start & Ende leer", init_start_soc == "" and init_end_soc == "", f"Start: '{init_start_soc}', Ende: '{init_end_soc}'")
+
             # Open Location Picker Action Sheet
             page.locator("#btnOpenLocationPicker").click()
             time.sleep(0.3)
@@ -241,7 +246,7 @@ def run_tests():
             if os.path.exists(sample_img_path):
                 page.set_input_files("#inputCupraScreenshot", sample_img_path)
                 try:
-                    page.wait_for_function("() => (document.getElementById('entryKwh').value === '30' || document.getElementById('entryBatterySoc').value === '71')", timeout=12000)
+                    page.wait_for_function("() => document.getElementById('entryBatterySoc').value === '71'", timeout=12000)
                     ocr_kwh = page.locator("#entryKwh").input_value()
                     ocr_start_soc = page.locator("#entryBatterySocStart").input_value()
                     ocr_end_soc = page.locator("#entryBatterySoc").input_value()
@@ -251,17 +256,22 @@ def run_tests():
                     ocr_price = page.locator("#entryPrice").input_value()
                     ocr_total = page.locator("#entryTotalCost").input_value()
 
-                    ocr_success = (ocr_kwh == "30" and ocr_start_soc == "17" and ocr_end_soc == "71" and "06:59" in ocr_dt)
-                    log_test("4.3e Cupra Screenshot OCR Auto-Scan liest kWh, Start-SoC, End-SoC & Datum aus", ocr_success, f"kWh: {ocr_kwh}, Start: {ocr_start_soc}%, Ende: {ocr_end_soc}%, Datum: {ocr_dt}")
+                    ocr_success = (ocr_kwh == "" and ocr_start_soc == "17" and ocr_end_soc == "71" and "06:59" in ocr_dt)
+                    log_test("4.3e Cupra Screenshot OCR liest Start-SoC, End-SoC & Datum aus (kWh bleibt unberührt)", ocr_success, f"kWh: '{ocr_kwh}', Start: {ocr_start_soc}%, Ende: {ocr_end_soc}%, Datum: {ocr_dt}")
 
-                    # 4.3e2: Nur km-Stand und Notiz bleiben leer, alle anderen Felder sind befüllt
-                    only_odo_notes_empty = (ocr_odo == "" and ocr_notes == "" and ocr_kwh != "" and ocr_price != "" and ocr_total != "" and ocr_start_soc != "" and ocr_end_soc != "" and ocr_dt != "")
-                    log_test("4.3e2 Formular-Status: Nur aktueller km-Stand und Notizen bleiben leer", only_odo_notes_empty, f"Odo: '{ocr_odo}' (leer: {ocr_odo == ''}), Notiz: '{ocr_notes}' (leer: {ocr_notes == ''}), Total: '{ocr_total} €'")
+                    # 4.3e2: kWh, km-Stand und Notiz bleiben leer, Start/End-SoC und Datum sind befüllt
+                    only_odo_notes_kwh_empty = (ocr_odo == "" and ocr_notes == "" and ocr_kwh == "" and ocr_price != "" and ocr_start_soc != "" and ocr_end_soc != "" and ocr_dt != "")
+                    log_test("4.3e2 Formular-Status: kWh, km-Stand und Notizen bleiben leer", only_odo_notes_kwh_empty, f"kWh: '{ocr_kwh}' (leer: {ocr_kwh == ''}), Odo: '{ocr_odo}', Notiz: '{ocr_notes}'")
 
                     delta_tag = page.locator("#entryDeltaSocTag").inner_text()
                     eff_pill_vis = page.locator("#entrySocEfficiencyPill").is_visible()
                     eff_txt = page.locator("#entrySocEfficiencyText").inner_text()
-                    log_test("4.3f Live-Berechnung Netto-Akku-Zuwachs & Wirkungsgrad", "+54%" in delta_tag and eff_pill_vis and "93,6%" in eff_txt, f"Delta: {delta_tag}, Pill: {eff_txt}")
+                    
+                    # Manuelle Eingabe von kWh triggert Wirkungsgrad
+                    page.locator("#entryKwh").fill("30")
+                    page.locator("#entryKwh").dispatch_event("input")
+                    eff_txt_with_kwh = page.locator("#entrySocEfficiencyText").inner_text()
+                    log_test("4.3f Live-Berechnung Netto-Akku-Zuwachs & Wirkungsgrad bei kWh-Eingabe", "+54%" in delta_tag and eff_pill_vis and "93,6%" in eff_txt_with_kwh, f"Delta: {delta_tag}, Eff: {eff_txt_with_kwh}")
 
                     # 4.3g: Unit-Tests für parseCupraScreenshotText Robustheit bei OCR-Glitches
                     ocr_glitch_test = page.evaluate("""() => {
@@ -1075,14 +1085,15 @@ def run_tests():
                 f"Alte Session SoC: {integrity_check['oldSesSoc']}, Fahrzeug currentSoc: {integrity_check['vehicleCurrentSoc']} (Soll: 80)"
             )
 
-            # 12.4: Modal Pre-Fill: Neues Lade-Modal übernimmt automatisch den Fahrzeug-Akkustand als Start-Akkustand
+            # 12.4: Modal: Start-Akkustand wie End-Akkustand beim Neuerfassen leer
             page.locator("#fabAddCharge").click()
             time.sleep(0.5)
             prefilled_start_soc = page.locator("#entryBatterySocStart").input_value().strip()
+            prefilled_end_soc = page.locator("#entryBatterySoc").input_value().strip()
             log_test(
-                "12.4 Modal Pre-Fill: Start-Akkustand übernimmt synchron den aktuellen Fahrzeug-Akkustand",
-                prefilled_start_soc == "80",
-                f"Prefilled Start-SoC: '{prefilled_start_soc}' (Soll: 80)"
+                "12.4 Neuerfassen einer Ladung: Start- & End-Akkustand sind beide leer",
+                prefilled_start_soc == "" and prefilled_end_soc == "",
+                f"Start-SoC: '{prefilled_start_soc}', End-SoC: '{prefilled_end_soc}'"
             )
             page.locator("#btnCloseModalCharge").click()
             time.sleep(0.3)

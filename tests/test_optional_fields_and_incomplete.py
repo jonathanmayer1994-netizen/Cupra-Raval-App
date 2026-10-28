@@ -79,6 +79,12 @@ def run_test():
             print(f"[TEST 1] Anzahl required Inputs im Formular: {required_inputs} (Erwartet: 0)")
             assert required_inputs == 0, f"Es gibt noch required inputs: {required_inputs}"
 
+            # Prüfen: Akkustand Start & Ende sind initial leer
+            init_soc_start = page.locator('#entryBatterySocStart').input_value()
+            init_soc_end = page.locator('#entryBatterySoc').input_value()
+            print(f"[TEST 1b] Initialer Akkustand Start ('{init_soc_start}') und Ende ('{init_soc_end}') sind leer")
+            assert init_soc_start == "" and init_soc_end == "", f"Akkustand Start oder Ende nicht leer: start='{init_soc_start}', end='{init_soc_end}'"
+
             # 3. Teil-Ladung erfassen: NUR km-Stand und Start-Akkustand eingeben (Lademenge, Preis, End-SoC komplett leer lassen)
             page.locator('#entryOdometer').fill("12550")
             page.locator('#entryBatterySocStart').fill("18")
