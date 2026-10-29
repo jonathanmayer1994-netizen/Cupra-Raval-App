@@ -5,46 +5,10 @@ import urllib.request
 import urllib.parse
 from playwright.sync_api import sync_playwright
 
-GOOGLE_SHEETS_API_URL = "https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec"
-
-def cleanup_google_sheet(target_id=None, keyword="Teilladung", api_url=GOOGLE_SHEETS_API_URL):
-    deleted = []
-    if target_id:
-        try:
-            del_url = f"{api_url}?action=delete&id={urllib.parse.quote(str(target_id))}"
-            req = urllib.request.Request(del_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                resp.read()
-            deleted.append(target_id)
-        except Exception as e:
-            print(f"[CLEANUP] Delete per ID fehlgeschlagen: {e}")
-
-    try:
-        req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = resp.read().decode('utf-8')
-            rows = json.loads(data) if data else []
-            for row in rows:
-                r_id = str(row.get('id') or row.get('ID') or '')
-                r_notes = str(row.get('notes') or row.get('Notiz') or row.get('notiz') or '')
-                if keyword in r_notes or (target_id and r_id == str(target_id)):
-                    del_url = f"{api_url}?action=delete&id={urllib.parse.quote(r_id)}"
-                    del_req = urllib.request.Request(del_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(del_req, timeout=20) as dr:
-                        dr.read()
-                    if r_id not in deleted:
-                        deleted.append(r_id)
-    except Exception as e:
-        print(f"[CLEANUP] Sheet-Bereinigung Ausnahme: {e}")
-    return deleted
-
 def run_test():
     print("======================================================================")
     print("TEST: OPTIONALE FELDER & DEZENTE KENNZEICHNUNG UNVOLLSTÄNDIGER LADUNGEN")
     print("======================================================================")
-
-    # Vorab-Bereinigung eventueller Reste
-    cleanup_google_sheet(keyword="Teilladung")
 
     session_id = None
 
@@ -56,9 +20,15 @@ def run_test():
                 is_mobile=True,
                 has_touch=True
             )
+            # Offline Mocking: verhindert jeglichen Netzwerkverkehr zum echten Google Sheet
+            context.route("https://script.google.com/**", lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body='{"status":"success","result":"ok"}'
+            ))
             page = context.new_page()
             page.goto("http://localhost:8080/", wait_until="domcontentloaded")
-            time.sleep(1)
+            time.sleep(0.04)
 
             # Cloud-Uploads in Unit-Tests isolieren, um das Google Sheet nicht zu verschmutzen
             page.evaluate("""() => {
@@ -68,11 +38,11 @@ def run_test():
 
             # 1. Beispieldaten leeren oder vorbereiten
             page.evaluate("() => { window.appData.sessions = []; window.saveData(); window.renderAll(); }")
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # 2. Modal öffnen
             page.locator('#fabAddCharge').click()
-            time.sleep(0.5)
+            time.sleep(0.04)
 
             # Prüfen: Kein Feld hat das required-Attribut mehr
             required_inputs = page.locator('#formChargeEntry input[required]').count()
@@ -91,11 +61,11 @@ def run_test():
             page.locator('#entryNotes').fill("Teilladung Test")
             page.locator('#entryKwh').fill("")
             page.locator('#entryTotalCost').fill("")
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # Speichern klicken
             page.locator('#btnSaveEntry').click()
-            time.sleep(0.8)
+            time.sleep(0.04)
 
             # Prüfen: Modal schließt sich und Eintrag ist in sessions
             modal_open = page.locator('#modalAddCharge').evaluate("el => el.classList.contains('open')")
@@ -109,7 +79,7 @@ def run_test():
 
             # 4. Prüfen in der Ladehistorie (Tab charging)
             page.locator('.dock-tab-btn[data-tab="charging"]').click()
-            time.sleep(0.4)
+            time.sleep(0.04)
 
             card = page.locator(f'#chargesStreamContainer .session-swift-card[data-id="{session_id}"]')
             card_class = card.get_attribute("class")
@@ -128,7 +98,7 @@ def run_test():
 
             # 5. Nun auf '✏️ Ergänzen' klicken und die fehlenden Felder nachtragen
             card.locator('.btn-edit-charge').click()
-            time.sleep(0.5)
+            time.sleep(0.04)
 
             hint_visible = page.locator('#modalIncompleteHint').is_visible()
             hint_text = page.locator('#modalIncompleteText').inner_text()
@@ -138,9 +108,9 @@ def run_test():
             # Fehlende Daten ergänzen: kWh, Kosten, End-SoC
             page.locator('#entryKwh').fill("28.4")
             page.locator('#entryBatterySoc').fill("72")
-            time.sleep(0.3)
+            time.sleep(0.04)
             page.locator('#btnSaveEntry').click()
-            time.sleep(0.8)
+            time.sleep(0.04)
 
             # 6. Prüfen: Nun ist die Ladung vollständig!
             updated_card = page.locator(f'#chargesStreamContainer .session-swift-card[data-id="{session_id}"]')
@@ -168,8 +138,7 @@ def run_test():
             print("======================================================================")
             return True
     finally:
-        # ZWINGENDE BEREINIGUNG: Stellt sicher, dass niemals Test-Artefakte im Sheet verbleiben
-        cleanup_google_sheet(target_id=session_id, keyword="Teilladung")
+        pass
 
 if __name__ == '__main__':
     run_test()

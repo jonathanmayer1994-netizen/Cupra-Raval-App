@@ -87,11 +87,11 @@ def run_payment_tests():
                 localStorage.setItem('cupra_raval_data', JSON.stringify(window.appData));
                 window.renderAll();
             }""")
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # Tab 2: Laden öffnen
             page.locator('.dock-tab-btn[data-tab="charging"]').click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # 2. Prüfen des Segmented Pickers mit Subtab "Bayrhofs Abrechnung"
             print("\n--- TEST 2: Subtab 'Bayrhofs Abrechnung' vorhanden & wählbar ---")
@@ -105,7 +105,7 @@ def run_payment_tests():
 
             # Auf Bayrhofs Abrechnung Tab wechseln
             bay_tab_btn.click()
-            time.sleep(0.3)
+            time.sleep(0.04)
             card_visible = page.locator("#bayrhofsReconcileCard").is_visible()
             log_test("2.3 Bayrhofs Abrechnung Subview sichtbar", card_visible)
 
@@ -117,7 +117,7 @@ def run_payment_tests():
             print("\n--- TEST 3: Historie der Zahlungen per Klick auf 'Bereits abgerechnet' ---")
             # Klick auf pillFilterPaidBayrhofs ("Bereits abgerechnet")
             page.locator("#pillFilterPaidBayrhofs").click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             history_visible = page.locator("#baySectionHistory").is_visible()
             open_hidden = not page.locator("#baySectionOpen").is_visible()
@@ -126,7 +126,7 @@ def run_payment_tests():
 
             # Klick auf 'Offen bei Bayrhofs' wechselt zurück
             page.locator("#pillFilterUnpaidBayrhofs").click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             history_hidden = not page.locator("#baySectionHistory").is_visible()
             open_visible = page.locator("#baySectionOpen").is_visible()
@@ -143,7 +143,7 @@ def run_payment_tests():
             amount_input = page.locator("#inputReconcileAmount")
             amount_input.fill("5.18")
             page.locator("#btnRunReconcile").click()
-            time.sleep(0.4)
+            time.sleep(0.04)
 
             result_panel_visible = page.locator("#reconcileResultPanel").is_visible()
             badge_match_text = page.locator("#reconcileResultBadge").inner_text()
@@ -160,7 +160,7 @@ def run_payment_tests():
 
             # Als bezahlt verbuchen klicken
             page.locator("#btnConfirmReconcile").click()
-            time.sleep(0.4)
+            time.sleep(0.04)
 
             bay1_now_paid = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_1').paid")
             bay2_still_unpaid = page.evaluate("() => window.appData.sessions.find(s => s.id === 'session_bayrhof_2').paid")
@@ -173,7 +173,7 @@ def run_payment_tests():
             # 6. Historie der Zahlungen nach Verbuchung prüfen
             print("\n--- TEST 6: Zahlungshistorie enthält verbuchte Ladung ---")
             page.locator("#btnBayModeHistory").click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             paid_card_bay1 = page.locator('#bayrhofsPaidStreamContainer .bayrhofs-session-card[data-id="session_bayrhof_1"]')
             paid_card_exists = paid_card_bay1.count() > 0
@@ -182,7 +182,7 @@ def run_payment_tests():
             # 7. Ladehistorie Subtab (Hauptstrom) und Filter
             print("\n--- TEST 7: Ladehistorie Subtab & Filterchips ---")
             page.locator('.picker-seg[data-sub="history"]').click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # Bayrhof 1 muss jetzt "✓ Bezahlt" zeigen
             card_bay1 = page.locator('#chargesStreamContainer .session-swift-card[data-id="session_bayrhof_1"]')
@@ -195,7 +195,7 @@ def run_payment_tests():
             log_test("7.2 Schnellfilter '⏳ Bayrhofs Offen' vorhanden", chip_exists)
             if chip_exists:
                 unpaid_chip.click()
-                time.sleep(0.3)
+                time.sleep(0.04)
                 cards_count = page.locator("#chargesStreamContainer .session-swift-card").count()
                 first_card_id = page.locator("#chargesStreamContainer .session-swift-card").first.get_attribute("data-id")
                 log_test("7.3 Filter zeigt genau die 1 offene Karte (session_bayrhof_2)", cards_count == 1 and first_card_id == "session_bayrhof_2", f"Count: {cards_count}, First: {first_card_id}")
@@ -204,13 +204,13 @@ def run_payment_tests():
             print("\n--- TEST 8: THG-Quote Jahres-Speicherung (thgByYear) ---")
             # Settings Tab öffnen
             page.locator('.dock-tab-btn[data-tab="settings"]').click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             # THG Quote 2026 auf 135.00 € setzen
             page.locator("#cfgThgYear").fill("2026")
             page.locator("#cfgThgAmount").fill("135.00")
             page.locator("#btnSaveVehicleSettings").click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             thg_2026 = page.evaluate("() => window.appData.settings.thgByYear['2026']")
             log_test("8.1 THG für 2026 auf 135.00 € gespeichert", thg_2026 is not None and thg_2026.get("amount") == 135.0)
@@ -219,7 +219,7 @@ def run_payment_tests():
             page.locator("#cfgThgYear").fill("2025")
             page.locator("#cfgThgAmount").fill("90.00")
             page.locator("#btnSaveVehicleSettings").click()
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             thg_2025 = page.evaluate("() => window.appData.settings.thgByYear['2025']")
             log_test("8.2 THG für 2025 auf 90.00 € gespeichert", thg_2025 is not None and thg_2025.get("amount") == 90.0)
@@ -227,7 +227,7 @@ def run_payment_tests():
             # Zurück auf 2026 tippen -> muss automatisch 135.00 laden
             page.locator("#cfgThgYear").fill("2026")
             page.locator("#cfgThgYear").dispatch_event("input")
-            time.sleep(0.2)
+            time.sleep(0.04)
             auto_val_2026 = page.locator("#cfgThgAmount").input_value()
             log_test("8.3 Wechsel auf Jahr 2026 lädt dynamisch 135.00 €", "135" in auto_val_2026, f"Value: '{auto_val_2026}'")
 
@@ -242,7 +242,7 @@ def run_payment_tests():
                 };
                 window.postCloudVehicleConfig();
             }""")
-            time.sleep(0.3)
+            time.sleep(0.04)
 
             final_2026_amt = page.evaluate("() => window.appData.settings.thgByYear['2026'].amount")
             log_test("8.4 THG-Wert für 2026 bleibt nach Cloud-Sync stabil auf 135.00 €", final_2026_amt == 135.0)
