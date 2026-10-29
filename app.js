@@ -57,8 +57,9 @@
     }
   ];
 
-  // Unveränderlicher Start-Kilometerstand des Fahrzeugs bei Auslieferung
+  // Unveränderliche Startwerte des Fahrzeugs bei Auslieferung
   const VEHICLE_START_ODO = 9;
+  const VEHICLE_START_SOC = 72; // Fester Auslieferungs-Akkustand (72%)
 
   const DEFAULT_DATA = {
     schemaVersion: CURRENT_SCHEMA,
@@ -68,6 +69,7 @@
       batteryKwh: 52.0,
       powerPs: 211,
       startOdo: VEHICLE_START_ODO,
+      startSoc: VEHICLE_START_SOC,
       currentOdo: 0,
       currentSoc: null
     },
@@ -506,6 +508,7 @@
         batteryKwh: Number((data.vehicle && data.vehicle.batteryKwh) || DEFAULT_DATA.vehicle.batteryKwh),
         powerPs: Number((data.vehicle && data.vehicle.powerPs) || DEFAULT_DATA.vehicle.powerPs),
         startOdo: VEHICLE_START_ODO, // Unveränderlicher Startwert (9 km)
+        startSoc: VEHICLE_START_SOC, // Unveränderlicher Start-Akkustand (72%)
         currentOdo: (() => {
           let o = (data.vehicle && data.vehicle.currentOdo !== undefined && data.vehicle.currentOdo !== null)
             ? Number(data.vehicle.currentOdo)
@@ -2189,18 +2192,6 @@ function doGet(e) {
         let kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
         let consVal = colMap.consumption >= 0 ? parseNum(row[colMap.consumption]) : null;
 
-        // Auto-Heal: Falls Spalte D (kWh) 0 oder leer ist, aber Spalte M fälschlicherweise den Wert enthält (z. B. 30):
-        if (kwhVal <= 0 && consVal > 0 && colMap.kwh >= 0) {
-          kwhVal = consVal;
-          consVal = null;
-          try {
-            sheet.getRange(i + 2, colMap.kwh + 1).setValue(kwhVal);
-            if (colMap.consumption >= 0) {
-              sheet.getRange(i + 2, colMap.consumption + 1).setValue("");
-            }
-          } catch (eFix) {}
-        }
-
         const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
         const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
         const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
@@ -2492,7 +2483,7 @@ function upsertSessionWithMap(sheet, colMap, s) {
   }
   if (colMap.consumption >= 0) {
     const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
-    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0 && cVal !== kwhNum) ? cVal : "";
+    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0) ? cVal : "";
   }
   if (colMap.efficiency >= 0) {
     const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);
@@ -2896,7 +2887,10 @@ function createOutput(data, callback) {
     DOM.entryPrice.addEventListener('input', calculateModalCost);
     DOM.entryOdometer.addEventListener('input', calculateModalOdoDelta);
     if (DOM.entryBatterySocStart) {
-      DOM.entryBatterySocStart.addEventListener('input', calculateModalSocDelta);
+      DOM.entryBatterySocStart.addEventListener('input', () => {
+        calculateModalSocDelta();
+        calculateModalOdoDelta();
+      });
     }
     if (DOM.entryBatterySoc) {
       DOM.entryBatterySoc.addEventListener('input', calculateModalSocDelta);
@@ -3686,64 +3680,123 @@ function createOutput(data, callback) {
     updateDashboardWinterRangeSimulation();
   }
 
+  function getSessionEndSoc(s) {
+    if (!s) return null;
+    const val = (s.soc !== undefined && s.soc !== null && s.soc !== '')
+      ? s.soc
+      : ((s.socEnd !== undefined && s.socEnd !== null && s.socEnd !== '')
+        ? s.socEnd
+        : ((s['Akkustand Ende (%)'] !== undefined && s['Akkustand Ende (%)'] !== null && s['Akkustand Ende (%)'] !== '') ? s['Akkustand Ende (%)'] : null));
+    if (val === null || val === undefined || String(val).trim() === '') return null;
+    const num = Number(val);
+    return (!isNaN(num) && num >= 0 && num <= 100) ? num : null;
+  }
+
+  function getSessionStartSoc(s) {
+    if (!s) return null;
+    const val = (s.socStart !== undefined && s.socStart !== null && s.socStart !== '')
+      ? s.socStart
+      : ((s.startSoc !== undefined && s.startSoc !== null && s.startSoc !== '')
+        ? s.startSoc
+        : ((s['Akkustand Start (%)'] !== undefined && s['Akkustand Start (%)'] !== null && s['Akkustand Start (%)'] !== '') ? s['Akkustand Start (%)'] : null));
+    if (val === null || val === undefined || String(val).trim() === '') return null;
+    const num = Number(val);
+    return (!isNaN(num) && num >= 0 && num <= 100) ? num : null;
+  }
+
+  function getSessionOdo(s) {
+    if (!s) return 0;
+    const val = (s.odometer !== undefined && s.odometer !== null && s.odometer !== '')
+      ? s.odometer
+      : ((s['km-Stand'] !== undefined && s['km-Stand'] !== null && s['km-Stand'] !== '') ? s['km-Stand'] : 0);
+    const num = Number(val);
+    return (!isNaN(num) && num > 0) ? num : 0;
+  }
+
   function calcConsumption(sessions) {
-    const batteryCap = (appData && appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+    const batteryCap = (appData && appData.vehicle && Number(appData.vehicle.batteryKwh)) || 52.0;
     let totalEffInputKwh = 0;
     let totalNetBatteryKwh = 0;
     let effCount = 0;
+    let allCost = 0;
+    let allKwh = 0;
 
     (sessions || []).forEach(s => {
-      if (s.socStart !== null && s.socStart !== undefined && s.soc !== null && s.soc !== undefined && s.kwh > 0) {
-        const deltaSoc = s.soc - s.socStart;
-        if (deltaSoc > 0) {
-          const netKwh = (deltaSoc / 100) * batteryCap;
-          totalNetBatteryKwh += netKwh;
-          totalEffInputKwh += s.kwh;
-          effCount++;
-        }
+      const k = Number(s.kwh) || 0;
+      const c = Number(s.totalCost) || 0;
+      allKwh += k;
+      allCost += c;
+
+      const startSoc = getSessionStartSoc(s);
+      const endSoc = getSessionEndSoc(s);
+      if (startSoc !== null && endSoc !== null && endSoc > startSoc && k > 0) {
+        const deltaSoc = endSoc - startSoc;
+        const netKwh = (deltaSoc / 100) * batteryCap;
+        totalNetBatteryKwh += netKwh;
+        totalEffInputKwh += k;
+        effCount++;
       }
     });
 
     const avgEff = (totalEffInputKwh > 0) ? Math.min(100, Math.round((totalNetBatteryKwh / totalEffInputKwh) * 1000) / 10) : null;
     const totalLossKwh = (totalEffInputKwh > 0 && totalEffInputKwh >= totalNetBatteryKwh) ? (totalEffInputKwh - totalNetBatteryKwh) : 0;
+    const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
 
-    if (!sessions || sessions.length < 1) return { hasData: false, avgEff, totalLossKwh, effCount };
+    if (!sessions || sessions.length < 1) {
+      return { hasData: false, avgCons: 0, avgCost100: 0, avgEff, totalLossKwh, effCount, totalMeasuredKm: 0, totalConsumedKwh: 0 };
+    }
     const sorted = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let dist = 0, energy = 0, cost = 0;
+    let totalMeasuredKm = 0;
+    let totalConsumedKwh = 0;
 
-    // Erstes Intervall: Start-Kilometerstand (Auslieferung: 9 km) bis erste Ladung
-    if (sorted[0].odometer && sorted[0].odometer > VEHICLE_START_ODO) {
-      const firstDelta = sorted[0].odometer - VEHICLE_START_ODO;
-      if (firstDelta > 0 && firstDelta < 3000) {
-        dist += firstDelta;
-        energy += sorted[0].kwh;
-        cost += sorted[0].totalCost;
+    // Erstes Intervall: Auslieferung (9 km, 72% SoC) bis 1. dokumentierte Ladung
+    const firstOdo = getSessionOdo(sorted[0]);
+    if (firstOdo > VEHICLE_START_ODO) {
+      const firstDelta = firstOdo - VEHICLE_START_ODO;
+      const firstStartSoc = getSessionStartSoc(sorted[0]);
+      if (firstDelta > 0 && firstDelta < 3000 && firstStartSoc !== null && VEHICLE_START_SOC > firstStartSoc) {
+        const deltaSoc = VEHICLE_START_SOC - firstStartSoc;
+        const usedKwh = (deltaSoc / 100) * batteryCap;
+        totalMeasuredKm += firstDelta;
+        totalConsumedKwh += usedKwh;
       }
     }
 
+    // Nachfolgende Intervalle: Reale verbrauchte kWh zwischen Ladeende vorher und Ladestart jetzt
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const curr = sorted[i];
-      const delta = curr.odometer - prev.odometer;
-      if (delta > 0 && delta < 3000) {
-        dist += delta;
-        energy += curr.kwh;
-        cost += curr.totalCost;
+      const prevOdo = getSessionOdo(prev);
+      const currOdo = getSessionOdo(curr);
+      if (prevOdo > 0 && currOdo > prevOdo) {
+        const delta = currOdo - prevOdo;
+        const prevEndSoc = getSessionEndSoc(prev);
+        const currStartSoc = getSessionStartSoc(curr);
+        if (delta > 0 && delta < 3000 && prevEndSoc !== null && currStartSoc !== null && prevEndSoc > currStartSoc) {
+          const deltaSoc = prevEndSoc - currStartSoc;
+          const usedKwh = (deltaSoc / 100) * batteryCap;
+          totalMeasuredKm += delta;
+          totalConsumedKwh += usedKwh;
+        }
       }
     }
 
-    if (dist > 0) {
+    if (totalMeasuredKm > 0 && totalConsumedKwh > 0) {
+      const avgCons = (totalConsumedKwh / totalMeasuredKm) * 100;
+      const avgCost100 = avgCons * avgPrice;
       return {
         hasData: true,
-        avgCons: (energy / dist) * 100,
-        avgCost100: (cost / dist) * 100,
+        avgCons,
+        avgCost100,
         avgEff,
         totalLossKwh,
-        effCount
+        effCount,
+        totalMeasuredKm,
+        totalConsumedKwh
       };
     }
-    return { hasData: false, avgEff, totalLossKwh, effCount };
+    return { hasData: false, avgCons: 0, avgCost100: 0, avgEff, totalLossKwh, effCount, totalMeasuredKm: 0, totalConsumedKwh: 0 };
   }
 
   // =========================================================================
@@ -3759,45 +3812,73 @@ function createOutput(data, callback) {
     const curYear = now.getFullYear();
     const curMonth = now.getMonth();
     const curDay = now.getDate();
+    const batteryCap = (appData && appData.vehicle && Number(appData.vehicle.batteryKwh)) || 52.0;
+
+    let allCost = 0, allKwh = 0;
+    (sessions || []).forEach(s => {
+      allCost += (Number(s.totalCost) || 0);
+      allKwh += (Number(s.kwh) || 0);
+    });
+    const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
 
     let monthKm = 0;
     let yearKm = 0;
     let totalTrackedKm = 0;
     const segments = [];
 
-    // Erstes Segment: Auslieferungsstand (9 km) bis erste dokumentierte Ladung
-    if (sorted.length > 0 && sorted[0].odometer && sorted[0].odometer > VEHICLE_START_ODO) {
+    // Erstes Segment: Auslieferungsstand (9 km, 72% SoC) bis erste dokumentierte Ladung
+    if (sorted.length > 0) {
       const firstS = sorted[0];
-      const delta0 = firstS.odometer - VEHICLE_START_ODO;
-      if (delta0 > 0) {
-        const d0 = new Date(firstS.date);
-        totalTrackedKm += delta0;
+      const firstOdo = getSessionOdo(firstS);
+      if (firstOdo > VEHICLE_START_ODO) {
+        const delta0 = firstOdo - VEHICLE_START_ODO;
+        if (delta0 > 0) {
+          const d0 = new Date(firstS.date);
+          totalTrackedKm += delta0;
 
-        if (d0.getFullYear() === curYear) {
-          yearKm += delta0;
-          if (d0.getMonth() === curMonth) {
-            monthKm += delta0;
+          if (d0.getFullYear() === curYear) {
+            yearKm += delta0;
+            if (d0.getMonth() === curMonth) {
+              monthKm += delta0;
+            }
           }
-        }
 
-        segments.push({
-          date: firstS.date,
-          fromOdo: VEHICLE_START_ODO,
-          toOdo: firstS.odometer,
-          deltaKm: delta0,
-          kwh: Number(firstS.kwh) || 0,
-          cost: Number(firstS.totalCost) || 0,
-          location: firstS.location || 'Ladung',
-          consumption: delta0 > 0 ? ((firstS.kwh / delta0) * 100) : 0
-        });
+          const startSoc0 = getSessionStartSoc(firstS);
+          let segCons0 = 0;
+          let usedKwh0 = 0;
+          let deltaSoc0 = 0;
+          if (startSoc0 !== null && VEHICLE_START_SOC > startSoc0) {
+            deltaSoc0 = VEHICLE_START_SOC - startSoc0;
+            usedKwh0 = (deltaSoc0 / 100) * batteryCap;
+            segCons0 = (usedKwh0 / delta0) * 100;
+          }
+
+          segments.push({
+            date: firstS.date,
+            fromOdo: VEHICLE_START_ODO,
+            toOdo: firstOdo,
+            deltaKm: delta0,
+            fromSoc: VEHICLE_START_SOC,
+            toSoc: startSoc0,
+            deltaSoc: deltaSoc0,
+            usedKwh: usedKwh0,
+            kwh: Number(firstS.kwh) || 0,
+            cost: Number(firstS.totalCost) || 0,
+            cost100: segCons0 > 0 ? (segCons0 * avgPrice) : 0,
+            location: firstS.location || 'Ladung',
+            consumption: segCons0
+          });
+        }
       }
     }
 
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const curr = sorted[i];
-      const delta = (curr.odometer && prev.odometer && curr.odometer > prev.odometer)
-        ? (curr.odometer - prev.odometer)
+      const prevOdo = getSessionOdo(prev);
+      const currOdo = getSessionOdo(curr);
+      const delta = (currOdo > 0 && prevOdo > 0 && currOdo > prevOdo)
+        ? (currOdo - prevOdo)
         : 0;
 
       if (delta > 0) {
@@ -3811,15 +3892,31 @@ function createOutput(data, callback) {
           }
         }
 
+        const prevEndSoc = getSessionEndSoc(prev);
+        const currStartSoc = getSessionStartSoc(curr);
+        let segCons = 0;
+        let usedKwh = 0;
+        let deltaSoc = 0;
+        if (prevEndSoc !== null && currStartSoc !== null && prevEndSoc > currStartSoc) {
+          deltaSoc = prevEndSoc - currStartSoc;
+          usedKwh = (deltaSoc / 100) * batteryCap;
+          segCons = (usedKwh / delta) * 100;
+        }
+
         segments.push({
           date: curr.date,
-          fromOdo: prev.odometer,
-          toOdo: curr.odometer,
+          fromOdo: prevOdo,
+          toOdo: currOdo,
           deltaKm: delta,
+          fromSoc: prevEndSoc,
+          toSoc: currStartSoc,
+          deltaSoc: deltaSoc,
+          usedKwh: usedKwh,
           kwh: Number(curr.kwh) || 0,
           cost: Number(curr.totalCost) || 0,
+          cost100: segCons > 0 ? (segCons * avgPrice) : 0,
           location: curr.location || 'Ladung',
-          consumption: delta > 0 ? ((curr.kwh / delta) * 100) : 0
+          consumption: segCons
         });
       }
     }
@@ -3829,7 +3926,7 @@ function createOutput(data, callback) {
     const avgKmPerMonth = yearKm > 0 ? (yearKm / (curMonth + 1)) : 0;
     const totalOdo = (currentOdo !== undefined && currentOdo !== null && currentOdo > 0)
       ? currentOdo
-      : (sorted.length > 0 ? sorted[sorted.length - 1].odometer : VEHICLE_START_ODO);
+      : (sorted.length > 0 ? getSessionOdo(sorted[sorted.length - 1]) : VEHICLE_START_ODO);
     const totalDrivenKm = Math.max(0, totalOdo - VEHICLE_START_ODO);
 
     return {
@@ -5645,19 +5742,47 @@ function createOutput(data, callback) {
   }
 
   function getSessionDelta(curr) {
-    const sorted = [...appData.sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const idx = sorted.findIndex(s => s.id === curr.id);
-    if (idx > 0 && curr.odometer) {
+    if (!curr) return { deltaKm: 0, consumption: null };
+    const sessions = (appData && Array.isArray(appData.sessions)) ? [...appData.sessions] : [];
+    const currId = String(curr.id || curr.ID || '').trim();
+    const existingIdx = currId ? sessions.findIndex(s => String(s.id || s.ID || '').trim() === currId) : -1;
+    if (existingIdx >= 0) {
+      sessions[existingIdx] = curr;
+    } else {
+      sessions.push(curr);
+    }
+    const sorted = sessions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const idx = sorted.findIndex(s => (currId && String(s.id || s.ID || '').trim() === currId) || s === curr);
+    if (idx < 0) return { deltaKm: 0, consumption: null };
+
+    const batteryCap = (appData && appData.vehicle && Number(appData.vehicle.batteryKwh)) || 52.0;
+    const currOdo = getSessionOdo(curr);
+    const currStartSoc = getSessionStartSoc(curr);
+
+    if (idx > 0 && currOdo > 0) {
       const prev = sorted[idx - 1];
-      if (prev.odometer && curr.odometer > prev.odometer) {
-        const delta = curr.odometer - prev.odometer;
-        const cons = (curr.kwh / delta) * 100;
+      const prevOdo = getSessionOdo(prev);
+      const prevEndSoc = getSessionEndSoc(prev);
+
+      if (prevOdo > 0 && currOdo > prevOdo) {
+        const delta = currOdo - prevOdo;
+        let cons = null;
+        if (prevEndSoc !== null && currStartSoc !== null && prevEndSoc > currStartSoc && delta > 0) {
+          const deltaSoc = prevEndSoc - currStartSoc;
+          const usedKwh = (deltaSoc / 100) * batteryCap;
+          cons = (usedKwh / delta) * 100;
+        }
         return { deltaKm: delta, consumption: cons };
       }
-    } else if (idx === 0 && curr.odometer && curr.odometer > VEHICLE_START_ODO) {
-      // Erstes Intervall: Auslieferungs-Kilometerstand (9 km) bis erste Ladung
-      const delta = curr.odometer - VEHICLE_START_ODO;
-      const cons = delta > 0 ? ((curr.kwh / delta) * 100) : null;
+    } else if (idx === 0 && currOdo > VEHICLE_START_ODO) {
+      // Erstes Intervall: Auslieferung (9 km, 72% SoC) bis 1. Ladung
+      const delta = currOdo - VEHICLE_START_ODO;
+      let cons = null;
+      if (currStartSoc !== null && VEHICLE_START_SOC > currStartSoc && delta > 0) {
+        const deltaSoc = VEHICLE_START_SOC - currStartSoc;
+        const usedKwh = (deltaSoc / 100) * batteryCap;
+        cons = (usedKwh / delta) * 100;
+      }
       return { deltaKm: delta, consumption: cons };
     }
     return { deltaKm: 0, consumption: null };
@@ -8523,15 +8648,32 @@ function createOutput(data, callback) {
 
     const cleanEditId = String(editId).trim();
     let base = VEHICLE_START_ODO;
+    let baseSoc = VEHICLE_START_SOC;
     const sorted = [...appData.sessions].filter(s => String(s.id).trim() !== cleanEditId).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (sorted.length > 0 && sorted[0].odometer) {
       base = sorted[0].odometer;
+      const sSoc = getSessionEndSoc(sorted[0]);
+      if (sSoc !== null) baseSoc = sSoc;
     } else if (appData.vehicle && appData.vehicle.currentOdo > VEHICLE_START_ODO) {
       base = appData.vehicle.currentOdo;
+      if (appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) {
+        baseSoc = Number(appData.vehicle.currentSoc);
+      }
     }
 
     if (!isNaN(curOdo) && curOdo > base && base > 0) {
-      DOM.entryDeltaKmTag.textContent = `+${curOdo - base} km`;
+      const deltaKm = curOdo - base;
+      let text = `+${deltaKm} km`;
+      const startVal = DOM.entryBatterySocStart ? DOM.entryBatterySocStart.value.trim() : '';
+      const startSoc = parseInt(startVal, 10);
+      if (!isNaN(startSoc) && baseSoc !== null && baseSoc > startSoc) {
+        const deltaSoc = baseSoc - startSoc;
+        const batteryCap = (appData.vehicle && Number(appData.vehicle.batteryKwh)) || 52.0;
+        const usedKwh = (deltaSoc / 100) * batteryCap;
+        const tripCons = (usedKwh / deltaKm) * 100;
+        text += ` (${tripCons.toFixed(1).replace('.', ',')} kWh/100)`;
+      }
+      DOM.entryDeltaKmTag.textContent = text;
     } else {
       DOM.entryDeltaKmTag.textContent = '+0 km';
     }
@@ -8889,8 +9031,10 @@ function createOutput(data, callback) {
 
   // Für Tests & externe Trigger bereitstellen
   window.VEHICLE_START_ODO = VEHICLE_START_ODO;
+  window.VEHICLE_START_SOC = VEHICLE_START_SOC;
   window.calcDistanceStats = calcDistanceStats;
   window.calcConsumption = calcConsumption;
+  window.getSessionDelta = getSessionDelta;
   window.handleCupraScreenshotFile = handleCupraScreenshotFile;
   window.parseCupraScreenshotText = parseCupraScreenshotText;
   window.openModalCharge = openModalCharge;

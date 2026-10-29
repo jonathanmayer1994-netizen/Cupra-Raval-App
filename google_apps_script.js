@@ -385,18 +385,6 @@ function doGet(e) {
         let kwhVal = colMap.kwh >= 0 ? parseNum(row[colMap.kwh]) : 0;
         let consVal = colMap.consumption >= 0 ? parseNum(row[colMap.consumption]) : null;
 
-        // Auto-Heal: Falls Spalte D (kWh) 0 oder leer ist, aber Spalte M fälschlicherweise den Wert enthält (z. B. 30):
-        if (kwhVal <= 0 && consVal > 0 && colMap.kwh >= 0) {
-          kwhVal = consVal;
-          consVal = null;
-          try {
-            sheet.getRange(i + 2, colMap.kwh + 1).setValue(kwhVal);
-            if (colMap.consumption >= 0) {
-              sheet.getRange(i + 2, colMap.consumption + 1).setValue("");
-            }
-          } catch (eFix) {}
-        }
-
         const priceVal = colMap.pricePerKwh >= 0 ? parseNum(row[colMap.pricePerKwh]) : 0.35;
         const totalVal = colMap.totalCost >= 0 ? parseNum(row[colMap.totalCost]) : Number((kwhVal * priceVal).toFixed(2));
         const pvRaw = colMap.pvSurplus >= 0 ? row[colMap.pvSurplus] : false;
@@ -688,7 +676,7 @@ function upsertSessionWithMap(sheet, colMap, s) {
   }
   if (colMap.consumption >= 0) {
     const cVal = parseNum(s.consumption || s["Verbrauch (kWh/100km)"]);
-    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0 && cVal !== kwhNum) ? cVal : "";
+    rowData[colMap.consumption] = (!isNaN(cVal) && cVal > 0) ? cVal : "";
   }
   if (colMap.efficiency >= 0) {
     const eVal = parseNum(s.efficiency || s["Wirkungsgrad (%)"]);

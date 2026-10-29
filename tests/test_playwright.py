@@ -1146,29 +1146,57 @@ def run_tests():
 
             # 13.3: calcDistanceStats berechnet erstes Fahrsegment ab 9 km
             dist_stats_check = page.evaluate("""() => {
-                const testSessions = [{ date: '2026-10-20T06:59:00Z', odometer: 233, kwh: 30, totalCost: 4.5 }];
+                const testSessions = [{ date: '2026-10-20T06:59:00Z', odometer: 233, kwh: 30, totalCost: 4.5, socStart: 17 }];
                 const s = window.calcDistanceStats(testSessions, 233);
                 return {
                     firstSegDelta: s.segments.length > 0 ? s.segments[0].deltaKm : 0,
                     firstSegFrom: s.segments.length > 0 ? s.segments[0].fromOdo : 0,
+                    firstSegCons: s.segments.length > 0 ? Math.round(s.segments[0].consumption * 10) / 10 : 0,
                     totalTracked: s.totalTrackedKm,
                     totalDriven: s.totalDrivenKm
                 };
             }""")
-            dist_correct = (dist_stats_check["firstSegDelta"] == 224 and dist_stats_check["firstSegFrom"] == 9 and dist_stats_check["totalTracked"] == 224 and dist_stats_check["totalDriven"] == 224)
-            log_test("13.3 calcDistanceStats berechnet Erstsegment ab 9 km (233 - 9 = 224 km)", dist_correct, f"Delta: {dist_stats_check['firstSegDelta']} km, From: {dist_stats_check['firstSegFrom']} km, Driven: {dist_stats_check['totalDriven']} km")
+            dist_correct = (dist_stats_check["firstSegDelta"] == 224 and dist_stats_check["firstSegFrom"] == 9 and dist_stats_check["firstSegCons"] == 12.8 and dist_stats_check["totalTracked"] == 224 and dist_stats_check["totalDriven"] == 224)
+            log_test("13.3 calcDistanceStats berechnet Erstsegment ab 9 km (233 - 9 = 224 km, 12,8 kWh/100km)", dist_correct, f"Delta: {dist_stats_check['firstSegDelta']} km, From: {dist_stats_check['firstSegFrom']} km, Cons: {dist_stats_check['firstSegCons']}, Driven: {dist_stats_check['totalDriven']} km")
 
-            # 13.4: calcConsumption berechnet Verbrauch ab der 1. Ladung dank 9 km Startwert
+            # 13.4: calcConsumption & getSessionDelta berechnen realen Fahrverbrauch aus Akku-Delta (SoC) und Distanz
             cons_check = page.evaluate("""() => {
-                const testSessions = [{ date: '2026-10-20T06:59:00Z', odometer: 233, kwh: 30, totalCost: 4.5 }];
+                const s1 = { id: 's1', date: '2026-10-20T04:59:00Z', odometer: 233, socStart: 17, soc: 71, kwh: 30, totalCost: 4.5 };
+                const s2 = { id: 's2', date: '2026-10-27T05:50:00Z', odometer: 424, socStart: 17, soc: 73, kwh: 30.8, totalCost: 4.62 };
+                const s3 = { id: 's3', date: '2026-10-29T05:48:00Z', odometer: 481, socStart: 61, soc: 100, kwh: 21.3, totalCost: 3.19 };
+                const testSessions = [s1, s2, s3];
+                window.appData.sessions = testSessions;
+
                 const c = window.calcConsumption(testSessions);
+                const d1 = window.getSessionDelta(s1);
+                const d2 = window.getSessionDelta(s2);
+                const d3 = window.getSessionDelta(s3);
+
                 return {
                     hasData: c.hasData,
-                    avgCons: c.hasData ? Math.round(c.avgCons * 10) / 10 : null
+                    avgCons: c.hasData ? Math.round(c.avgCons * 10) / 10 : null,
+                    avgCost100: c.hasData ? Math.round(c.avgCost100 * 100) / 100 : null,
+                    d1Cons: d1.consumption ? Math.round(d1.consumption * 10) / 10 : null,
+                    d1Km: d1.deltaKm,
+                    d2Cons: d2.consumption ? Math.round(d2.consumption * 10) / 10 : null,
+                    d2Km: d2.deltaKm,
+                    d3Cons: d3.consumption ? Math.round(d3.consumption * 10) / 10 : null,
+                    d3Km: d3.deltaKm
                 };
             }""")
-            cons_correct = (cons_check["hasData"] == True and cons_check["avgCons"] == 13.4)
-            log_test("13.4 calcConsumption berechnet Verbrauch ab der 1. Ladung (30 kWh / 224 km = 13,4 kWh/100km)", cons_correct, f"hasData: {cons_check['hasData']}, avgCons: {cons_check['avgCons']} kWh/100km")
+            cons_correct = (
+                cons_check["hasData"] == True and
+                cons_check["avgCons"] == 13.3 and
+                cons_check["avgCost100"] == 2.00 and
+                cons_check["d1Cons"] == 12.8 and cons_check["d1Km"] == 224 and
+                cons_check["d2Cons"] == 14.7 and cons_check["d2Km"] == 191 and
+                (cons_check["d3Cons"] == 10.9 or cons_check["d3Cons"] == 11.0) and cons_check["d3Km"] == 57
+            )
+            log_test(
+                "13.4 calcConsumption & getSessionDelta berechnen realen Fahrverbrauch aus Akku-Delta (SoC) und Distanz (Ø 13,3 kWh/100km, 2,00 €/100km)",
+                cons_correct,
+                f"avgCons: {cons_check['avgCons']}, avgCost100: {cons_check['avgCost100']}, d1: {cons_check['d1Cons']}, d2: {cons_check['d2Cons']}, d3: {cons_check['d3Cons']}"
+            )
 
             # 13.5: UI-Hinweis 'Start: 9 km' in den Fahrzeugeinstellungen vorhanden
             page.locator('.dock-tab-btn[data-tab="settings"]').click()
