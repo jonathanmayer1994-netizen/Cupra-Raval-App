@@ -4139,9 +4139,9 @@ function createOutput(data, callback) {
 
     // Lade-Schonungs-Index (0 bis 100)
     const score = Math.min(100, Math.max(50, Math.round(100 - (stressFactor - 0.70) * 80)));
-    let scoreRating = '🌱 Sehr vorbildlich geschont';
-    if (score < 75) scoreRating = '⚠️ Erhöhte Belastung';
-    else if (score < 88) scoreRating = '👍 Gutes Ladeverhalten';
+    let scoreRating = '🌱 Vorbildlich';
+    if (score < 75) scoreRating = '⚠️ Erhöht';
+    else if (score < 88) scoreRating = '👍 Schonend';
 
     // 4. Degradationsmodell (Kalendarisch + Zyklisch)
     function calcDegradation(tYears, cycles, stress) {
@@ -4291,17 +4291,17 @@ function createOutput(data, callback) {
     // KPI Kacheln oben
     if (DOM.bKpiCurrentCap) DOM.bKpiCurrentCap.textContent = data.currentCap.toFixed(1);
     if (DOM.bKpiCurrentSohBadge) DOM.bKpiCurrentSohBadge.textContent = `✨ ${data.currentSoh.toFixed(1)}% SoH`;
-    if (DOM.bKpi4YearCap) DOM.bKpi4YearCap.textContent = `~${data.projected4YearCap.toFixed(1)}`;
+    if (DOM.bKpi4YearCap) DOM.bKpi4YearCap.textContent = `~${data.projected4YearCap.toFixed(1)} kWh`;
     if (DOM.bKpi4YearSoh) DOM.bKpi4YearSoh.textContent = `~${data.projected4YearSoh.toFixed(1)}% Restkapazität`;
     if (DOM.bKpiScore) DOM.bKpiScore.textContent = data.score;
     if (DOM.bKpiScoreSub) DOM.bKpiScoreSub.textContent = data.scoreRating;
 
     // Ladeverhaltens-Box
-    if (DOM.bBehaviorPvShare) DOM.bBehaviorPvShare.textContent = `${data.stats.acPvSharePct}% AC / PV`;
+    if (DOM.bBehaviorPvShare) DOM.bBehaviorPvShare.textContent = `${data.stats.acPvSharePct}%`;
     if (DOM.bBehaviorSocWindow) DOM.bBehaviorSocWindow.textContent = `Ø ${data.stats.avgStartSoc}% → ${data.stats.avgEndSoc}%`;
-    if (DOM.bBehaviorCycles) DOM.bBehaviorCycles.textContent = `~${data.stats.efcCycles} Zyklen (${data.stats.drivenKm} km)`;
+    if (DOM.bBehaviorCycles) DOM.bBehaviorCycles.textContent = `~${data.stats.efcCycles} EFC`;
     const calSplit = Math.max(10, Math.min(90, Math.round(data.stats.calendarLossPct / (data.stats.calendarLossPct + data.stats.cycleLossPct + 0.001) * 100)));
-    if (DOM.bBehaviorAgingSplit) DOM.bBehaviorAgingSplit.textContent = `${calSplit}% Kalendarisch / ${100 - calSplit}% Zyklen`;
+    if (DOM.bBehaviorAgingSplit) DOM.bBehaviorAgingSplit.textContent = `${calSplit}% Zeit`;
 
     // Meilensteine Tabelle
     renderBatteryMilestonesTable(data);
@@ -4312,7 +4312,7 @@ function createOutput(data, callback) {
       document.body.style.overflow = 'hidden';
     }
 
-    // Chart rendern
+    // Chart rendern mit leichtem Verzögerungsschutz für CSS Transition
     renderBatteryHealthChart(data, activeBatteryUnit);
 
     requestAnimationFrame(() => {
@@ -4324,7 +4324,7 @@ function createOutput(data, callback) {
         chartBatteryHealth.resize();
         chartBatteryHealth.update('none');
       }
-    }, 120);
+    }, 180);
 
     triggerHaptic();
   }
@@ -4349,12 +4349,14 @@ function createOutput(data, callback) {
       const tagLabel = isCur ? 'Heute' : (m.yearNum === 0 ? 'Start' : `J${m.yearNum}`);
       const advantageKwh = (m.refKwh && m.kwh > m.refKwh) ? `+${(m.kwh - m.refKwh).toFixed(1)} kWh Bonus` : '';
 
+      const cleanTitle = m.yearNum === 4 ? 'Jahr 4 (Leasingende)' : (isCur ? 'Aktueller Stand' : m.label);
+
       html += `
         <div class="b-milestone-row ${isCur ? 'is-current' : ''}">
           <div class="b-milestone-left">
             <span class="b-milestone-tag">${tagLabel}</span>
             <div>
-              <div class="b-milestone-title">${m.label}</div>
+              <div class="b-milestone-title">${cleanTitle}</div>
               <div class="b-milestone-date">${m.date}</div>
             </div>
           </div>
@@ -4381,14 +4383,14 @@ function createOutput(data, callback) {
     const isKwh = (unit === 'kwh');
     const ctx = DOM.canvasBatteryHealthChart.getContext('2d');
     const tealGrad = ctx.createLinearGradient(0, 0, 0, 200);
-    tealGrad.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
-    tealGrad.addColorStop(1, 'rgba(16, 185, 129, 0.02)');
+    tealGrad.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+    tealGrad.addColorStop(1, 'rgba(16, 185, 129, 0.01)');
 
     const userSeries = isKwh ? data.chartData.kwhUser : data.chartData.sohUser;
     const refSeries = isKwh ? data.chartData.kwhRef : data.chartData.sohRef;
     const warrantySeries = isKwh ? data.chartData.kwhWarranty : data.chartData.sohWarranty;
 
-    const yMin = isKwh ? 34 : 65;
+    const yMin = isKwh ? 32 : 60;
     const yMax = isKwh ? 54 : 105;
     const unitLabel = isKwh ? 'kWh' : '% SoH';
 
@@ -4438,6 +4440,7 @@ function createOutput(data, callback) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 250 },
         interaction: {
           mode: 'index',
           intersect: false
@@ -4469,16 +4472,17 @@ function createOutput(data, callback) {
         },
         scales: {
           x: {
-            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-            ticks: { color: '#94a3b8', font: { size: 10 } }
+            grid: { color: 'rgba(255, 255, 255, 0.04)' },
+            ticks: { color: '#94a3b8', font: { size: 10, weight: '600' } }
           },
           y: {
             min: yMin,
             max: yMax,
-            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            grid: { color: 'rgba(255, 255, 255, 0.04)' },
             ticks: {
               color: '#94a3b8',
-              font: { size: 10 },
+              font: { size: 10, weight: '600' },
+              stepSize: isKwh ? 4 : 10,
               callback: val => `${val} ${isKwh ? 'kWh' : '%'}`
             }
           }

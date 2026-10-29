@@ -1513,118 +1513,163 @@
   <div class="modal-backdrop-sheet" id="modalBatteryHealth">
     <div class="swift-sheet-card battery-health-sheet" role="dialog" aria-modal="true" aria-labelledby="batteryHealthTitle">
       <div class="sheet-grabber"></div>
-      <div class="sheet-header">
-        <div>
-          <div class="battery-health-tag">🔋 BATTERIE-GESUNDHEIT & PROGNOSE</div>
-          <h2 class="sheet-title" id="batteryHealthTitle">Akku-Zustand & 4-Jahres-Prognose</h2>
+      <div class="sheet-header battery-sheet-header">
+        <div class="battery-header-text">
+          <div class="battery-pill-tag">🔋 BATTERIE-GESUNDHEIT (SOH)</div>
+          <h2 class="sheet-title battery-title" id="batteryHealthTitle">Akku-Zustand & Prognose</h2>
           <span class="sheet-subtitle-tag" id="batteryHealthSub">Cupra Raval • NMC-Technologie • 4 Jahre Haltedauer</span>
         </div>
         <button type="button" class="sheet-btn-close" id="btnCloseBatteryHealthModal" aria-label="Schließen">✕</button>
       </div>
 
       <div class="battery-health-scroll-body">
-        <!-- 3 Highlight Kacheln oben -->
-        <div class="battery-kpi-row">
-          <div class="battery-kpi-card highlight-glow">
-            <span class="b-kpi-label">MAX. KAPAZITÄT AKTUELL</span>
-            <div class="b-kpi-val-group">
-              <span class="b-kpi-val" id="bKpiCurrentCap">51.9</span>
-              <span class="b-kpi-unit">kWh</span>
+        <!-- Hero Akku-Status Card (Single cohesive Apple-style card) -->
+        <div class="battery-hero-card">
+          <div class="b-hero-top">
+            <div class="b-hero-main-group">
+              <div class="b-hero-label-tag">MAXIMALE RESTKAPAZITÄT</div>
+              <div class="b-hero-number-row">
+                <span class="b-hero-val" id="bKpiCurrentCap">51.9</span>
+                <span class="b-hero-unit">kWh</span>
+                <span class="b-hero-soh-pill" id="bKpiCurrentSohBadge">✨ 99.8% SoH</span>
+              </div>
+              <div class="b-hero-sub-eval">Zustand: Ausgezeichnet • Nahezu Neuwert</div>
             </div>
-            <div class="b-kpi-badge" id="bKpiCurrentSohBadge">✨ 99.8% SoH</div>
+
+            <div class="b-hero-score-badge">
+              <div class="b-score-circle">
+                <span class="b-score-num" id="bKpiScore">96</span>
+                <span class="b-score-max">/100</span>
+              </div>
+              <span class="b-score-tag" id="bKpiScoreSub">🌱 Vorbildlich</span>
+            </div>
           </div>
 
-          <div class="battery-kpi-card">
-            <span class="b-kpi-label">PROGNOSE NACH 4 JAHREN</span>
-            <div class="b-kpi-val-group">
-              <span class="b-kpi-val" id="bKpi4YearCap">~48.6</span>
-              <span class="b-kpi-unit">kWh</span>
+          <!-- Divider & 2 Sub-KPIs -->
+          <div class="b-hero-sub-grid">
+            <div class="b-hero-sub-col">
+              <span class="b-sub-col-label">4-JAHRES-PROGNOSE</span>
+              <div class="b-sub-col-val" id="bKpi4YearCap">~50.1 kWh</div>
+              <span class="b-sub-col-hint" id="bKpi4YearSoh">~96.4% Restkapazität</span>
             </div>
-            <div class="b-kpi-sub" id="bKpi4YearSoh">~93.5% Restkapazität</div>
-          </div>
-
-          <div class="battery-kpi-card">
-            <span class="b-kpi-label">LADESCHONUNGS-INDEX</span>
-            <div class="b-kpi-val-group">
-              <span class="b-kpi-val" id="bKpiScore">98</span>
-              <span class="b-kpi-unit">/ 100</span>
-            </div>
-            <div class="b-kpi-sub" id="bKpiScoreSub">🌱 Vorbildlich geschont</div>
-          </div>
-        </div>
-
-        <!-- Ladeverhaltens-Analyse Box -->
-        <div class="battery-behavior-box swift-glass-card">
-          <div class="b-box-title">⚡️ Analyse deines Ladeverhaltens</div>
-          <div class="b-behavior-grid">
-            <div class="b-behavior-item">
-              <span class="b-b-icon">☀️</span>
-              <div class="b-b-info">
-                <span class="b-b-val" id="bBehaviorPvShare">100% AC / PV</span>
-                <span class="b-b-lbl">Schonend geladen (0% DC-Stress)</span>
-              </div>
-            </div>
-            <div class="b-behavior-item">
-              <span class="b-b-icon">🎯</span>
-              <div class="b-b-info">
-                <span class="b-b-val" id="bBehaviorSocWindow">Ø 17% → 72%</span>
-                <span class="b-b-lbl">Perfekt im 20–80% Plateau</span>
-              </div>
-            </div>
-            <div class="b-behavior-item">
-              <span class="b-b-icon">🔄</span>
-              <div class="b-b-info">
-                <span class="b-b-val" id="bBehaviorCycles">~1.6 Zyklen</span>
-                <span class="b-b-lbl">Bisherige Vollzyklus-Äquivalente</span>
-              </div>
-            </div>
-            <div class="b-behavior-item">
-              <span class="b-b-icon">⏳</span>
-              <div class="b-b-info">
-                <span class="b-b-val" id="bBehaviorAgingSplit">78% Kalendarisch / 22% Zyklen</span>
-                <span class="b-b-lbl">Aufteilung der Alterung</span>
-              </div>
+            <div class="b-hero-sub-col">
+              <span class="b-sub-col-label">GARANTIE (70%)</span>
+              <div class="b-sub-col-val">min. 36.4 kWh</div>
+              <span class="b-sub-col-hint">🛡️ +13.7 kWh Puffer</span>
             </div>
           </div>
         </div>
 
-        <!-- Segmented Picker: kWh vs % SoH -->
+        <!-- Ladeverhaltens-Analyse: Native iOS Inset List Card -->
+        <div class="battery-section-card">
+          <div class="b-section-header">
+            <span class="b-section-title">⚡️ Analyse deines Ladeverhaltens</span>
+            <span class="b-section-badge">Reale Ladedaten</span>
+          </div>
+          <div class="b-inset-list">
+            <div class="b-inset-row">
+              <div class="b-inset-left">
+                <span class="b-inset-icon">☀️</span>
+                <div class="b-inset-text">
+                  <span class="b-inset-label">AC/PV-Schonladung</span>
+                  <span class="b-inset-sub">0% thermischer DC-Stress</span>
+                </div>
+              </div>
+              <div class="b-inset-right">
+                <span class="b-inset-val highlight-green" id="bBehaviorPvShare">100%</span>
+              </div>
+            </div>
+
+            <div class="b-inset-row">
+              <div class="b-inset-left">
+                <span class="b-inset-icon">🎯</span>
+                <div class="b-inset-text">
+                  <span class="b-inset-label">Optimales Ladefenster</span>
+                  <span class="b-inset-sub">Schonend im 20–80% Plateau</span>
+                </div>
+              </div>
+              <div class="b-inset-right">
+                <span class="b-inset-val" id="bBehaviorSocWindow">Ø 17% → 72%</span>
+              </div>
+            </div>
+
+            <div class="b-inset-row">
+              <div class="b-inset-left">
+                <span class="b-inset-icon">🔄</span>
+                <div class="b-inset-text">
+                  <span class="b-inset-label">Vollzyklen (EFC)</span>
+                  <span class="b-inset-sub">Ab Auslieferung bei 9 km</span>
+                </div>
+              </div>
+              <div class="b-inset-right">
+                <span class="b-inset-val" id="bBehaviorCycles">~1.6 EFC</span>
+              </div>
+            </div>
+
+            <div class="b-inset-row">
+              <div class="b-inset-left">
+                <span class="b-inset-icon">⏳</span>
+                <div class="b-inset-text">
+                  <span class="b-inset-label">Alterungseinfluss</span>
+                  <span class="b-inset-sub">Kalendarisch dominiert</span>
+                </div>
+              </div>
+              <div class="b-inset-right">
+                <span class="b-inset-val" id="bBehaviorAgingSplit">90% Zeit</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Segmented Picker: Native iOS Style -->
         <div class="swift-segmented-picker battery-seg-picker" id="batteryUnitPicker">
-          <button type="button" class="picker-seg active" data-battery-unit="kwh">Kapazität (kWh)</button>
+          <button type="button" class="picker-seg active" data-battery-unit="kwh">Restkapazität (kWh)</button>
           <button type="button" class="picker-seg" data-battery-unit="soh">Gesundheit (% SoH)</button>
         </div>
 
-        <!-- Chart.js Graph Card: 4-Jahres-Prognose -->
-        <div class="swift-glass-card battery-chart-card">
-          <div class="chart-header-row">
-            <span class="chart-title">Langzeit-Prognose (4 Jahre Haltedauer)</span>
-            <div class="chart-legend-box" id="batteryChartLegend">
-              <span class="leg-item"><span class="leg-dot" style="background: #10b981;"></span> Dein Ladeverhalten</span>
-              <span class="leg-item"><span class="leg-dot" style="background: #94a3b8;"></span> Aggressives Laden</span>
-              <span class="leg-item"><span class="leg-dot" style="background: #ef4444;"></span> Garantie (70%)</span>
+        <!-- Chart.js Graph Card -->
+        <div class="battery-section-card battery-chart-card">
+          <div class="b-chart-header">
+            <span class="b-section-title">Langzeit-Prognose (4 Jahre Haltedauer)</span>
+            <div class="b-chart-legend" id="batteryChartLegend">
+              <span class="b-leg-pill"><span class="b-dot-green"></span> Dein Akku</span>
+              <span class="b-leg-pill"><span class="b-dot-gray"></span> Flottenschnitt</span>
+              <span class="b-leg-pill"><span class="b-dot-red"></span> Garantie 70%</span>
             </div>
           </div>
-          <div class="chart-canvas-container" style="height: 240px; min-height: 240px; position: relative; width: 100%;">
+          <div class="b-chart-canvas-box">
             <canvas id="canvasBatteryHealthChart"></canvas>
           </div>
         </div>
 
-        <!-- 4-Jahres-Meilensteine Tabelle -->
-        <div class="battery-milestones-card swift-glass-card">
-          <div class="b-box-title">📅 Meilensteine im 4-Jahres-Verlauf</div>
-          <div class="b-milestones-table" id="batteryMilestonesTable">
+        <!-- Meilensteine: 4-Jahres-Tabelle -->
+        <div class="battery-section-card">
+          <div class="b-section-header">
+            <span class="b-section-title">📅 4-Jahres-Meilensteine</span>
+            <span class="b-section-badge">2026–2030</span>
+          </div>
+          <div class="b-milestones-list" id="batteryMilestonesTable">
             <!-- Dynamisch generiert -->
           </div>
         </div>
 
-        <!-- Handlungsempfehlungen / Pflegetipps -->
-        <div class="battery-tips-box">
-          <div class="b-box-title">💡 Akku-Pflegetipps für maximale Lebensdauer</div>
-          <ul class="b-tips-list">
-            <li><strong>20–80% Wohlfühlfenster:</strong> Im Alltag weiter im Bereich von 20% bis 80% SoC laden.</li>
-            <li><strong>100% nur bei Bedarf:</strong> Vor Langstrecken auf 100% laden und zeitnah losfahren.</li>
-            <li><strong>PV/AC bevorzugen:</strong> Schont das Zellgitter nachhaltig gegenüber häufigem DC-Highspeed-Laden.</li>
-          </ul>
+        <!-- Pflegetipps: Clean Inset Card -->
+        <div class="battery-tips-card">
+          <div class="b-tips-header">
+            <span class="b-tips-icon">💡</span>
+            <span class="b-tips-title">Akku-Pflegetipps für maximalen Werterhalt</span>
+          </div>
+          <div class="b-tips-body">
+            <div class="b-tip-item">
+              <strong>• 20–80% Wohlfühlfenster:</strong> Im Alltag weiter im Bereich von 20% bis 80% SoC laden.
+            </div>
+            <div class="b-tip-item">
+              <strong>• 100% nur bei Bedarf:</strong> Vor Langstrecken auf 100% laden und zeitnah losfahren.
+            </div>
+            <div class="b-tip-item">
+              <strong>• PV/AC bevorzugen:</strong> Schont das Zellgitter nachhaltig gegenüber häufigem DC-Highspeed-Laden.
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -5557,7 +5557,7 @@ select option {
 }
 
 /* ==========================================================================
-   FEATURE: DYNAMISCHE BATTERIEKAPAZITÄT & 4-JAHRES-PROGNOSE MODAL
+   FEATURE: DYNAMISCHE BATTERIEKAPAZITÄT & 4-JAHRES-PROGNOSE MODAL (IOS 18)
    ========================================================================== */
 .specs-battery-clickable {
   cursor: pointer !important;
@@ -5595,23 +5595,52 @@ select option {
   gap: 3px !important;
 }
 
+/* Modal Bottom Sheet */
 .battery-health-sheet {
-  max-height: 92vh;
+  max-height: 90vh !important;
+  background: #090e17 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-top-left-radius: 24px !important;
+  border-top-right-radius: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8) !important;
+}
+
+.battery-sheet-header {
+  padding: 12px 18px 8px 18px !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  flex-shrink: 0 !important;
+  position: relative !important;
+}
+.battery-header-text {
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(16px + var(--sab));
-  overflow: hidden;
+  gap: 2px;
+  max-width: calc(100% - 48px);
 }
-.battery-health-sheet .sheet-header {
-  flex-shrink: 0;
-}
-.battery-health-tag {
+.battery-pill-tag {
   font-size: 0.60rem;
   font-weight: 800;
-  letter-spacing: 0.8px;
-  color: #34d399;
-  margin-bottom: 2px;
+  letter-spacing: 0.07em;
+  color: #10b981;
+  text-transform: uppercase;
 }
+.battery-title {
+  font-size: 1.12rem !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  letter-spacing: -0.02em !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
 .battery-health-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -5620,142 +5649,327 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-right: 2px;
+  padding: 4px 16px calc(36px + env(safe-area-inset-bottom, 20px)) 16px;
 }
 
-/* 3 Highlight Kacheln */
-.battery-kpi-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+/* Hero Card (Single cohesive Apple-style card) */
+.battery-hero-card {
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(13, 21, 32, 0.88) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
-.battery-kpi-card {
-  background: rgba(12, 18, 26, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm);
-  padding: 8px 6px;
+.b-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.b-hero-main-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.b-hero-label-tag {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--cupra-bronze-light);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.b-hero-number-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.b-hero-val {
+  font-size: 1.85rem;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.b-hero-unit {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+.b-hero-soh-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.b-hero-sub-eval {
+  font-size: 0.66rem;
+  color: #94a3b8;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.b-hero-score-badge {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  flex-shrink: 0;
+  width: 68px;
+}
+.b-score-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.12);
+  border: 2px solid #10b981;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+}
+.b-score-num {
+  font-size: 1.10rem;
+  font-weight: 900;
+  color: #fff;
+  line-height: 1;
+}
+.b-score-max {
+  font-size: 0.50rem;
+  color: #94a3b8;
+  font-weight: 600;
+  line-height: 1;
+}
+.b-score-tag {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #34d399;
+  margin-top: 3px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.b-hero-sub-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.b-hero-sub-col {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
-.battery-kpi-card.highlight-glow {
-  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(12, 18, 26, 0.8) 100%);
-  border-color: rgba(16, 185, 129, 0.35);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.12);
-}
-.b-kpi-label {
-  font-size: 0.55rem;
+.b-sub-col-label {
+  font-size: 0.54rem;
   font-weight: 800;
-  letter-spacing: 0.5px;
-  color: var(--cupra-bronze-light);
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  text-transform: uppercase;
   margin-bottom: 2px;
   white-space: nowrap;
 }
-.b-kpi-val-group {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-}
-.b-kpi-val {
-  font-size: 1.15rem;
+.b-sub-col-val {
+  font-size: 0.88rem;
   font-weight: 800;
-  color: #fff;
-  letter-spacing: -0.02em;
+  color: #f1f5f9;
+  white-space: nowrap;
 }
-.b-kpi-unit {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-.b-kpi-badge {
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: #34d399;
-  background: rgba(16, 185, 129, 0.15);
-  padding: 2px 5px;
-  border-radius: 4px;
-  margin-top: 3px;
-}
-.b-kpi-sub {
+.b-sub-col-hint {
   font-size: 0.60rem;
-  color: var(--text-secondary);
-  margin-top: 3px;
+  color: #64748b;
+  font-weight: 600;
+  margin-top: 1px;
   white-space: nowrap;
 }
 
-/* Ladeverhaltens-Box */
-.battery-behavior-box {
-  padding: 12px;
+/* Reusable iOS Section Card */
+.battery-section-card {
+  background: rgba(12, 18, 26, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 14px;
+  backdrop-filter: blur(12px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.b-box-title {
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: 0.02em;
-}
-.b-behavior-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-.b-behavior-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-}
-.b-b-icon {
-  font-size: 1.15rem;
+  gap: 10px;
   flex-shrink: 0;
 }
-.b-b-info {
+.b-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.b-section-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.01em;
+}
+.b-section-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+/* Inset List (iOS Style) */
+.b-inset-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.b-inset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 8px;
+}
+.b-inset-row:last-child {
+  border-bottom: none;
+}
+.b-inset-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.b-inset-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.b-inset-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.b-b-val {
-  font-size: 0.76rem;
+.b-inset-label {
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+}
+.b-inset-sub {
+  font-size: 0.58rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.b-inset-right {
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+.b-inset-val {
+  font-size: 0.74rem;
   font-weight: 800;
   color: #e2e8f0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.b-b-lbl {
-  font-size: 0.60rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.b-inset-val.highlight-green {
+  color: #34d399;
+  font-weight: 900;
 }
 
-/* Segmented Picker */
+/* Segmented Control */
 .battery-seg-picker {
-  margin: 2px 0;
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 11px !important;
+  padding: 3px !important;
+  gap: 4px !important;
+  flex-shrink: 0 !important;
+}
+.battery-seg-picker .picker-seg {
+  border-radius: 8px !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  padding: 7px 10px !important;
+  text-align: center !important;
+  color: #94a3b8 !important;
+  border: none !important;
+  background: transparent !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+}
+.battery-seg-picker .picker-seg.active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
 }
 
 /* Chart Card */
 .battery-chart-card {
-  padding: 12px;
-}
-
-/* Meilensteine Tabelle */
-.battery-milestones-card {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
   gap: 8px;
 }
-.b-milestones-table {
+.b-chart-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.b-leg-pill {
+  font-size: 0.62rem;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.b-dot-green {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.b-dot-gray {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.b-dot-red {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+.b-chart-canvas-box {
+  height: 210px !important;
+  min-height: 210px !important;
+  width: 100% !important;
+  position: relative !important;
+}
+
+/* Milestones List */
+.b-milestones-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -5764,29 +5978,32 @@ select option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.025);
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-sm);
+  border-radius: 11px;
+  gap: 8px;
   font-size: 0.72rem;
-  transition: background 0.15s ease;
 }
 .b-milestone-row.is-current {
   background: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.08);
 }
 .b-milestone-left {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .b-milestone-tag {
   font-size: 0.58rem;
   font-weight: 800;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 5px;
   background: rgba(255, 255, 255, 0.08);
   color: #cbd5e1;
+  flex-shrink: 0;
 }
 .b-milestone-row.is-current .b-milestone-tag {
   background: #10b981;
@@ -5799,13 +6016,14 @@ select option {
 }
 .b-milestone-date {
   color: var(--text-muted);
-  font-size: 0.64rem;
+  font-size: 0.62rem;
 }
 .b-milestone-right {
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: right;
+  flex-shrink: 0;
 }
 .b-milestone-val {
   font-weight: 800;
@@ -5819,31 +6037,45 @@ select option {
   font-size: 0.58rem;
   color: #10b981;
   background: rgba(16, 185, 129, 0.12);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 800;
 }
 
-/* Pflegetipps */
-.battery-tips-box {
-  background: rgba(192, 128, 81, 0.06);
-  border: 1px solid rgba(192, 128, 81, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+/* Pflegetipps Card */
+.battery-tips-card {
+  background: rgba(192, 128, 81, 0.08);
+  border: 1px solid rgba(192, 128, 81, 0.22);
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.b-tips-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.b-tips-icon {
+  font-size: 1rem;
+}
+.b-tips-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #e28e4e;
+}
+.b-tips-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.b-tips-list {
-  margin: 0;
-  padding-left: 16px;
+.b-tip-item {
   font-size: 0.68rem;
-  color: var(--text-secondary);
+  color: #cbd5e1;
   line-height: 1.45;
 }
-.b-tips-list li {
-  margin-bottom: 4px;
-}
-.b-tips-list strong {
-  color: #f1f5f9;
+.b-tip-item strong {
+  color: #fff;
 }
