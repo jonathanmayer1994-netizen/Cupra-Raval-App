@@ -5555,3 +5555,295 @@ select option {
   border-radius: var(--radius-sm);
   border: 1px dashed rgba(255, 255, 255, 0.08);
 }
+
+/* ==========================================================================
+   FEATURE: DYNAMISCHE BATTERIEKAPAZITÄT & 4-JAHRES-PROGNOSE MODAL
+   ========================================================================== */
+.specs-battery-clickable {
+  cursor: pointer !important;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(6, 10, 16, 0.8) 100%) !important;
+  border: 1px solid rgba(16, 185, 129, 0.28) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.specs-battery-clickable:hover {
+  border-color: rgba(16, 185, 129, 0.55) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.18) !important;
+}
+.specs-battery-clickable:active {
+  transform: scale(0.97) !important;
+}
+.specs-battery-action-hint {
+  font-size: 0.72rem !important;
+  margin-left: auto !important;
+  opacity: 0.85 !important;
+  filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));
+}
+.specs-dynamic-badge {
+  font-size: 0.60rem !important;
+  color: #34d399 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  padding: 2px 7px !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  margin-left: auto !important;
+  letter-spacing: 0.03em !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+}
+
+.battery-health-sheet {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(16px + var(--sab));
+  overflow: hidden;
+}
+.battery-health-sheet .sheet-header {
+  flex-shrink: 0;
+}
+.battery-health-tag {
+  font-size: 0.60rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #34d399;
+  margin-bottom: 2px;
+}
+.battery-health-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 2px;
+}
+
+/* 3 Highlight Kacheln */
+.battery-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  flex-shrink: 0;
+}
+.battery-kpi-card {
+  background: rgba(12, 18, 26, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+.battery-kpi-card.highlight-glow {
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(12, 18, 26, 0.8) 100%);
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.12);
+}
+.b-kpi-label {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--cupra-bronze-light);
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+.b-kpi-val-group {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.b-kpi-val {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+.b-kpi-unit {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.b-kpi-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-top: 3px;
+}
+.b-kpi-sub {
+  font-size: 0.60rem;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+/* Ladeverhaltens-Box */
+.battery-behavior-box {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.b-box-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+.b-behavior-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.b-behavior-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.b-b-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+.b-b-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.b-b-val {
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.b-b-lbl {
+  font-size: 0.60rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Segmented Picker */
+.battery-seg-picker {
+  margin: 2px 0;
+}
+
+/* Chart Card */
+.battery-chart-card {
+  padding: 12px;
+}
+
+/* Meilensteine Tabelle */
+.battery-milestones-card {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.b-milestones-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-milestone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  transition: background 0.15s ease;
+}
+.b-milestone-row.is-current {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.b-milestone-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.b-milestone-tag {
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+.b-milestone-row.is-current .b-milestone-tag {
+  background: #10b981;
+  color: #061611;
+  font-weight: 900;
+}
+.b-milestone-title {
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.b-milestone-date {
+  color: var(--text-muted);
+  font-size: 0.64rem;
+}
+.b-milestone-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+.b-milestone-val {
+  font-weight: 800;
+  color: #34d399;
+}
+.b-milestone-soh {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+.b-milestone-diff {
+  font-size: 0.58rem;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+/* Pflegetipps */
+.battery-tips-box {
+  background: rgba(192, 128, 81, 0.06);
+  border: 1px solid rgba(192, 128, 81, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-tips-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.b-tips-list li {
+  margin-bottom: 4px;
+}
+.b-tips-list strong {
+  color: #f1f5f9;
+}

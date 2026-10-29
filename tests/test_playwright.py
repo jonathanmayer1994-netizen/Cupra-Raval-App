@@ -734,13 +734,13 @@ def run_tests():
             model_input_val = page.locator("#cfgModelName").input_value()
             log_test("8.1 Fahrzeug-Einstellungsformular geladen", model_input_val == expected_title, f"Modellname: '{model_input_val}'")
 
-            # 8.1b: Batterie & Leistung sind fixe Werte (keine Inputfelder)
+            # 8.1b: Batterie & Leistung sind keine Inputfelder; Batterie zeigt dynamische Kapazität
             is_battery_input = page.locator("#cfgBatteryCap").count() > 0
             is_power_input = page.locator("#cfgPower").count() > 0
             batt_val = page.locator("#cfgBatteryVal").inner_text()
             power_val = page.locator("#cfgPowerVal").inner_text()
-            fixed_specs_ok = (not is_battery_input and not is_power_input and "52" in batt_val and "211" in power_val)
-            log_test("8.1b Batterie (52 kWh) und Leistung (211 PS) sind fixe Werte (keine Inputfelder)", fixed_specs_ok, f"Batt: '{batt_val}', Power: '{power_val}'")
+            fixed_specs_ok = (not is_battery_input and not is_power_input and ("52" in batt_val or "51." in batt_val) and "211" in power_val)
+            log_test("8.1b Batterie zeigt dynamische Kapazität (~51.9 - 52.0 kWh) und Leistung (211 PS)", fixed_specs_ok, f"Batt: '{batt_val}', Power: '{power_val}'")
 
             # 8.1c: Kilometerstand & Akkustand (SoC) sind aus Fahrzeugeinstellungen entfernt
             has_odo_input = page.locator("#cfgCurrentOdo").count() > 0
@@ -752,6 +752,29 @@ def run_tests():
             page.locator("#btnSaveVehicleSettings").click()
             time.sleep(0.08)
             log_test("8.1d Fahrzeug-Spezifikationen speichern erfolgreich", True, "Button geklickt")
+
+            # 8.1e: Klick auf Batterie-Feld öffnet Batterie-Gesundheit & 4-Jahres-Prognose Modal
+            page.locator("#cfgBatteryDisplay").click()
+            time.sleep(0.08)
+            modal_b_open = page.locator("#modalBatteryHealth").evaluate("el => el.classList.contains('open')")
+            modal_b_title = page.locator("#batteryHealthTitle").inner_text()
+            log_test("8.1e Klick auf Batteriefeld öffnet 4-Jahres-Prognose Modal", modal_b_open and "Prognose" in modal_b_title, f"Open: {modal_b_open}, Title: '{modal_b_title}'")
+
+            # 8.1f: Modal zeigt aktuelle Maximalkapazität, SoH und 4-Jahres-Prognose
+            cur_soh_txt = page.locator("#bKpiCurrentSohBadge").inner_text()
+            prognosis_txt = page.locator("#bKpi4YearCap").inner_text()
+            milestones_cnt = page.locator(".b-milestone-row").count()
+            prognosis_ok = ("SoH" in cur_soh_txt and len(prognosis_txt) > 0 and milestones_cnt >= 5)
+            log_test("8.1f Modal zeigt SoH, 4-Jahres-Prognose & Meilensteine", prognosis_ok, f"SoH: '{cur_soh_txt}', 4-Jahre: '{prognosis_txt}', Milestones: {milestones_cnt}")
+
+            # 8.1g: Segmented Picker schaltet auf % SoH um und Modal schließt sauber
+            page.locator('.picker-seg[data-battery-unit="soh"]').click()
+            time.sleep(0.04)
+            soh_active = page.locator('.picker-seg[data-battery-unit="soh"]').evaluate("el => el.classList.contains('active')")
+            page.locator("#btnCloseBatteryHealthModal").click()
+            time.sleep(0.04)
+            modal_b_closed = not page.locator("#modalBatteryHealth").evaluate("el => el.classList.contains('open')")
+            log_test("8.1g Einheit-Umschaltung (% SoH) & Modal schließen", soh_active and modal_b_closed, f"SoH Active: {soh_active}, Closed: {modal_b_closed}")
 
             # Sub-Tab 2: Standorte & Apple Edit Mode
             page.locator('.picker-seg[data-settab="locations"]').click()

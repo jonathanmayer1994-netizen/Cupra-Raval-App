@@ -349,6 +349,8 @@
     DOM.settingsSubBtns = document.querySelectorAll('.settings-sub-nav .picker-seg');
     DOM.settingsSubPanes = document.querySelectorAll('.settings-sub-pane');
     DOM.cfgModelName = document.getElementById('cfgModelName');
+    DOM.cfgBatteryDisplay = document.getElementById('cfgBatteryDisplay');
+    DOM.cfgBatteryBadge = document.getElementById('cfgBatteryBadge');
     DOM.cfgBatteryVal = document.getElementById('cfgBatteryVal');
     DOM.cfgPowerVal = document.getElementById('cfgPowerVal');
     DOM.cfgBatteryCap = document.getElementById('cfgBatteryCap');
@@ -472,6 +474,23 @@
     DOM.canvasKpiDetailChart = document.getElementById('canvasKpiDetailChart');
     DOM.kpiHistoryListTitle = document.getElementById('kpiHistoryListTitle');
     DOM.kpiHistoryListItems = document.getElementById('kpiHistoryListItems');
+
+    // Battery Health Modal & Prognose
+    DOM.modalBatteryHealth = document.getElementById('modalBatteryHealth');
+    DOM.btnCloseBatteryHealthModal = document.getElementById('btnCloseBatteryHealthModal');
+    DOM.batteryUnitPicker = document.getElementById('batteryUnitPicker');
+    DOM.canvasBatteryHealthChart = document.getElementById('canvasBatteryHealthChart');
+    DOM.bKpiCurrentCap = document.getElementById('bKpiCurrentCap');
+    DOM.bKpiCurrentSohBadge = document.getElementById('bKpiCurrentSohBadge');
+    DOM.bKpi4YearCap = document.getElementById('bKpi4YearCap');
+    DOM.bKpi4YearSoh = document.getElementById('bKpi4YearSoh');
+    DOM.bKpiScore = document.getElementById('bKpiScore');
+    DOM.bKpiScoreSub = document.getElementById('bKpiScoreSub');
+    DOM.bBehaviorPvShare = document.getElementById('bBehaviorPvShare');
+    DOM.bBehaviorSocWindow = document.getElementById('bBehaviorSocWindow');
+    DOM.bBehaviorCycles = document.getElementById('bBehaviorCycles');
+    DOM.bBehaviorAgingSplit = document.getElementById('bBehaviorAgingSplit');
+    DOM.batteryMilestonesTable = document.getElementById('batteryMilestonesTable');
 
     // Toast
     DOM.swiftToast = document.getElementById('swiftToast');
@@ -3137,6 +3156,39 @@ function createOutput(data, callback) {
       });
     }
 
+    // Battery Health Modal Events
+    if (DOM.cfgBatteryDisplay) {
+      DOM.cfgBatteryDisplay.addEventListener('click', () => openBatteryHealthModal('kwh'));
+      DOM.cfgBatteryDisplay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openBatteryHealthModal('kwh');
+        }
+      });
+    }
+    if (DOM.btnCloseBatteryHealthModal) {
+      DOM.btnCloseBatteryHealthModal.addEventListener('click', () => closeBatteryHealthModal());
+    }
+    if (DOM.modalBatteryHealth) {
+      DOM.modalBatteryHealth.addEventListener('click', (e) => {
+        if (e.target === DOM.modalBatteryHealth) closeBatteryHealthModal();
+      });
+    }
+    if (DOM.batteryUnitPicker) {
+      DOM.batteryUnitPicker.querySelectorAll('.picker-seg').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const unit = btn.getAttribute('data-battery-unit');
+          if (unit && unit !== activeBatteryUnit) {
+            DOM.batteryUnitPicker.querySelectorAll('.picker-seg').forEach(b => b.classList.toggle('active', b === btn));
+            activeBatteryUnit = unit;
+            const data = getBatteryHealthData(appData.sessions, appData.vehicle);
+            renderBatteryHealthChart(data, activeBatteryUnit);
+            triggerHaptic();
+          }
+        });
+      });
+    }
+
     // Fahrzeug-Settings
     DOM.btnSaveVehicleSettings.addEventListener('click', handleSaveVehicleSettings);
 
@@ -4002,6 +4054,437 @@ function createOutput(data, callback) {
       chartKpiDetail = null;
     }
     activeKpiModal = null;
+  }
+
+  // =========================================================================
+  // DYNAMISCHE BATTERIEKAPAZITÄT, GESUNDHEIT (SOH) & 4-JAHRES-PROGNOSE
+  // =========================================================================
+  const NOMINAL_BATTERY_KWH = 52.0;
+  const VEHICLE_DELIVERY_DATE = new Date('2026-10-20T00:00:00Z');
+  const LEASE_YEARS = 4.0;
+  const WARRANTY_SOH_PCT = 70.0;
+
+  let chartBatteryHealth = null;
+  let activeBatteryUnit = 'kwh';
+
+  function getBatteryHealthData(sessions, vehicle) {
+    const sess = Array.isArray(sessions) ? sessions : (appData && appData.sessions) || [];
+    const veh = vehicle || (appData && appData.vehicle) || {};
+
+    // 1. Zeitverlauf berechnen (Start: Auslieferung Okt 2026)
+    const now = new Date();
+    const msDiff = Math.max(0, now.getTime() - VEHICLE_DELIVERY_DATE.getTime());
+    const yearsElapsed = msDiff / (1000 * 60 * 60 * 24 * 365.25);
+    const monthsElapsed = Math.max(0.1, yearsElapsed * 12);
+
+    // 2. Gefahrene Kilometer & Vollzyklus-Äquivalente (EFC)
+    let maxOdo = VEHICLE_START_ODO;
+    sess.forEach(s => {
+      const odo = parseFloat(s.odometer || s.kmStand || 0);
+      if (odo > maxOdo) maxOdo = odo;
+    });
+    if (veh.currentOdo && veh.currentOdo > maxOdo) maxOdo = veh.currentOdo;
+    const drivenKm = Math.max(0, maxOdo - VEHICLE_START_ODO);
+
+    // Netto-Ladungssumme oder Distanz-EFC
+    let totalChargedKwh = 0;
+    let pvAcCount = 0;
+    let totalSocSum = 0;
+    let socCount = 0;
+    let totalDoDSum = 0;
+    let dodCount = 0;
+
+    sess.forEach(s => {
+      const kwh = parseFloat(s.kwh || 0);
+      if (kwh > 0) totalChargedKwh += kwh;
+      if (s.pvSurplus === true || s.pv === true || (s.location && s.location.toLowerCase().includes('bayrhof'))) {
+        pvAcCount++;
+      }
+      const sStart = parseFloat(s.socStart ?? s.startSoc);
+      const sEnd = parseFloat(s.soc ?? s.socEnd);
+      if (!isNaN(sEnd)) {
+        totalSocSum += sEnd;
+        socCount++;
+      }
+      if (!isNaN(sStart) && !isNaN(sEnd) && sEnd > sStart) {
+        totalDoDSum += (sEnd - sStart);
+        dodCount++;
+      }
+    });
+
+    const totalSessions = sess.length;
+    const acPvSharePct = totalSessions > 0 ? Math.round((pvAcCount / totalSessions) * 100) : 100;
+    const avgEndSoc = socCount > 0 ? (totalSocSum / socCount) : 72.0;
+    const avgStartSoc = dodCount > 0 ? ((totalSocSum - totalDoDSum) / dodCount) : 17.0;
+    const avgDoD = dodCount > 0 ? (totalDoDSum / dodCount) : 55.0;
+
+    // Vollzyklen
+    const efcCycles = Math.max(drivenKm / 350, (totalChargedKwh * 0.93) / NOMINAL_BATTERY_KWH);
+
+    // 3. Ladeverhaltens-Faktor (Stress-Multiplier)
+    // Schonendes AC/PV-Laden senkt die Alterung um bis zu 25% gegenüber DC-Schnellladung
+    let factorChargeType = 0.88; // 100% AC/PV
+    if (acPvSharePct < 50) factorChargeType = 1.15;
+    else if (acPvSharePct < 85) factorChargeType = 1.0;
+
+    // SoC-Window: Bis 80% SoC schont Kathode und Elektrolyt nachhaltig
+    let factorSocWindow = 0.90;
+    if (avgEndSoc > 90) factorSocWindow = 1.18;
+    else if (avgEndSoc > 80) factorSocWindow = 1.05;
+
+    // Hub-Tiefe (DoD): Flache Ladehübe schonen
+    let factorDoD = (avgDoD <= 60) ? 0.95 : 1.05;
+
+    const stressFactor = Math.min(1.35, Math.max(0.70, factorChargeType * factorSocWindow * factorDoD));
+
+    // Lade-Schonungs-Index (0 bis 100)
+    const score = Math.min(100, Math.max(50, Math.round(100 - (stressFactor - 0.70) * 80)));
+    let scoreRating = '🌱 Sehr vorbildlich geschont';
+    if (score < 75) scoreRating = '⚠️ Erhöhte Belastung';
+    else if (score < 88) scoreRating = '👍 Gutes Ladeverhalten';
+
+    // 4. Degradationsmodell (Kalendarisch + Zyklisch)
+    function calcDegradation(tYears, cycles, stress) {
+      const calLoss = 2.0 * Math.sqrt(Math.max(0, tYears)) * stress;
+      const cycLoss = cycles * 0.0055 * stress;
+      return {
+        calLoss,
+        cycLoss,
+        totalLoss: calLoss + cycLoss
+      };
+    }
+
+    // Aktueller Zustand (heute)
+    const currentDeg = calcDegradation(yearsElapsed, efcCycles, stressFactor);
+    const effectiveCurrentLoss = Math.max(0.18, currentDeg.totalLoss);
+    const currentSoh = Math.max(70.0, Math.round((100.0 - effectiveCurrentLoss) * 10) / 10);
+    const currentCap = Math.round((NOMINAL_BATTERY_KWH * (currentSoh / 100.0)) * 10) / 10;
+
+    // 5. 4-Jahres-Prognose (Meilensteine 0 bis 4 Jahre)
+    const annualKm = Math.max(12000, Math.min(25000, (drivenKm / Math.max(0.08, yearsElapsed))));
+    const annualCycles = annualKm / 350;
+
+    const milestones = [];
+    const chartLabels = ['Start', 'Heute', 'Jahr 1', 'Jahr 2', 'Jahr 3', 'Jahr 4'];
+    const kwhUser = [];
+    const kwhRef = [];
+    const kwhWarranty = [];
+    const sohUser = [];
+    const sohRef = [];
+    const sohWarranty = [];
+
+    // Milestone: Start (Okt 2026)
+    milestones.push({
+      yearNum: 0,
+      label: 'Auslieferung (Start)',
+      date: 'Okt 2026',
+      kwh: NOMINAL_BATTERY_KWH,
+      soh: 100.0,
+      refKwh: NOMINAL_BATTERY_KWH,
+      refSoh: 100.0,
+      isPast: true
+    });
+    kwhUser.push(NOMINAL_BATTERY_KWH);
+    kwhRef.push(NOMINAL_BATTERY_KWH);
+    kwhWarranty.push(Math.round(NOMINAL_BATTERY_KWH * 0.70 * 10) / 10);
+    sohUser.push(100.0);
+    sohRef.push(100.0);
+    sohWarranty.push(WARRANTY_SOH_PCT);
+
+    // Milestone: Heute
+    milestones.push({
+      yearNum: Math.round(yearsElapsed * 10) / 10,
+      label: 'Aktueller Stand',
+      date: 'Heute',
+      kwh: currentCap,
+      soh: currentSoh,
+      refKwh: Math.round((NOMINAL_BATTERY_KWH * 0.994) * 10) / 10,
+      refSoh: 99.4,
+      isCurrent: true
+    });
+    kwhUser.push(currentCap);
+    kwhRef.push(Math.round((NOMINAL_BATTERY_KWH * 0.994) * 10) / 10);
+    kwhWarranty.push(36.4);
+    sohUser.push(currentSoh);
+    sohRef.push(99.4);
+    sohWarranty.push(WARRANTY_SOH_PCT);
+
+    // Milestones: Jahre 1, 2, 3, 4
+    for (let yr = 1; yr <= 4; yr++) {
+      const yrDate = `Okt ${2026 + yr}`;
+      const userDeg = calcDegradation(yr, yr * annualCycles, stressFactor);
+      const refDeg = calcDegradation(yr, yr * annualCycles, 1.25);
+
+      const uSoh = Math.round((100.0 - userDeg.totalLoss) * 10) / 10;
+      const uCap = Math.round((NOMINAL_BATTERY_KWH * (uSoh / 100.0)) * 10) / 10;
+      const rSoh = Math.round((100.0 - refDeg.totalLoss) * 10) / 10;
+      const rCap = Math.round((NOMINAL_BATTERY_KWH * (rSoh / 100.0)) * 10) / 10;
+
+      milestones.push({
+        yearNum: yr,
+        label: yr === 4 ? 'Jahr 4 (Leasingende)' : `Jahr ${yr}`,
+        date: yrDate,
+        kwh: uCap,
+        soh: uSoh,
+        refKwh: rCap,
+        refSoh: rSoh,
+        isFuture: true
+      });
+
+      kwhUser.push(uCap);
+      kwhRef.push(rCap);
+      kwhWarranty.push(36.4);
+      sohUser.push(uSoh);
+      sohRef.push(rSoh);
+      sohWarranty.push(WARRANTY_SOH_PCT);
+    }
+
+    const projected4YearCap = kwhUser[kwhUser.length - 1];
+    const projected4YearSoh = sohUser[sohUser.length - 1];
+
+    return {
+      nominalCap: NOMINAL_BATTERY_KWH,
+      currentCap,
+      currentSoh,
+      leaseYears: LEASE_YEARS,
+      projected4YearCap,
+      projected4YearSoh,
+      score,
+      scoreRating,
+      stressFactor,
+      stats: {
+        totalSessions,
+        acPvSharePct,
+        avgStartSoc: Math.round(avgStartSoc),
+        avgEndSoc: Math.round(avgEndSoc),
+        avgDoD: Math.round(avgDoD),
+        efcCycles: Math.round(efcCycles * 10) / 10,
+        monthsElapsed: Math.round(monthsElapsed * 10) / 10,
+        drivenKm: Math.round(drivenKm),
+        calendarLossPct: Math.round(currentDeg.calLoss * 100) / 100,
+        cycleLossPct: Math.round(currentDeg.cycLoss * 100) / 100
+      },
+      milestones,
+      chartData: {
+        labels: chartLabels,
+        kwhUser,
+        kwhRef,
+        kwhWarranty,
+        sohUser,
+        sohRef,
+        sohWarranty
+      }
+    };
+  }
+
+  function openBatteryHealthModal(unit = 'kwh') {
+    activeBatteryUnit = (unit === 'soh') ? 'soh' : 'kwh';
+
+    if (DOM.batteryUnitPicker) {
+      DOM.batteryUnitPicker.querySelectorAll('.picker-seg').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-battery-unit') === activeBatteryUnit);
+      });
+    }
+
+    const data = getBatteryHealthData(appData.sessions, appData.vehicle);
+
+    // KPI Kacheln oben
+    if (DOM.bKpiCurrentCap) DOM.bKpiCurrentCap.textContent = data.currentCap.toFixed(1);
+    if (DOM.bKpiCurrentSohBadge) DOM.bKpiCurrentSohBadge.textContent = `✨ ${data.currentSoh.toFixed(1)}% SoH`;
+    if (DOM.bKpi4YearCap) DOM.bKpi4YearCap.textContent = `~${data.projected4YearCap.toFixed(1)}`;
+    if (DOM.bKpi4YearSoh) DOM.bKpi4YearSoh.textContent = `~${data.projected4YearSoh.toFixed(1)}% Restkapazität`;
+    if (DOM.bKpiScore) DOM.bKpiScore.textContent = data.score;
+    if (DOM.bKpiScoreSub) DOM.bKpiScoreSub.textContent = data.scoreRating;
+
+    // Ladeverhaltens-Box
+    if (DOM.bBehaviorPvShare) DOM.bBehaviorPvShare.textContent = `${data.stats.acPvSharePct}% AC / PV`;
+    if (DOM.bBehaviorSocWindow) DOM.bBehaviorSocWindow.textContent = `Ø ${data.stats.avgStartSoc}% → ${data.stats.avgEndSoc}%`;
+    if (DOM.bBehaviorCycles) DOM.bBehaviorCycles.textContent = `~${data.stats.efcCycles} Zyklen (${data.stats.drivenKm} km)`;
+    const calSplit = Math.max(10, Math.min(90, Math.round(data.stats.calendarLossPct / (data.stats.calendarLossPct + data.stats.cycleLossPct + 0.001) * 100)));
+    if (DOM.bBehaviorAgingSplit) DOM.bBehaviorAgingSplit.textContent = `${calSplit}% Kalendarisch / ${100 - calSplit}% Zyklen`;
+
+    // Meilensteine Tabelle
+    renderBatteryMilestonesTable(data);
+
+    // Modal öffnen
+    if (DOM.modalBatteryHealth) {
+      DOM.modalBatteryHealth.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    // Chart rendern
+    renderBatteryHealthChart(data, activeBatteryUnit);
+
+    requestAnimationFrame(() => {
+      if (chartBatteryHealth) chartBatteryHealth.resize();
+    });
+
+    setTimeout(() => {
+      if (chartBatteryHealth) {
+        chartBatteryHealth.resize();
+        chartBatteryHealth.update('none');
+      }
+    }, 120);
+
+    triggerHaptic();
+  }
+
+  function closeBatteryHealthModal() {
+    if (DOM.modalBatteryHealth) {
+      DOM.modalBatteryHealth.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    if (chartBatteryHealth) {
+      chartBatteryHealth.destroy();
+      chartBatteryHealth = null;
+    }
+  }
+
+  function renderBatteryMilestonesTable(data) {
+    if (!DOM.batteryMilestonesTable || !data || !Array.isArray(data.milestones)) return;
+
+    let html = '';
+    data.milestones.forEach((m) => {
+      const isCur = m.isCurrent;
+      const tagLabel = isCur ? 'Heute' : (m.yearNum === 0 ? 'Start' : `J${m.yearNum}`);
+      const advantageKwh = (m.refKwh && m.kwh > m.refKwh) ? `+${(m.kwh - m.refKwh).toFixed(1)} kWh Bonus` : '';
+
+      html += `
+        <div class="b-milestone-row ${isCur ? 'is-current' : ''}">
+          <div class="b-milestone-left">
+            <span class="b-milestone-tag">${tagLabel}</span>
+            <div>
+              <div class="b-milestone-title">${m.label}</div>
+              <div class="b-milestone-date">${m.date}</div>
+            </div>
+          </div>
+          <div class="b-milestone-right">
+            <div>
+              <div class="b-milestone-val">${m.kwh.toFixed(1)} kWh</div>
+              <div class="b-milestone-soh">${m.soh.toFixed(1)}% SoH</div>
+            </div>
+            ${advantageKwh ? `<span class="b-milestone-diff" title="Vorteil durch schonendes AC/PV-Laden">${advantageKwh}</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+    DOM.batteryMilestonesTable.innerHTML = html;
+  }
+
+  function renderBatteryHealthChart(data, unit = 'kwh') {
+    if (!DOM.canvasBatteryHealthChart || typeof Chart === 'undefined' || !data) return;
+    if (chartBatteryHealth) {
+      chartBatteryHealth.destroy();
+      chartBatteryHealth = null;
+    }
+
+    const isKwh = (unit === 'kwh');
+    const ctx = DOM.canvasBatteryHealthChart.getContext('2d');
+    const tealGrad = ctx.createLinearGradient(0, 0, 0, 200);
+    tealGrad.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+    tealGrad.addColorStop(1, 'rgba(16, 185, 129, 0.02)');
+
+    const userSeries = isKwh ? data.chartData.kwhUser : data.chartData.sohUser;
+    const refSeries = isKwh ? data.chartData.kwhRef : data.chartData.sohRef;
+    const warrantySeries = isKwh ? data.chartData.kwhWarranty : data.chartData.sohWarranty;
+
+    const yMin = isKwh ? 34 : 65;
+    const yMax = isKwh ? 54 : 105;
+    const unitLabel = isKwh ? 'kWh' : '% SoH';
+
+    chartBatteryHealth = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.chartData.labels,
+        datasets: [
+          {
+            label: `Dein Ladeverhalten (${unitLabel})`,
+            data: userSeries,
+            borderColor: '#10b981',
+            backgroundColor: tealGrad,
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#10b981',
+            pointBorderColor: '#fff',
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            order: 1
+          },
+          {
+            label: `Flottendurchschnitt (${unitLabel})`,
+            data: refSeries,
+            borderColor: '#94a3b8',
+            backgroundColor: 'transparent',
+            borderWidth: 1.8,
+            borderDash: [5, 4],
+            tension: 0.3,
+            pointRadius: 3,
+            order: 2
+          },
+          {
+            label: `Garantiegrenze 70% (${unitLabel})`,
+            data: warrantySeries,
+            borderColor: '#ef4444',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderDash: [3, 3],
+            tension: 0,
+            pointRadius: 0,
+            order: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(6, 10, 16, 0.95)',
+            titleColor: '#e28e4e',
+            bodyColor: '#e2e8f0',
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: function(ctx) {
+                const idx = ctx.dataIndex;
+                const val = ctx.parsed.y;
+                if (ctx.datasetIndex === 0) {
+                  const altVal = isKwh ? `${data.chartData.sohUser[idx]}% SoH` : `${data.chartData.kwhUser[idx]} kWh`;
+                  return `  Dein Akku: ${val} ${unitLabel} (${altVal})`;
+                } else if (ctx.datasetIndex === 1) {
+                  return `  Flotte: ${val} ${unitLabel}`;
+                } else {
+                  return `  Garantie: ${val} ${unitLabel} (70%)`;
+                }
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#94a3b8', font: { size: 10 } }
+          },
+          y: {
+            min: yMin,
+            max: yMax,
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: {
+              color: '#94a3b8',
+              font: { size: 10 },
+              callback: val => `${val} ${isKwh ? 'kWh' : '%'}`
+            }
+          }
+        }
+      }
+    });
   }
 
   // =========================================================================
@@ -9384,9 +9867,20 @@ function createOutput(data, callback) {
   function renderSettingsForms() {
     const v = appData.vehicle;
     if (DOM.cfgModelName) DOM.cfgModelName.value = v.model;
-    if (DOM.cfgBatteryVal) DOM.cfgBatteryVal.textContent = Math.round(v.batteryKwh || 52);
+
+    // Dynamische Batteriekapazität & SoH
+    const bHealth = getBatteryHealthData(appData.sessions, appData.vehicle);
+    appData.vehicle.batteryKwh = 52.0; // 100% Referenz-Nennkapazität
+    appData.vehicle.currentBatteryKwh = bHealth.currentCap;
+    appData.vehicle.batteryHealth = bHealth;
+    if (DOM.cfgBatteryVal) DOM.cfgBatteryVal.textContent = bHealth.currentCap.toFixed(1);
+    if (DOM.cfgBatteryBadge) {
+      DOM.cfgBatteryBadge.textContent = `${bHealth.currentSoh.toFixed(1)}% SoH`;
+      DOM.cfgBatteryBadge.title = `Dynamisch berechnet: ${bHealth.currentCap.toFixed(1)} kWh von ${bHealth.nominalCap} kWh (Tippen für 4-Jahres-Prognose)`;
+    }
+
     if (DOM.cfgPowerVal) DOM.cfgPowerVal.textContent = v.powerPs || 211;
-    if (DOM.cfgBatteryCap && DOM.cfgBatteryCap.tagName === 'INPUT') DOM.cfgBatteryCap.value = v.batteryKwh;
+    if (DOM.cfgBatteryCap && DOM.cfgBatteryCap.tagName === 'INPUT') DOM.cfgBatteryCap.value = bHealth.currentCap;
     if (DOM.cfgPower && DOM.cfgPower.tagName === 'INPUT') DOM.cfgPower.value = v.powerPs;
     if (DOM.cfgCurrentOdo) {
       DOM.cfgCurrentOdo.value = Math.round(v.currentOdo ?? 0);
@@ -9421,7 +9915,8 @@ function createOutput(data, callback) {
 
   function handleSaveVehicleSettings() {
     appData.vehicle.model = (DOM.cfgModelName && DOM.cfgModelName.value.trim()) || DEFAULT_DATA.vehicle.model;
-    appData.vehicle.batteryKwh = 52.0; // Fester Hardware-Wert
+    const bHealth = getBatteryHealthData(appData.sessions, appData.vehicle);
+    appData.vehicle.batteryKwh = bHealth.currentCap;
     appData.vehicle.powerPs = 211; // Fester Hardware-Wert
     if (DOM.cfgCurrentOdo) {
       const parsedOdo = parseInt(DOM.cfgCurrentOdo.value, 10);
@@ -9629,6 +10124,9 @@ function createOutput(data, callback) {
   window.handleConfirmReconcile = handleConfirmReconcile;
   window.renderAll = renderAll;
   window.saveData = saveData;
+  window.getBatteryHealthData = getBatteryHealthData;
+  window.openBatteryHealthModal = openBatteryHealthModal;
+  window.closeBatteryHealthModal = closeBatteryHealthModal;
 
   Object.defineProperty(window, 'appData', {
     get() { return appData; },

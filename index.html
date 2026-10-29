@@ -814,20 +814,21 @@
                 </div>
               </div>
 
-              <!-- 2-Spalten Grid für Technische Daten: Batterie & Leistung (Feste Hardware-Werte) -->
+              <!-- 2-Spalten Grid für Technische Daten: Batterie (Dynamisch mit 4-Jahres-Prognose) & Leistung (Fix) -->
               <div class="specs-grid-two specs-grid-fixed">
                 <div class="specs-field-label">
                   <span class="specs-label-tag">BATTERIE</span>
-                  <span class="specs-fixed-badge">🔒 Fix</span>
+                  <span class="specs-dynamic-badge" id="cfgBatteryBadge" title="Dynamisch anhand Ladeverhalten • Tippen für 4-Jahres-Prognose">📈 Dynamisch</span>
                 </div>
                 <div class="specs-field-label">
                   <span class="specs-label-tag">LEISTUNG</span>
                   <span class="specs-fixed-badge">🔒 Fix</span>
                 </div>
-                <div class="specs-input-wrapper unit-attached specs-fixed-display" id="cfgBatteryDisplay">
+                <div class="specs-input-wrapper unit-attached specs-fixed-display specs-battery-clickable" id="cfgBatteryDisplay" role="button" tabindex="0" title="Tippen für Batterie-Gesundheit (SoH) & 4-Jahres-Prognose" aria-haspopup="dialog">
                   <span class="specs-field-icon">🔋</span>
-                  <span class="specs-fixed-val" id="cfgBatteryVal">52</span>
+                  <span class="specs-fixed-val" id="cfgBatteryVal">51.9</span>
                   <span class="specs-unit-badge">kWh</span>
+                  <span class="specs-battery-action-hint">📊</span>
                 </div>
                 <div class="specs-input-wrapper unit-attached specs-fixed-display" id="cfgPowerDisplay">
                   <span class="specs-field-icon">⚡</span>
@@ -1501,6 +1502,129 @@
           <div class="kpi-history-items-container" id="kpiHistoryListItems">
             <!-- Dynamisch generierte Zeilen -->
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================= -->
+  <!-- MODAL: BATTERIE-GESUNDHEIT & 4-JAHRES-PROGNOSE          -->
+  <!-- ======================================================= -->
+  <div class="modal-backdrop-sheet" id="modalBatteryHealth">
+    <div class="swift-sheet-card battery-health-sheet" role="dialog" aria-modal="true" aria-labelledby="batteryHealthTitle">
+      <div class="sheet-grabber"></div>
+      <div class="sheet-header">
+        <div>
+          <div class="battery-health-tag">🔋 BATTERIE-GESUNDHEIT & PROGNOSE</div>
+          <h2 class="sheet-title" id="batteryHealthTitle">Akku-Zustand & 4-Jahres-Prognose</h2>
+          <span class="sheet-subtitle-tag" id="batteryHealthSub">Cupra Raval • NMC-Technologie • 4 Jahre Haltedauer</span>
+        </div>
+        <button type="button" class="sheet-btn-close" id="btnCloseBatteryHealthModal" aria-label="Schließen">✕</button>
+      </div>
+
+      <div class="battery-health-scroll-body">
+        <!-- 3 Highlight Kacheln oben -->
+        <div class="battery-kpi-row">
+          <div class="battery-kpi-card highlight-glow">
+            <span class="b-kpi-label">MAX. KAPAZITÄT AKTUELL</span>
+            <div class="b-kpi-val-group">
+              <span class="b-kpi-val" id="bKpiCurrentCap">51.9</span>
+              <span class="b-kpi-unit">kWh</span>
+            </div>
+            <div class="b-kpi-badge" id="bKpiCurrentSohBadge">✨ 99.8% SoH</div>
+          </div>
+
+          <div class="battery-kpi-card">
+            <span class="b-kpi-label">PROGNOSE NACH 4 JAHREN</span>
+            <div class="b-kpi-val-group">
+              <span class="b-kpi-val" id="bKpi4YearCap">~48.6</span>
+              <span class="b-kpi-unit">kWh</span>
+            </div>
+            <div class="b-kpi-sub" id="bKpi4YearSoh">~93.5% Restkapazität</div>
+          </div>
+
+          <div class="battery-kpi-card">
+            <span class="b-kpi-label">LADESCHONUNGS-INDEX</span>
+            <div class="b-kpi-val-group">
+              <span class="b-kpi-val" id="bKpiScore">98</span>
+              <span class="b-kpi-unit">/ 100</span>
+            </div>
+            <div class="b-kpi-sub" id="bKpiScoreSub">🌱 Vorbildlich geschont</div>
+          </div>
+        </div>
+
+        <!-- Ladeverhaltens-Analyse Box -->
+        <div class="battery-behavior-box swift-glass-card">
+          <div class="b-box-title">⚡️ Analyse deines Ladeverhaltens</div>
+          <div class="b-behavior-grid">
+            <div class="b-behavior-item">
+              <span class="b-b-icon">☀️</span>
+              <div class="b-b-info">
+                <span class="b-b-val" id="bBehaviorPvShare">100% AC / PV</span>
+                <span class="b-b-lbl">Schonend geladen (0% DC-Stress)</span>
+              </div>
+            </div>
+            <div class="b-behavior-item">
+              <span class="b-b-icon">🎯</span>
+              <div class="b-b-info">
+                <span class="b-b-val" id="bBehaviorSocWindow">Ø 17% → 72%</span>
+                <span class="b-b-lbl">Perfekt im 20–80% Plateau</span>
+              </div>
+            </div>
+            <div class="b-behavior-item">
+              <span class="b-b-icon">🔄</span>
+              <div class="b-b-info">
+                <span class="b-b-val" id="bBehaviorCycles">~1.6 Zyklen</span>
+                <span class="b-b-lbl">Bisherige Vollzyklus-Äquivalente</span>
+              </div>
+            </div>
+            <div class="b-behavior-item">
+              <span class="b-b-icon">⏳</span>
+              <div class="b-b-info">
+                <span class="b-b-val" id="bBehaviorAgingSplit">78% Kalendarisch / 22% Zyklen</span>
+                <span class="b-b-lbl">Aufteilung der Alterung</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Segmented Picker: kWh vs % SoH -->
+        <div class="swift-segmented-picker battery-seg-picker" id="batteryUnitPicker">
+          <button type="button" class="picker-seg active" data-battery-unit="kwh">Kapazität (kWh)</button>
+          <button type="button" class="picker-seg" data-battery-unit="soh">Gesundheit (% SoH)</button>
+        </div>
+
+        <!-- Chart.js Graph Card: 4-Jahres-Prognose -->
+        <div class="swift-glass-card battery-chart-card">
+          <div class="chart-header-row">
+            <span class="chart-title">Langzeit-Prognose (4 Jahre Haltedauer)</span>
+            <div class="chart-legend-box" id="batteryChartLegend">
+              <span class="leg-item"><span class="leg-dot" style="background: #10b981;"></span> Dein Ladeverhalten</span>
+              <span class="leg-item"><span class="leg-dot" style="background: #94a3b8;"></span> Aggressives Laden</span>
+              <span class="leg-item"><span class="leg-dot" style="background: #ef4444;"></span> Garantie (70%)</span>
+            </div>
+          </div>
+          <div class="chart-canvas-container" style="height: 240px; min-height: 240px; position: relative; width: 100%;">
+            <canvas id="canvasBatteryHealthChart"></canvas>
+          </div>
+        </div>
+
+        <!-- 4-Jahres-Meilensteine Tabelle -->
+        <div class="battery-milestones-card swift-glass-card">
+          <div class="b-box-title">📅 Meilensteine im 4-Jahres-Verlauf</div>
+          <div class="b-milestones-table" id="batteryMilestonesTable">
+            <!-- Dynamisch generiert -->
+          </div>
+        </div>
+
+        <!-- Handlungsempfehlungen / Pflegetipps -->
+        <div class="battery-tips-box">
+          <div class="b-box-title">💡 Akku-Pflegetipps für maximale Lebensdauer</div>
+          <ul class="b-tips-list">
+            <li><strong>20–80% Wohlfühlfenster:</strong> Im Alltag weiter im Bereich von 20% bis 80% SoC laden.</li>
+            <li><strong>100% nur bei Bedarf:</strong> Vor Langstrecken auf 100% laden und zeitnah losfahren.</li>
+            <li><strong>PV/AC bevorzugen:</strong> Schont das Zellgitter nachhaltig gegenüber häufigem DC-Highspeed-Laden.</li>
+          </ul>
         </div>
       </div>
     </div>
