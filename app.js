@@ -236,6 +236,7 @@
     DOM.dashboardLiveStatus = document.getElementById('dashboardLiveStatus');
     DOM.heroRangeBanner = document.getElementById('heroRangeBanner');
     DOM.dashRangeIcon = document.getElementById('dashRangeIcon');
+    DOM.dashRangeSocVal = document.getElementById('dashRangeSocVal');
     DOM.dashRangePrimary = document.getElementById('dashRangePrimary');
     DOM.dashRangeTempBadge = document.getElementById('dashRangeTempBadge');
     DOM.dashRangeTempIcon = document.getElementById('dashRangeTempIcon');
@@ -733,8 +734,8 @@
     res.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Höchsten km-Stand als aktuellen Odometer
-    const maxOdo = res.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), res.vehicle.currentOdo || 0);
-    res.vehicle.currentOdo = maxOdo;
+    const maxOdo = res.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), 0);
+    res.vehicle.currentOdo = maxOdo > 0 ? maxOdo : VEHICLE_START_ODO;
 
     // Neuesten Akkustand als aktuellen Fahrzeug-SoC synchronisieren
     res.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -791,18 +792,31 @@
     // Sessions chronologisch sortieren (neueste zuerst)
     appData.sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // 1. Odometer: Höchsten plausiblen Kilometerstand aller Sessions beibehalten
+    // 1. Odometer: Höchsten Kilometerstand aller Sessions ermitteln
     if (appData.sessions.length > 0) {
       const maxOdo = appData.sessions.reduce((max, s) => Math.max(max, s.odometer || 0), 0);
-      if (maxOdo > 0 && maxOdo >= (appData.vehicle.currentOdo || 0)) {
-        appData.vehicle.currentOdo = maxOdo;
-      }
+      appData.vehicle.currentOdo = maxOdo > 0 ? maxOdo : VEHICLE_START_ODO;
+    } else {
+      appData.vehicle.currentOdo = VEHICLE_START_ODO;
     }
 
     // 2. Battery SoC: Zeitlich neuester Ladevorgang bestimmt den aktuellen Akkustand
     const latestWithSoc = appData.sessions.find(s => s.soc !== undefined && s.soc !== null && !isNaN(s.soc));
     if (latestWithSoc) {
-      appData.vehicle.currentSoc = Number(latestWithSoc.soc);
+      const lastSoc = Number(latestWithSoc.soc);
+      const lastOdo = Number(latestWithSoc.odometer || 0);
+      const curOdo = Number(appData.vehicle.currentOdo || lastOdo);
+      if (curOdo > lastOdo && lastOdo > 0) {
+        const consData = calcConsumption(appData.sessions);
+        const baseCons = (consData && consData.hasData && consData.avgCons > 0) ? consData.avgCons : 14.2;
+        const batCap = Number(appData.vehicle.batteryKwh) || 52.0;
+        const deltaKm = curOdo - lastOdo;
+        const consumedKwh = (deltaKm * baseCons) / 100;
+        const deltaSoc = (consumedKwh / batCap) * 100;
+        appData.vehicle.currentSoc = Math.max(0, Math.min(100, Math.round(lastSoc - deltaSoc)));
+      } else {
+        appData.vehicle.currentSoc = lastSoc;
+      }
     } else {
       const latestWithStart = appData.sessions.find(s => s.socStart !== undefined && s.socStart !== null && !isNaN(s.socStart));
       if (latestWithStart) {
@@ -3648,11 +3662,11 @@ function createOutput(data, callback) {
     // Kompakte Autokarte unten & Header
     const v = appData.vehicle;
     const modelName = v.model || 'Cupra Raval Endurance Edition Dynamic';
-    DOM.cardCarModelName.textContent = modelName;
+    if (DOM.cardCarModelName) DOM.cardCarModelName.textContent = modelName;
     if (DOM.appHeaderTitle) DOM.appHeaderTitle.textContent = modelName;
-    DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
-    DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
-    DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;
+    if (DOM.cardBatteryKwh) DOM.cardBatteryKwh.innerHTML = `${Number(v.batteryKwh).toFixed(1)} <small>kWh</small>`;
+    if (DOM.cardPowerPs) DOM.cardPowerPs.innerHTML = `${v.powerPs} <small>PS</small>`;
+    if (DOM.cardCurrentOdo) DOM.cardCurrentOdo.innerHTML = `${Number(v.currentOdo).toLocaleString('de-DE')} <small>km</small>`;
     if (DOM.cardCurrentSoc) {
       if (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(v.currentSoc)) {
         DOM.cardCurrentSoc.innerHTML = `${Math.round(v.currentSoc)} <small>%</small>`;
@@ -7564,14 +7578,14 @@ function createOutput(data, callback) {
 
     const v = (appData && appData.vehicle) || {};
     const batteryCapacity = Number(v.batteryKwh) || 52.0;
-    const hasSoc = (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(Number(v.currentSoc)));
-    const soc = hasSoc ? Number(v.currentSoc) : null;
 
+    // 1. Reeller Durchschnittsverbrauch aus allen Ladungen & Kilometern
     const consData = calcConsumption(appData.sessions);
     const baseConsumption = (consData && consData.hasData && consData.avgCons > 0)
       ? consData.avgCons
       : 14.2;
 
+    // 2. Kälteeinfluss aus Wettervorhersage
     let currentTemp = 12;
     if (weatherForecast14Days && weatherForecast14Days.length > 0) {
       const today = weatherForecast14Days[0];
@@ -7581,8 +7595,59 @@ function createOutput(data, callback) {
     const nmcFactor = getNmcTemperatureEfficiency(currentTemp);
     const lossPct = Math.max(0, Math.round((1 - nmcFactor) * 100));
 
-    if (soc !== null) {
-      const remEnergyKwh = (batteryCapacity * soc) / 100;
+    // 3. Intelligenter Akkustand (SoC) anhand aller Ladungen und gefahrenen Kilometer
+    let intelligentSoc = null;
+
+    if (appData && appData.sessions && appData.sessions.length > 0) {
+      const sorted = [...appData.sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const latestWithSoc = sorted.find(s => s.soc !== undefined && s.soc !== null && !isNaN(s.soc));
+      if (latestWithSoc) {
+        const lastSoc = Number(latestWithSoc.soc);
+        const lastOdo = Number(latestWithSoc.odometer || 0);
+        const curOdo = Math.max(Number(v.currentOdo || 0), lastOdo);
+        if (curOdo > lastOdo && lastOdo > 0) {
+          const deltaKm = curOdo - lastOdo;
+          const consumedKwh = (deltaKm * baseConsumption) / 100;
+          const deltaSoc = (consumedKwh / batteryCapacity) * 100;
+          intelligentSoc = Math.max(0, Math.min(100, Math.round(lastSoc - deltaSoc)));
+        } else {
+          intelligentSoc = Math.max(0, Math.min(100, Math.round(lastSoc)));
+        }
+      } else {
+        const latestWithStart = sorted.find(s => s.socStart !== undefined && s.socStart !== null && !isNaN(s.socStart));
+        if (latestWithStart) {
+          intelligentSoc = Math.max(0, Math.min(100, Math.round(Number(latestWithStart.socStart))));
+        }
+      }
+    }
+
+    // Fallback: Keine Ladungen erfasst -> Auslieferungszustand (72% bei 9 km) bzw. v.currentSoc
+    if (intelligentSoc === null) {
+      if (v.currentSoc !== null && v.currentSoc !== undefined && !isNaN(Number(v.currentSoc))) {
+        intelligentSoc = Math.max(0, Math.min(100, Math.round(Number(v.currentSoc))));
+      } else {
+        const curOdo = Number(v.currentOdo || VEHICLE_START_ODO);
+        if (curOdo > VEHICLE_START_ODO) {
+          const deltaKm = curOdo - VEHICLE_START_ODO;
+          const consumedKwh = (deltaKm * baseConsumption) / 100;
+          const deltaSoc = (consumedKwh / batteryCapacity) * 100;
+          intelligentSoc = Math.max(0, Math.min(100, Math.round(VEHICLE_START_SOC - deltaSoc)));
+        } else {
+          intelligentSoc = VEHICLE_START_SOC;
+        }
+      }
+    }
+
+    if (intelligentSoc !== null) {
+      v.currentSoc = intelligentSoc;
+      if (DOM.dashRangeSocVal) {
+        DOM.dashRangeSocVal.innerHTML = `${Math.round(intelligentSoc)}<small>%</small>`;
+      }
+      if (DOM.dashRangeIcon) {
+        DOM.dashRangeIcon.textContent = intelligentSoc < 20 ? '🪫' : '🔋';
+      }
+
+      const remEnergyKwh = (batteryCapacity * intelligentSoc) / 100;
       const normRange = Math.round((remEnergyKwh / baseConsumption) * 100);
       const effectiveConsumption = baseConsumption / nmcFactor;
       const realWinterRange = Math.round((remEnergyKwh / effectiveConsumption) * 100);
@@ -7601,6 +7666,7 @@ function createOutput(data, callback) {
         if (DOM.dashRangeTempBadge) DOM.dashRangeTempBadge.className = 'range-temp-badge optimal';
       }
     } else {
+      if (DOM.dashRangeSocVal) DOM.dashRangeSocVal.innerHTML = `--<small>%</small>`;
       DOM.dashRangePrimary.innerHTML = `-- <small>km</small>`;
       if (DOM.dashRangeTempIcon) DOM.dashRangeTempIcon.textContent = '🔋';
       if (DOM.dashRangeTempText) DOM.dashRangeTempText.textContent = `Akkustand fehlt`;

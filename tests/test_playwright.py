@@ -131,14 +131,17 @@ def run_tests():
             log_test("2.3 Effizienz KPIs (Preis & Verbrauch)", len(avg_price) > 0 and len(avg_cons) > 0, f"Preis: {avg_price} €/kWh, Verbrauch: {avg_cons}")
 
             hero_car_visible = page.locator("#dashboardCarImage").is_visible()
-            model_name = page.locator("#cardCarModelName").inner_text()
+            app_title_text = page.locator("#appHeaderTitle").inner_text()
             log_test("2.4 Hero Fahrzeugbild", hero_car_visible, "Bild geladen")
-            log_test("2.5 Modellbezeichnung in Car Capsule", model_name == expected_title, f"Erhalten: '{model_name}'")
+            
+            car_meta_grid_count = page.locator(".car-meta-grid").count()
+            log_test("2.5 Car Meta Grid entfernt", car_meta_grid_count == 0, f"Obere Info-Kapseln erfolgreich entfernt (Grid Count: {car_meta_grid_count})")
 
-            bat_kwh = page.locator("#cardBatteryKwh").inner_text()
-            power_ps = page.locator("#cardPowerPs").inner_text()
-            odo_km = page.locator("#cardCurrentOdo").inner_text()
-            log_test("2.6 Spezifikationen-Kapsel (Batterie, PS, km)", "52" in bat_kwh and "211" in power_ps and "km" in odo_km, f"Batterie: {bat_kwh}, Leistung: {power_ps}, km: {odo_km}")
+            hero_soc_visible = page.locator("#dashRangeSocVal").is_visible()
+            hero_range_visible = page.locator("#dashRangePrimary").is_visible()
+            soc_val = page.locator("#dashRangeSocVal").inner_text()
+            range_val = page.locator("#dashRangePrimary").inner_text()
+            log_test("2.6 Intelligente Akkustand & Reichweite Kachel", hero_soc_visible and hero_range_visible and "%" in soc_val and "km" in range_val, f"Akkustand: {soc_val}, Reichweite: {range_val}")
 
             # Test Wetter-Widget Klick -> Navigiert zu Wetter-Tab
             page.locator("#dashPvPreviewCard").click()
@@ -328,8 +331,8 @@ def run_tests():
                 new_kwh = 0.0
             log_test("4.5 Dashboard KPI mit neuer Ladung synchronisiert", new_kwh >= prev_kwh + 42.0, f"Monats-kWh: {updated_month_kwh}")
 
-            # 4.5b: Dashboard Hero-Card zeigt aktualisierten Akkustand (#cardCurrentSoc)
-            card_soc_text = page.locator("#cardCurrentSoc").inner_text()
+            # 4.5b: Dashboard Hero-Card zeigt aktualisierten Akkustand (#dashRangeSocVal)
+            card_soc_text = page.locator("#dashRangeSocVal").inner_text()
             log_test("4.5b Dashboard Hero-Card zeigt synchronen Akkustand (82%)", "82" in card_soc_text, f"Card SoC: '{card_soc_text}'")
 
             # =====================================================================
@@ -1027,10 +1030,10 @@ def run_tests():
             # 12.2: Fahrzeug Hero-Card spiegelt synchron den neuesten Akkustand wider
             page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
             time.sleep(0.5)
-            hero_soc_text = page.locator("#cardCurrentSoc").inner_text().strip()
+            hero_soc_text = page.locator("#dashRangeSocVal").inner_text().strip()
             log_test(
                 "12.2 Fahrzeug Hero-Card: Zeigt synchron den neuesten Akkustand (80 %)",
-                hero_soc_text == "80 %" and stored_session_data["vehicleSoc"] == 80,
+                "80" in hero_soc_text and stored_session_data["vehicleSoc"] == 80,
                 f"Hero-Card: '{hero_soc_text}', Vehicle-SoC: {stored_session_data['vehicleSoc']}"
             )
 

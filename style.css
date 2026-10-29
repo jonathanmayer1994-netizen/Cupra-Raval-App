@@ -4558,6 +4558,23 @@ select option {
   gap: 6px;
 }
 
+.range-soc-val {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--cupra-bronze-bright);
+}
+
+.range-soc-val small {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.range-values-sep {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  user-select: none;
+}
+
 .range-val-primary {
   font-size: 0.95rem;
   font-weight: 800;

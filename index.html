@@ -322,29 +322,6 @@
             <div class="car-bronze-spotlight"></div>
           </div>
 
-          <div class="car-meta-grid compact-meta">
-            <div class="meta-card-item full-width-item">
-              <span class="capsule-label">MODELL</span>
-              <span class="capsule-value-model" id="cardCarModelName">Cupra Raval Endurance Edition Dynamic</span>
-            </div>
-            <div class="meta-card-item">
-              <span class="capsule-label">Kilometerstand</span>
-              <span class="capsule-value bronze-val" id="cardCurrentOdo">0 <small>km</small></span>
-            </div>
-            <div class="meta-card-item">
-              <span class="capsule-label">AKKUSTAND</span>
-              <span class="capsule-value bronze-val" id="cardCurrentSoc">-- <small>%</small></span>
-            </div>
-            <div class="meta-card-item">
-              <span class="capsule-label">BATTERIE</span>
-              <span class="capsule-value" id="cardBatteryKwh">52.0 <small>kWh</small></span>
-            </div>
-            <div class="meta-card-item">
-              <span class="capsule-label">LEISTUNG</span>
-              <span class="capsule-value" id="cardPowerPs">211 <small>PS</small></span>
-            </div>
-          </div>
-
           <!-- Temperaturabhängige Winter-Reichweiten Kachel (Feature 4a) -->
           <div class="hero-range-banner clickable-card" id="heroRangeBanner" role="button" tabindex="0" title="Tippen für Details zu Wetter- und Kälteeinfluss auf den Akku">
             <div class="range-banner-left">
@@ -352,6 +329,8 @@
               <div class="range-banner-texts">
                 <span class="range-banner-title">AKKUSTAND &amp; REICHWEITE</span>
                 <div class="range-banner-values">
+                  <span class="range-soc-val" id="dashRangeSocVal">--<small>%</small></span>
+                  <span class="range-values-sep">•</span>
                   <span class="range-val-primary" id="dashRangePrimary">-- <small>km</small></span>
                 </div>
               </div>
