@@ -348,6 +348,8 @@
     DOM.settingsSubBtns = document.querySelectorAll('.settings-sub-nav .picker-seg');
     DOM.settingsSubPanes = document.querySelectorAll('.settings-sub-pane');
     DOM.cfgModelName = document.getElementById('cfgModelName');
+    DOM.cfgBatteryVal = document.getElementById('cfgBatteryVal');
+    DOM.cfgPowerVal = document.getElementById('cfgPowerVal');
     DOM.cfgBatteryCap = document.getElementById('cfgBatteryCap');
     DOM.cfgPower = document.getElementById('cfgPower');
     DOM.cfgCurrentOdo = document.getElementById('cfgCurrentOdo');
@@ -9316,8 +9318,10 @@ function createOutput(data, callback) {
   function renderSettingsForms() {
     const v = appData.vehicle;
     if (DOM.cfgModelName) DOM.cfgModelName.value = v.model;
-    if (DOM.cfgBatteryCap) DOM.cfgBatteryCap.value = v.batteryKwh;
-    if (DOM.cfgPower) DOM.cfgPower.value = v.powerPs;
+    if (DOM.cfgBatteryVal) DOM.cfgBatteryVal.textContent = Math.round(v.batteryKwh || 52);
+    if (DOM.cfgPowerVal) DOM.cfgPowerVal.textContent = v.powerPs || 211;
+    if (DOM.cfgBatteryCap && DOM.cfgBatteryCap.tagName === 'INPUT') DOM.cfgBatteryCap.value = v.batteryKwh;
+    if (DOM.cfgPower && DOM.cfgPower.tagName === 'INPUT') DOM.cfgPower.value = v.powerPs;
     if (DOM.cfgCurrentOdo) {
       DOM.cfgCurrentOdo.value = Math.round(v.currentOdo ?? 0);
     }
@@ -9351,8 +9355,8 @@ function createOutput(data, callback) {
 
   function handleSaveVehicleSettings() {
     appData.vehicle.model = (DOM.cfgModelName && DOM.cfgModelName.value.trim()) || DEFAULT_DATA.vehicle.model;
-    appData.vehicle.batteryKwh = (DOM.cfgBatteryCap && parseFloat(DOM.cfgBatteryCap.value)) || 52.0;
-    appData.vehicle.powerPs = (DOM.cfgPower && parseInt(DOM.cfgPower.value, 10)) || 211;
+    appData.vehicle.batteryKwh = 52.0; // Fester Hardware-Wert
+    appData.vehicle.powerPs = 211; // Fester Hardware-Wert
     if (DOM.cfgCurrentOdo) {
       const parsedOdo = parseInt(DOM.cfgCurrentOdo.value, 10);
       appData.vehicle.currentOdo = isNaN(parsedOdo) ? 0 : Math.max(0, parsedOdo);
@@ -9369,6 +9373,9 @@ function createOutput(data, callback) {
 
     // Feature 9a: THG-Quote für das aktuell gewählte Jahr speichern
     saveCurrentThgSettings(true);
+
+    saveData();
+    renderAll();
 
     triggerHaptic();
     showToast('Fahrzeugdaten aktualisiert ✓');

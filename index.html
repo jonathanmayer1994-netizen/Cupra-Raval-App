@@ -139,6 +139,30 @@
       align-items: center !important;
       line-height: 1 !important;
     }
+    .specs-fixed-val {
+      color: var(--cupra-bronze-bright) !important;
+      font-size: 1.15rem !important;
+      font-weight: 800 !important;
+      padding: 0 14px 0 10px !important;
+      flex: 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      user-select: none !important;
+    }
+    .specs-fixed-display {
+      background: rgba(6, 10, 16, 0.6) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      cursor: default !important;
+    }
+    .specs-fixed-badge {
+      font-size: 0.60rem !important;
+      color: var(--text-muted) !important;
+      background: rgba(255, 255, 255, 0.05) !important;
+      padding: 2px 6px !important;
+      border-radius: 6px !important;
+      font-weight: 600 !important;
+      margin-left: auto !important;
+    }
   </style>
 </head>
 <body>
@@ -811,44 +835,25 @@
                 </div>
               </div>
 
-              <!-- 2-Spalten Grid für Technische Daten: Batterie & Leistung -->
-              <div class="specs-grid-two">
-                <label class="specs-field-label" for="cfgBatteryCap">
+              <!-- 2-Spalten Grid für Technische Daten: Batterie & Leistung (Feste Hardware-Werte) -->
+              <div class="specs-grid-two specs-grid-fixed">
+                <div class="specs-field-label">
                   <span class="specs-label-tag">BATTERIE</span>
-                </label>
-                <label class="specs-field-label" for="cfgPower">
+                  <span class="specs-fixed-badge">🔒 Fix</span>
+                </div>
+                <div class="specs-field-label">
                   <span class="specs-label-tag">LEISTUNG</span>
-                </label>
-                <div class="specs-input-wrapper unit-attached">
+                  <span class="specs-fixed-badge">🔒 Fix</span>
+                </div>
+                <div class="specs-input-wrapper unit-attached specs-fixed-display" id="cfgBatteryDisplay">
                   <span class="specs-field-icon">🔋</span>
-                  <input type="number" id="cfgBatteryCap" class="specs-input-control num-val" value="52.0" step="0.5" min="20" max="150">
+                  <span class="specs-fixed-val" id="cfgBatteryVal">52</span>
                   <span class="specs-unit-badge">kWh</span>
                 </div>
-                <div class="specs-input-wrapper unit-attached">
+                <div class="specs-input-wrapper unit-attached specs-fixed-display" id="cfgPowerDisplay">
                   <span class="specs-field-icon">⚡</span>
-                  <input type="number" id="cfgPower" class="specs-input-control num-val" value="211" step="1" min="50" max="600">
+                  <span class="specs-fixed-val" id="cfgPowerVal">211</span>
                   <span class="specs-unit-badge">PS</span>
-                </div>
-              </div>
-
-              <!-- 2-Spalten Grid: Kilometerstand & Aktueller Akkustand (4-Zellen CSS-Grid) -->
-              <div class="specs-grid-two specs-grid-odo-soc">
-                <label class="specs-field-label" for="cfgCurrentOdo">
-                  <span class="specs-label-tag">KILOMETERSTAND</span>
-                  <span class="specs-start-badge">(Start: 9 km)</span>
-                </label>
-                <label class="specs-field-label" for="cfgCurrentSoc">
-                  <span class="specs-label-tag">AKKUSTAND (SoC)</span>
-                </label>
-                <div class="specs-input-wrapper unit-attached">
-                  <span class="specs-field-icon">📍</span>
-                  <input type="number" id="cfgCurrentOdo" class="specs-input-control num-val" value="0" step="1" min="0" max="999999" placeholder="0">
-                  <span class="specs-unit-badge">km</span>
-                </div>
-                <div class="specs-input-wrapper unit-attached">
-                  <span class="specs-field-icon">⚡</span>
-                  <input type="number" id="cfgCurrentSoc" class="specs-input-control num-val" min="0" max="100" step="1" placeholder="z.B. 65">
-                  <span class="specs-unit-badge">%</span>
                 </div>
               </div>
 

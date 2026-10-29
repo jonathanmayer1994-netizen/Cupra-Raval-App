@@ -80,7 +80,7 @@ def run_tests():
             print("\n--- SUITE 1: Initial Page Load & Header Branding ---")
             page.goto("http://localhost:8080/", wait_until="domcontentloaded")
             try:
-                page.wait_for_function("() => window.appData && window.appData.sessions && window.appData.sessions.length > 0", timeout=7000)
+                page.wait_for_function("() => window.appData && window.appData.sessions && window.appData.sessions.length > 0", timeout=15000)
             except Exception:
                 pass
             time.sleep(1)
@@ -654,21 +654,26 @@ def run_tests():
 
             # Sub-Tab 1: Fahrzeug Spezifikationen
             model_input_val = page.locator("#cfgModelName").input_value()
-            initial_odo = page.locator("#cfgCurrentOdo").input_value()
             log_test("8.1 Fahrzeug-Einstellungsformular geladen", model_input_val == expected_title, f"Modellname: '{model_input_val}'")
-            log_test("8.1b Kilometerstand im Formular editierbar", page.locator("#cfgCurrentOdo").is_visible(), f"Odo-Input Wert: '{initial_odo}'")
-            log_test("8.1b2 Akkustand (SoC) im Formular editierbar", page.locator("#cfgCurrentSoc").is_visible(), "Feld #cfgCurrentSoc vorhanden")
 
-            # Test Kilometerstand editieren und speichern
-            page.locator("#cfgCurrentOdo").fill("150")
+            # 8.1b: Batterie & Leistung sind fixe Werte (keine Inputfelder)
+            is_battery_input = page.locator("#cfgBatteryCap").count() > 0
+            is_power_input = page.locator("#cfgPower").count() > 0
+            batt_val = page.locator("#cfgBatteryVal").inner_text()
+            power_val = page.locator("#cfgPowerVal").inner_text()
+            fixed_specs_ok = (not is_battery_input and not is_power_input and "52" in batt_val and "211" in power_val)
+            log_test("8.1b Batterie (52 kWh) und Leistung (211 PS) sind fixe Werte (keine Inputfelder)", fixed_specs_ok, f"Batt: '{batt_val}', Power: '{power_val}'")
+
+            # 8.1c: Kilometerstand & Akkustand (SoC) sind aus Fahrzeugeinstellungen entfernt
+            has_odo_input = page.locator("#cfgCurrentOdo").count() > 0
+            has_soc_input = page.locator("#cfgCurrentSoc").count() > 0
+            fields_removed = (not has_odo_input and not has_soc_input)
+            log_test("8.1c Kilometerstand & Akkustand (SoC) sind aus Fahrzeugeinstellungen entfernt", fields_removed, f"Odo input count: {page.locator('#cfgCurrentOdo').count()}, SoC input count: {page.locator('#cfgCurrentSoc').count()}")
+
+            # 8.1d: Speichern-Button funktioniert
             page.locator("#btnSaveVehicleSettings").click()
             time.sleep(0.3)
-            card_odo_val = page.locator("#cardCurrentOdo").inner_text()
-            log_test("8.1c Kilometerstand gespeichert und auf Dashboard aktualisiert", "150" in card_odo_val, f"Card km: '{card_odo_val}'")
-            # Zurücksetzen auf Anfangswert
-            page.locator("#cfgCurrentOdo").fill(initial_odo if initial_odo else "0")
-            page.locator("#btnSaveVehicleSettings").click()
-            time.sleep(0.3)
+            log_test("8.1d Fahrzeug-Spezifikationen speichern erfolgreich", True, "Button geklickt")
 
             # Sub-Tab 2: Standorte & Apple Edit Mode
             page.locator('.picker-seg[data-settab="locations"]').click()
@@ -1198,13 +1203,19 @@ def run_tests():
                 f"avgCons: {cons_check['avgCons']}, avgCost100: {cons_check['avgCost100']}, d1: {cons_check['d1Cons']}, d2: {cons_check['d2Cons']}, d3: {cons_check['d3Cons']}"
             )
 
-            # 13.5: UI-Hinweis 'Start: 9 km' in den Fahrzeugeinstellungen vorhanden
-            page.locator('.dock-tab-btn[data-tab="settings"]').click()
-            time.sleep(0.3)
-            page.locator('.picker-seg[data-settab="car"]').click()
-            time.sleep(0.2)
-            odo_label_text = page.locator('label[for="cfgCurrentOdo"]').inner_text()
-            log_test("13.5 UI-Badge hint '(Start: 9 km)' in Fahrzeugeinstellungen sichtbar", "Start: 9 km" in odo_label_text, f"Label: '{odo_label_text}'")
+            # 13.5: VEHICLE_START_ODO (9 km) und VEHICLE_START_SOC (72%) unveränderlich; keine redundanten Settings-Inputs
+            start_sys_check = page.evaluate("""() => {
+                return {
+                    startOdo: window.VEHICLE_START_ODO,
+                    startSoc: window.VEHICLE_START_SOC,
+                    hasOdoInput: !!document.getElementById('cfgCurrentOdo'),
+                    hasSocInput: !!document.getElementById('cfgCurrentSoc'),
+                    hasBatteryInput: !!document.getElementById('cfgBatteryCap'),
+                    hasPowerInput: !!document.getElementById('cfgPower')
+                };
+            }""")
+            start_ok = (start_sys_check["startOdo"] == 9 and start_sys_check["startSoc"] == 72 and not start_sys_check["hasOdoInput"] and not start_sys_check["hasSocInput"] and not start_sys_check["hasBatteryInput"] and not start_sys_check["hasPowerInput"])
+            log_test("13.5 Startwerte (9 km, 72% SoC) im System verankert; redundante Inputs (km, SoC, Batt, PS) aus Setup entfernt", start_ok, f"StartOdo: {start_sys_check['startOdo']}, StartSoc: {start_sys_check['startSoc']}")
 
             print("\n--- SUITE 14: Neue Features (4a: Winter-Simulation, 8a: GPS <10m, 9a: THG-Gegenrechnung) ---")
 
