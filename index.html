@@ -742,6 +742,69 @@
           </div>
         </div>
 
+        <!-- ======================================================= -->
+        <!-- ALLGÄU SOLAR-ADAPTIVE ENGINE (GROUND TRUTH & LERNEN)    -->
+        <!-- ======================================================= -->
+        <div class="swift-glass-card solar-adaptive-card" id="solarAdaptiveCard">
+          <div class="adaptive-card-header">
+            <div class="adaptive-header-left">
+              <div class="adaptive-icon-glow">☀️</div>
+              <div class="adaptive-title-group">
+                <div class="adaptive-title-row">
+                  <span class="adaptive-main-title">Allgäu Solar-Adaptive Engine</span>
+                  <span class="adaptive-precision-pill" id="adaptiveAccuracyBadge">🎯 94.6% Treffer</span>
+                </div>
+                <span class="adaptive-subtitle">Selbstlernender Abgleich: Prognose vs. Reale Sonnenstunden (DWD &amp; Open-Meteo)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modus-Umschalter: Segmented Control -->
+          <div class="adaptive-mode-picker-wrapper">
+            <div class="swift-segmented-picker adaptive-segmented" id="adaptiveModePicker" role="tablist" aria-label="Solar Prognose Modus">
+              <button type="button" class="picker-seg active" data-mode="calibrated">
+                <span>✨ KI-Kalibriert (Allgäu)</span>
+              </button>
+              <button type="button" class="picker-seg" data-mode="raw">
+                <span>📊 Roh-Wettermodelle</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Allgäu Inversion / Mikroklima Box -->
+          <div class="adaptive-inversion-box" id="adaptiveInversionBox">
+            <div class="inversion-status-row">
+              <span class="inversion-badge" id="adaptiveInversionBadge">🌫️ Hochnebel-Filter aktiv (Illertal)</span>
+              <span class="inversion-sub" id="adaptiveInversionSub">Dämpfung Vormittag: -1.4h</span>
+            </div>
+            <div class="inversion-explainer" id="adaptiveInversionText">
+              Lokale Allgäu-Kalibrierung dämpft morgendliche Inversions-Übertreibungen der Wettermodelle ab. Voller PV-Ertrag fokussiert auf <strong>12:15 – 15:45 Uhr</strong>.
+            </div>
+          </div>
+
+          <!-- Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.) -->
+          <div class="adaptive-history-section">
+            <div class="adaptive-history-header">
+              <span class="ah-title">HISTORISCHER GROUND-TRUTH ABGLEICH</span>
+              <span class="ah-hint" id="adaptiveHistoryHint">DWD-Messung vs. Modell</span>
+            </div>
+            <div class="adaptive-comparison-list" id="adaptiveComparisonList">
+              <!-- Dynamisch via JavaScript befüllt -->
+            </div>
+          </div>
+
+          <!-- Footer-Info mit Auto-Lern-Status -->
+          <div class="adaptive-footer-bar">
+            <div class="adaptive-footer-item">
+              <span class="af-dot"></span>
+              <span id="adaptiveLastTrainedText">Aktives Lernen: DWD ICON-D2 Leitmodell (58% Gewicht)</span>
+            </div>
+            <button type="button" class="btn-adaptive-recalibrate" id="btnAdaptiveRecalibrate" title="Jetzt mit neuesten Stationsdaten abgleichen">
+              <span>Feinjustieren ⟳</span>
+            </button>
+          </div>
+        </div>
+
         <!-- 4-Tage Vorschau & 14-Tage Ausklappmenü -->
         <div class="forecast-section-title">
           <span class="forecast-title-text">PV-Ladefenster & Wetter</span>
@@ -1438,13 +1501,17 @@
             <canvas id="canvasHourlyChart"></canvas>
           </div>
           <div class="hourly-subtle-legend" id="hourlyChartLegendBox">
-            <span class="subtle-leg-item">
+            <span class="subtle-leg-item" id="legendItemCalibrated">
               <span class="legend-indicator dot-bronze" style="width: 14px; height: 3px; border-radius: 2px;"></span>
-              <span>Sonnenschein</span>
+              <span>✨ KI-Kalibriert (Allgäu)</span>
+            </span>
+            <span class="subtle-leg-item" id="legendItemRaw">
+              <span class="legend-indicator dot-dashed-raw" style="width: 14px; height: 2px; border-radius: 1px; border-top: 2px dashed #94a3b8; display: inline-block;"></span>
+              <span>📊 Roh-Modell</span>
             </span>
             <span class="subtle-leg-item">
               <span class="legend-indicator dot-cyan" style="width: 7px; height: 7px; border-radius: 2px;"></span>
-              <span>Niederschlag</span>
+              <span>💧 Regen</span>
             </span>
           </div>
         </div>

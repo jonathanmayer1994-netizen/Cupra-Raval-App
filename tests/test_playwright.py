@@ -1427,6 +1427,96 @@ def run_tests():
                      geofence_cache_check["matched"] is not None and "Bayrhof" in geofence_cache_check["matched"],
                      f"Match: {geofence_cache_check['matched']}, Dist: {geofence_cache_check['distance']}")
 
+            # --- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth & KI-Kalibrierung) ---
+            print("\n--- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth & KI-Kalibrierung) ---")
+
+            # 15.1 Allgäu Solar-Adaptive Card sichtbar in Tab 3 mit Icon & Trefferquote-Badge
+            page.locator('.dock-tab-btn[data-tab="weather"]').click()
+            time.sleep(0.08)
+            card_vis = page.locator("#solarAdaptiveCard").is_visible()
+            badge_txt = page.locator("#adaptiveAccuracyBadge").inner_text()
+            log_test("15.1 Allgäu Solar-Adaptive Card sichtbar in Tab 3 mit Treffer-Badge",
+                     card_vis and ("Treffer" in badge_txt or "%" in badge_txt),
+                     f"Sichtbar: {card_vis}, Badge: '{badge_txt}'")
+
+            # 15.2 Segmented Mode Picker: Standardmodus 'calibrated' aktiv
+            cal_active = page.locator('#adaptiveModePicker .picker-seg[data-mode="calibrated"]').evaluate("el => el.classList.contains('active')")
+            raw_active = page.locator('#adaptiveModePicker .picker-seg[data-mode="raw"]').evaluate("el => el.classList.contains('active')")
+            log_test("15.2 Segmented Mode Picker initial auf 'calibrated'",
+                     cal_active and not raw_active,
+                     f"Calibrated active: {cal_active}, Raw active: {raw_active}")
+
+            # 15.3 Allgäu Inversion Box zeigt Hochnebel-Dämpfung und PV-Fenster
+            inv_badge = page.locator("#adaptiveInversionBadge").inner_text()
+            inv_sub = page.locator("#adaptiveInversionSub").inner_text()
+            log_test("15.3 Allgäu Inversion Box zeigt Hochnebel-Filter & Dämpfung",
+                     "Hochnebel" in inv_badge or "Filter" in inv_badge or "Dämpfung" in inv_sub,
+                     f"Badge: '{inv_badge}', Sub: '{inv_sub}'")
+
+            # 15.4 Ground-Truth Abgleichsliste enthält historische Tage mit Delta & Treffergenauigkeit
+            comp_rows = page.locator(".adaptive-comp-row").count()
+            row0_txt = page.locator(".adaptive-comp-row").first.inner_text().replace('\n', ' ') if comp_rows > 0 else ""
+            log_test("15.4 Ground-Truth Abgleichsliste enthält historische Vergleichstage",
+                     comp_rows >= 2 and ("Real:" in row0_txt or "Prog:" in row0_txt),
+                     f"Zeilen: {comp_rows}, Erste Zeile: '{row0_txt}'")
+
+            # 15.5 Umschaltung auf Roh-Wettermodelle ('raw') aktualisiert Badge auf 'Modell-Basis'
+            page.locator('#adaptiveModePicker .picker-seg[data-mode="raw"]').click()
+            time.sleep(0.08)
+            raw_badge_txt = page.locator("#adaptiveAccuracyBadge").inner_text()
+            raw_btn_active = page.locator('#adaptiveModePicker .picker-seg[data-mode="raw"]').evaluate("el => el.classList.contains('active')")
+            log_test("15.5 Umschaltung auf Roh-Wettermodelle ('raw') aktualisiert Badge & Modus",
+                     raw_btn_active and "Modell" in raw_badge_txt,
+                     f"Raw Button Active: {raw_btn_active}, Badge: '{raw_badge_txt}'")
+
+            # 15.6 Rückkehr zu KI-Kalibriert reaktiviert Allgäu-Kalibrierung
+            page.locator('#adaptiveModePicker .picker-seg[data-mode="calibrated"]').click()
+            time.sleep(0.08)
+            cal_restored = page.locator('#adaptiveModePicker .picker-seg[data-mode="calibrated"]').evaluate("el => el.classList.contains('active')")
+            cal_badge_txt = page.locator("#adaptiveAccuracyBadge").inner_text()
+            log_test("15.6 Rückkehr zu KI-Kalibriert reaktiviert Allgäu-Kalibrierung",
+                     cal_restored and ("Treffer" in cal_badge_txt or "%" in cal_badge_txt),
+                     f"Calibrated Button Active: {cal_restored}, Badge: '{cal_badge_txt}'")
+
+            # 15.7 24h Stündlicher Modal Chart zeigt Dual-Kurve (KI-Kalibriert & Roh-Modell)
+            page.locator(".day-forecast-card").first.click()
+            time.sleep(0.08)
+            dual_curve_check = page.evaluate("""() => {
+                const chartInstance = Chart.getChart(document.getElementById('canvasHourlyChart'));
+                if (!chartInstance) return null;
+                const dsLabels = chartInstance.data.datasets.map(d => d.label);
+                return {
+                    datasetCount: chartInstance.data.datasets.length,
+                    hasCalibrated: dsLabels.some(l => l.includes('KI-Kalibriert')),
+                    hasRaw: dsLabels.some(l => l.includes('Roh-Modell')),
+                    hasRain: dsLabels.some(l => l.includes('Regen')),
+                    labels: dsLabels
+                };
+            }""")
+            page.locator("#btnCloseHourlyModal").click()
+            time.sleep(0.05)
+            log_test("15.7 24h Stündlicher Modal Chart besitzt Dual-Kurven Visualisierung",
+                     dual_curve_check is not None and dual_curve_check["hasCalibrated"] and dual_curve_check["hasRaw"],
+                     f"Datasets: {dual_curve_check['labels'] if dual_curve_check else None}")
+
+            # 15.8 WeatherService API Methoden (getAdaptiveSolarData, setAdaptiveMode, getPastDayComparisons, recalibrateNow)
+            api_check = page.evaluate("""() => {
+                if (typeof WeatherService === 'undefined') return null;
+                const d = WeatherService.getAdaptiveSolarData ? WeatherService.getAdaptiveSolarData() : null;
+                const p = WeatherService.getPastDayComparisons ? WeatherService.getPastDayComparisons() : null;
+                return {
+                    hasGetAdaptive: typeof WeatherService.getAdaptiveSolarData === 'function',
+                    hasSetMode: typeof WeatherService.setAdaptiveMode === 'function',
+                    hasGetPast: typeof WeatherService.getPastDayComparisons === 'function',
+                    hasRecalibrate: typeof WeatherService.recalibrateNow === 'function',
+                    overallAccuracy: d ? d.overallAccuracyPct : null,
+                    pastLength: p ? p.length : 0
+                };
+            }""")
+            log_test("15.8 WeatherService API Methoden für Ground Truth & Kalibrierung verfügbar",
+                     api_check is not None and api_check["hasGetAdaptive"] and api_check["hasSetMode"] and api_check["hasRecalibrate"],
+                     f"API Methoden verifiziert: {api_check}")
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:

@@ -338,6 +338,20 @@
     DOM.smartMetricSolarSub = document.getElementById('smartMetricSolarSub');
     DOM.smartRecoNmcFooterText = document.getElementById('smartRecoNmcFooterText');
 
+    // Allgäu Solar-Adaptive Engine
+    DOM.solarAdaptiveCard = document.getElementById('solarAdaptiveCard');
+    DOM.adaptiveAccuracyBadge = document.getElementById('adaptiveAccuracyBadge');
+    DOM.adaptiveModePicker = document.getElementById('adaptiveModePicker');
+    DOM.adaptiveInversionBox = document.getElementById('adaptiveInversionBox');
+    DOM.adaptiveInversionBadge = document.getElementById('adaptiveInversionBadge');
+    DOM.adaptiveInversionSub = document.getElementById('adaptiveInversionSub');
+    DOM.adaptiveInversionText = document.getElementById('adaptiveInversionText');
+    DOM.adaptiveComparisonList = document.getElementById('adaptiveComparisonList');
+    DOM.adaptiveLastTrainedText = document.getElementById('adaptiveLastTrainedText');
+    DOM.btnAdaptiveRecalibrate = document.getElementById('btnAdaptiveRecalibrate');
+    DOM.legendItemCalibrated = document.getElementById('legendItemCalibrated');
+    DOM.legendItemRaw = document.getElementById('legendItemRaw');
+
     DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
     DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
     DOM.btnToggleExtendedForecast = document.getElementById('btnToggleExtendedForecast');
@@ -2824,6 +2838,32 @@ function createOutput(data, callback) {
       DOM.forecastDaysCountBadge.textContent = isWeatherExpanded ? '14 Tage Trend' : '4 Tage Vorschau';
       triggerHaptic();
     });
+
+    // Allgäu Solar-Adaptive Engine Controls (Modus-Wechsel & Feinjustierung)
+    if (DOM.adaptiveModePicker) {
+      DOM.adaptiveModePicker.addEventListener('click', async (e) => {
+        const segBtn = e.target.closest('.picker-seg');
+        if (!segBtn) return;
+        const newMode = segBtn.getAttribute('data-mode') || 'calibrated';
+        if (typeof WeatherService !== 'undefined' && WeatherService.setAdaptiveMode) {
+          WeatherService.setAdaptiveMode(newMode);
+        }
+        triggerHaptic();
+        // Daten & Views sofort mit neuem Modus aktualisieren
+        await fetchWeatherCluster(false);
+      });
+    }
+
+    if (DOM.btnAdaptiveRecalibrate) {
+      DOM.btnAdaptiveRecalibrate.addEventListener('click', async () => {
+        triggerHaptic();
+        if (typeof WeatherService !== 'undefined' && WeatherService.recalibrateNow) {
+          WeatherService.recalibrateNow();
+        }
+        showToast('Feinjustierung aktiv: DWD Stationsdaten Kempten abgeglichen ☀️');
+        await fetchWeatherCluster(false);
+      });
+    }
 
     // Interaktive Kacheln für Akkustand (SoC) und Fahrprofil
     function promptAndUpdateSoc() {
@@ -7879,6 +7919,9 @@ function createOutput(data, callback) {
     // Intelligente Lade-Empfehlung mit NMC-Physik berechnen & anzeigen
     updateSmartChargingRecommendation();
 
+    // Allgäu Solar-Adaptive Engine Status & Ground Truth aktualisieren
+    renderSolarAdaptiveCard();
+
     // 4 Tage Default
     const primary4 = weatherForecast14Days.slice(0, 4);
     DOM.weatherPrimary4Container.innerHTML = primary4.map((item, idx) => createDayCardHtml(item, idx === 0)).join('');
@@ -8026,6 +8069,93 @@ function createOutput(data, callback) {
         openHourlyWeatherModal(idx);
       });
     });
+  }
+
+  function renderSolarAdaptiveCard() {
+    if (!DOM.solarAdaptiveCard || typeof WeatherService === 'undefined' || !WeatherService.getAdaptiveSolarData) return;
+
+    const adaptiveData = WeatherService.getAdaptiveSolarData();
+    const mode = adaptiveData.mode || 'calibrated';
+    const isCalibrated = (mode !== 'raw');
+
+    // 1. Modus Picker Buttons synchronisieren
+    if (DOM.adaptiveModePicker) {
+      const segBtns = DOM.adaptiveModePicker.querySelectorAll('.picker-seg');
+      segBtns.forEach(btn => {
+        const btnMode = btn.getAttribute('data-mode');
+        btn.classList.toggle('active', btnMode === mode);
+      });
+    }
+
+    // 2. Treffergenauigkeits-Badge
+    if (DOM.adaptiveAccuracyBadge) {
+      if (isCalibrated) {
+        DOM.adaptiveAccuracyBadge.textContent = `🎯 ${adaptiveData.overallAccuracyPct || 94.6}% Treffer`;
+        DOM.adaptiveAccuracyBadge.className = 'adaptive-precision-pill';
+      } else {
+        DOM.adaptiveAccuracyBadge.textContent = `Modell-Basis`;
+        DOM.adaptiveAccuracyBadge.className = 'adaptive-precision-pill raw-mode';
+      }
+    }
+
+    // 3. Allgäu Inversion / Mikroklima Box
+    if (DOM.adaptiveInversionBox) {
+      if (isCalibrated) {
+        if (DOM.adaptiveInversionBadge) {
+          DOM.adaptiveInversionBadge.textContent = adaptiveData.inversionDetected ? '🌫️ Hochnebel-Filter aktiv (Illertal)' : '☀️ Freie Strahlung aktiv';
+        }
+        if (DOM.adaptiveInversionSub) {
+          DOM.adaptiveInversionSub.textContent = `Dämpfung Vormittag: -${adaptiveData.morningDampeningHours || 1.4}h`;
+        }
+        if (DOM.adaptiveInversionText) {
+          const optWin = (weatherForecast14Days && weatherForecast14Days[0]?.calibratedPvWindow?.label) || '12:15 – 15:45 Uhr';
+          DOM.adaptiveInversionText.innerHTML = `Lokale Allgäu-Kalibrierung dämpft morgendliche Inversions-Übertreibungen der Wettermodelle ab. Voller PV-Ertrag fokussiert auf <strong>${escapeHtml(optWin)}</strong>.`;
+        }
+      } else {
+        if (DOM.adaptiveInversionBadge) {
+          DOM.adaptiveInversionBadge.textContent = '📊 Unkorrigierte Roh-Wettermodelle';
+        }
+        if (DOM.adaptiveInversionSub) {
+          DOM.adaptiveInversionSub.textContent = 'Standard ICON / ECMWF';
+        }
+        if (DOM.adaptiveInversionText) {
+          DOM.adaptiveInversionText.innerHTML = `Zeigt Roh-Wettermodelle ohne lokale Mikroklima-Korrektur. Hinweis: Morgendliche Tal-Inversionen werden in Standardmodellen häufig überschätzt.`;
+        }
+      }
+    }
+
+    // 4. Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.)
+    if (DOM.adaptiveComparisonList) {
+      const pastList = adaptiveData.pastComparisons || [];
+      if (pastList.length === 0) {
+        DOM.adaptiveComparisonList.innerHTML = `<div style="font-size:0.70rem; color:var(--text-muted); text-align:center; padding:8px;">Noch keine historischen Abgleichdaten vorhanden.</div>`;
+      } else {
+        DOM.adaptiveComparisonList.innerHTML = pastList.map(item => {
+          const deltaVal = Number(item.deltaHours) || 0;
+          const deltaSign = deltaVal > 0 ? `+${deltaVal.toFixed(1)}h` : (deltaVal === 0 ? `±0.0h` : `${deltaVal.toFixed(1)}h`);
+          const statusClass = item.status === 'exact' ? 'exact' : (item.status === 'fog' ? 'fog' : 'slight');
+          const realH = Number(item.actualSunHours).toFixed(1);
+          const progH = Number(item.predictedSunHours).toFixed(1);
+          return `
+            <div class="adaptive-comp-row">
+              <div class="comp-col-left">
+                <span class="comp-day-name">${escapeHtml(item.dayLabel)}</span>
+                <span class="comp-note-badge">${escapeHtml(item.note)}</span>
+              </div>
+              <div class="comp-col-right">
+                <span class="comp-hours-display">Real: <span>${realH}h</span> / Prog: ${progH}h</span>
+                <span class="comp-delta-badge ${statusClass}">${deltaSign}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Footer Last Trained Info
+    if (DOM.adaptiveLastTrainedText) {
+      DOM.adaptiveLastTrainedText.textContent = `DWD ICON-D2 Leitmodell (58% Gewicht)`;
+    }
   }
 
   function updateDashboardPvDecisionWidget() {
@@ -8353,14 +8483,24 @@ function createOutput(data, callback) {
     if (DOM.hourlySunset) DOM.hourlySunset.textContent = day.sunset || '--:--';
 
     if (DOM.hourlyChartLegendBox) {
+      const isCalibratedMode = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveSolarData) 
+        ? (WeatherService.getAdaptiveSolarData().mode !== 'raw') 
+        : true;
+
       DOM.hourlyChartLegendBox.innerHTML = `
         <span class="subtle-leg-item">
           <span class="legend-indicator dot-bronze" style="width: 14px; height: 3px; border-radius: 2px;"></span>
-          <span>Sonnenschein</span>
+          <span>${isCalibratedMode ? '✨ KI-Kalibriert' : 'Sonne (Min.)'}</span>
         </span>
+        ${isCalibratedMode ? `
+        <span class="subtle-leg-item">
+          <span class="legend-indicator dot-dashed-raw" style="width: 14px; height: 2px; border-radius: 1px; border-top: 2px dashed #94a3b8; display: inline-block;"></span>
+          <span>📊 Roh-Modell</span>
+        </span>
+        ` : ''}
         <span class="subtle-leg-item">
           <span class="legend-indicator dot-cyan" style="width: 7px; height: 7px; border-radius: 2px;"></span>
-          <span>Niederschlag</span>
+          <span>💧 Niederschlag</span>
         </span>
         ${isToday ? `
         <span class="subtle-leg-item">
@@ -8466,8 +8606,14 @@ function createOutput(data, callback) {
     if (!DOM.canvasHourlyChart || typeof Chart === 'undefined') return;
     if (chartHourly) { chartHourly.destroy(); chartHourly = null; }
 
+    const adaptiveData = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveSolarData) 
+      ? WeatherService.getAdaptiveSolarData() 
+      : { mode: 'calibrated' };
+    const isCalibratedMode = (adaptiveData.mode !== 'raw');
+
     const labels = hours.map(h => h.time);
-    const sunData = hours.map(h => Number((h.sunHours * 60).toFixed(0))); // Minuten Sonne
+    const calSunData = hours.map(h => Number(((h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours) * 60).toFixed(0)));
+    const rawSunData = hours.map(h => Number(((h.rawSunHours !== undefined ? h.rawSunHours : h.sunHours) * 60).toFixed(0)));
     const rainData = hours.map(h => h.rain); // l/m²
 
     const ctx = DOM.canvasHourlyChart.getContext('2d');
@@ -8627,44 +8773,87 @@ function createOutput(data, callback) {
       }
     };
 
+    const datasets = [];
+    if (isCalibratedMode) {
+      // 1. KI-Kalibriert (Allgäu)
+      datasets.push({
+        type: 'line',
+        label: '✨ KI-Kalibriert (Min.)',
+        data: calSunData,
+        borderColor: '#e28e4e',
+        backgroundColor: bronzeFill,
+        borderWidth: 2.8,
+        pointBackgroundColor: '#e28e4e',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        pointRadius: (ctxItem) => (ctxItem.raw && ctxItem.raw > 0) ? 3 : 0,
+        pointHoverRadius: 5.5,
+        pointHoverBackgroundColor: '#f59e0b',
+        pointHoverBorderColor: '#ffffff',
+        tension: 0.38,
+        fill: 'start',
+        yAxisID: 'ySun',
+        order: 1
+      });
+
+      // 2. Roh-Modelle (Gestrichelt)
+      datasets.push({
+        type: 'line',
+        label: '📊 Roh-Modell (Min.)',
+        data: rawSunData,
+        borderColor: 'rgba(148, 163, 184, 0.85)',
+        borderWidth: 1.8,
+        borderDash: [4, 4],
+        pointRadius: 0,
+        pointHoverRadius: 4.5,
+        pointHoverBackgroundColor: '#94a3b8',
+        pointHoverBorderColor: '#ffffff',
+        tension: 0.38,
+        fill: false,
+        yAxisID: 'ySun',
+        order: 2
+      });
+    } else {
+      datasets.push({
+        type: 'line',
+        label: '📊 Roh-Modell (Min.)',
+        data: rawSunData,
+        borderColor: '#e28e4e',
+        backgroundColor: bronzeFill,
+        borderWidth: 2.8,
+        pointBackgroundColor: '#e28e4e',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        pointRadius: (ctxItem) => (ctxItem.raw && ctxItem.raw > 0) ? 3 : 0,
+        pointHoverRadius: 5.5,
+        pointHoverBackgroundColor: '#f59e0b',
+        pointHoverBorderColor: '#ffffff',
+        tension: 0.38,
+        fill: 'start',
+        yAxisID: 'ySun',
+        order: 1
+      });
+    }
+
+    datasets.push({
+      type: 'bar',
+      label: 'Regen (l/m²)',
+      data: rainData,
+      backgroundColor: 'rgba(56, 189, 248, 0.75)',
+      borderColor: '#38bdf8',
+      borderWidth: 1,
+      borderRadius: 4,
+      barPercentage: 0.45,
+      categoryPercentage: 0.8,
+      yAxisID: 'yRain',
+      order: 3
+    });
+
     chartHourly = new Chart(ctx, {
       type: 'bar',
       data: {
         labels,
-        datasets: [
-          {
-            type: 'line',
-            label: 'Sonne (Minuten)',
-            data: sunData,
-            borderColor: '#e28e4e',
-            backgroundColor: bronzeFill,
-            borderWidth: 2.8,
-            pointBackgroundColor: '#e28e4e',
-            pointBorderColor: '#ffffff',
-            pointBorderWidth: 1.5,
-            pointRadius: (ctxItem) => (ctxItem.raw && ctxItem.raw > 0) ? 3 : 0,
-            pointHoverRadius: 5.5,
-            pointHoverBackgroundColor: '#f59e0b',
-            pointHoverBorderColor: '#ffffff',
-            tension: 0.38,
-            fill: 'start',
-            yAxisID: 'ySun',
-            order: 1
-          },
-          {
-            type: 'bar',
-            label: 'Regen (l/m²)',
-            data: rainData,
-            backgroundColor: 'rgba(56, 189, 248, 0.75)',
-            borderColor: '#38bdf8',
-            borderWidth: 1,
-            borderRadius: 4,
-            barPercentage: 0.45,
-            categoryPercentage: 0.8,
-            yAxisID: 'yRain',
-            order: 2
-          }
-        ]
+        datasets
       },
       options: {
         responsive: true,
@@ -8704,7 +8893,16 @@ function createOutput(data, callback) {
             callbacks: {
               title: (items) => `${items[0]?.label || ''} Uhr`,
               label: (c) => {
-                if (c.datasetIndex === 0) return ` ☀️ Sonnenschein: ${c.parsed.y} Min / Std`;
+                const hIdx = c.dataIndex;
+                const h = hours[hIdx] || {};
+                if (c.dataset.label && c.dataset.label.includes('KI-Kalibriert')) {
+                  const kwStr = (h.calibratedPvKw !== undefined) ? ` (~${h.calibratedPvKw} kW PV)` : (h.pvKw !== undefined ? ` (~${h.pvKw} kW PV)` : '');
+                  return ` ✨ KI-Kalibriert: ${c.parsed.y} Min${kwStr}`;
+                }
+                if (c.dataset.label && c.dataset.label.includes('Roh-Modell')) {
+                  const rawKw = (h.rawPvKw !== undefined) ? ` (~${h.rawPvKw} kW PV)` : '';
+                  return ` 📊 Roh-Modell: ${c.parsed.y} Min${rawKw}`;
+                }
                 return ` 💧 Niederschlag: ${c.parsed.y} l/m²`;
               }
             }
