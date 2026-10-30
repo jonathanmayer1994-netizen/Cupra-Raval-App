@@ -8167,8 +8167,38 @@ function createOutput(data, callback) {
     const todayIconHtml = (today.icon && today.icon.includes('🌫'))
       ? `<span class="fog-rounded-icon" title="Nebel">🌫️</span>`
       : (today.icon || '☀️');
-    DOM.dashPvIconCircle.innerHTML = todayIconHtml;
-    DOM.dashRecoHeadline.innerHTML = `Heute: <strong>${today.sunshineHours}h Sonne</strong> <span class="rain-sub-stat">💧 ${today.rainMm} l/m²</span>`;
+    if (DOM.dashPvIconCircle) {
+      DOM.dashPvIconCircle.innerHTML = todayIconHtml;
+    }
+
+    const kiHours = (today.calibratedSunshineHours !== undefined)
+      ? Number(today.calibratedSunshineHours).toFixed(1)
+      : Number(today.sunshineHours || 0).toFixed(1);
+    const rawHours = (today.rawSunshineHours !== undefined)
+      ? Number(today.rawSunshineHours).toFixed(1)
+      : Number(today.sunshineHours || 0).toFixed(1);
+    const rainMm = (today.rainMm !== undefined) ? today.rainMm : 0;
+
+    const isRawActive = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveStore && WeatherService.getAdaptiveStore().activeMode === 'raw');
+
+    if (DOM.dashRecoHeadline) {
+      DOM.dashRecoHeadline.innerHTML = `
+        <span class="pv-stat-chip chip-ki ${!isRawActive ? 'active-glow' : ''}" title="Allgäu KI-Kalibriert (DWD &amp; Inversions-Dämpfung)">
+          <span class="chip-icon">✨</span>
+          <span class="chip-label">KI:</span>
+          <strong class="chip-val">${kiHours}h</strong>
+        </span>
+        <span class="pv-stat-chip chip-raw ${isRawActive ? 'active-glow' : ''}" title="Standard-Wettermodell (DWD ICON / ECMWF)">
+          <span class="chip-icon">📊</span>
+          <span class="chip-label">Modell:</span>
+          <strong class="chip-val">${rawHours}h</strong>
+        </span>
+        <span class="pv-stat-chip chip-rain" title="Niederschlag">
+          <span class="chip-icon">💧</span>
+          <strong class="chip-val">${rainMm} l/m²</strong>
+        </span>
+      `;
+    }
 
     if (today.decision === 'office') {
       DOM.dashRecoSubline.textContent = `PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`;

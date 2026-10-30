@@ -301,27 +301,40 @@
         </div>
 
         <!-- 2. DAZWISCHEN: PV-Bayrhofs Lade-Entscheidung Widget (Tippen öffnet Wetter & PV Tab!) -->
-        <div class="swift-glass-card dash-pv-reco-card clickable-card" id="dashPvPreviewCard" role="button" tabindex="0" title="Tippe hier für Wetter & 14-Tage PV-Planer">
-          <div class="dash-pv-card-left">
-            <div class="solar-icon-circle" id="dashPvIconCircle">☀️</div>
-            <div class="dash-reco-text-wrap">
-              <div class="dash-reco-title" id="dashRecoHeadline">PV-Prognose für Bayrhofs</div>
-              <div class="dash-reco-desc" id="dashRecoSubline">Lade Wetterdaten...</div>
+        <div class="swift-glass-card dash-pv-reco-card clickable-card" id="dashPvPreviewCard" role="button" tabindex="0" title="Tippe hier für Wetter &amp; 14-Tage PV-Planer">
+          <div class="dash-pv-top-row">
+            <div class="dash-pv-header-left">
+              <div class="solar-icon-circle mini" id="dashPvIconCircle">☀️</div>
+              <span class="dash-pv-title-text">SOLAR-PROGNOSE</span>
+            </div>
+            <div class="dash-pv-card-right">
+              <span class="reco-badge-pill" id="dashRecoBadge">🏢 Büro &amp; Laden</span>
+              <span class="reco-arrow-hint">›</span>
             </div>
           </div>
-          <div class="dash-pv-card-right">
-            <span class="reco-badge-pill" id="dashRecoBadge">Büro empfohlen</span>
-            <span class="reco-arrow-hint">›</span>
+
+          <div class="dash-pv-dual-stat-bar" id="dashRecoHeadline">
+            <span class="pv-stat-chip chip-ki">
+              <span class="chip-icon">✨</span>
+              <span class="chip-label">KI:</span>
+              <strong class="chip-val" id="dashPvKiVal">--</strong>
+            </span>
+            <span class="pv-stat-chip chip-raw">
+              <span class="chip-icon">📊</span>
+              <span class="chip-label">Modell:</span>
+              <strong class="chip-val" id="dashPvRawVal">--</strong>
+            </span>
+            <span class="pv-stat-chip chip-rain" id="dashPvRainStat">
+              <span class="chip-icon">💧</span>
+              <strong class="chip-val" id="dashPvRainVal">0 l/m²</strong>
+            </span>
           </div>
+
+          <div class="dash-reco-desc" id="dashRecoSubline">Lade Wetterdaten...</div>
         </div>
 
         <!-- 3. DARUNTER: Fließende, rahmenlose Fahrzeug-Hero-Bühne (nahtlos mit dem App-Hintergrund verbunden) -->
         <div class="hero-car-card compact-hero">
-          <div class="car-photo-container compact-photo">
-            <img src="./raval.png" alt="Cupra Raval Endurance Edition Dynamic" class="car-photo-img compact-img" id="dashboardCarImage">
-            <div class="car-bronze-spotlight"></div>
-          </div>
-
           <!-- Temperaturabhängige Winter-Reichweiten Kachel (Feature 4a) -->
           <div class="hero-range-banner clickable-card" id="heroRangeBanner" role="button" tabindex="0" title="Tippen für Details zu Wetter- und Kälteeinfluss auf den Akku">
             <div class="range-banner-left">

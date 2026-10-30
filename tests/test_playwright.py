@@ -205,9 +205,8 @@ def run_tests():
             log_test("2.2 Fahrleistung KPIs (Monat & Jahr)", len(month_dist) > 0 and len(year_dist) > 0, f"Monat: {month_dist} km, Jahr: {year_dist} km")
             log_test("2.3 Effizienz KPIs (Preis & Verbrauch)", len(avg_price) > 0 and len(avg_cons) > 0, f"Preis: {avg_price} €/kWh, Verbrauch: {avg_cons}")
 
-            hero_car_visible = page.locator("#dashboardCarImage").is_visible()
-            app_title_text = page.locator("#appHeaderTitle").inner_text()
-            log_test("2.4 Hero Fahrzeugbild", hero_car_visible, "Bild geladen")
+            car_image_count = page.locator("#dashboardCarImage").count()
+            log_test("2.4 Cupra-Bild entfernt (Dashboard Verschlankung)", car_image_count == 0, f"Cupra-Bild erfolgreich vom Dashboard entfernt (Count: {car_image_count})")
             
             car_meta_grid_count = page.locator(".car-meta-grid").count()
             log_test("2.5 Car Meta Grid entfernt", car_meta_grid_count == 0, f"Obere Info-Kapseln erfolgreich entfernt (Grid Count: {car_meta_grid_count})")
@@ -218,11 +217,17 @@ def run_tests():
             range_val = page.locator("#dashRangePrimary").inner_text()
             log_test("2.6 Intelligente Akkustand & Reichweite Kachel", hero_soc_visible and hero_range_visible and "%" in soc_val and "km" in range_val, f"Akkustand: {soc_val}, Reichweite: {range_val}")
 
+            # Test Wetter-Widget zeigt beide Werte (KI & Modell)
+            pv_card_text = page.locator("#dashPvPreviewCard").inner_text()
+            has_ki_val = "KI" in pv_card_text
+            has_raw_val = "Modell" in pv_card_text
+            log_test("2.7 Dashboard Wetter zeigt KI- und Modell-Prognose", has_ki_val and has_raw_val, f"Beide Werte vorhanden: KI={has_ki_val}, Modell={has_raw_val}")
+
             # Test Wetter-Widget Klick -> Navigiert zu Wetter-Tab
             page.locator("#dashPvPreviewCard").click()
             time.sleep(0.08)
             weather_tab_active = page.locator("#tab-weather").evaluate("el => el.classList.contains('active')")
-            log_test("2.7 Dashboard Wetter-Widget Klick öffnet Wetter-Tab", weather_tab_active, "Tab 3 erfolgreich aktiv")
+            log_test("2.8 Dashboard Wetter-Widget Klick öffnet Wetter-Tab", weather_tab_active, "Tab 3 erfolgreich aktiv")
 
             # Zurück zu Dashboard
             page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
