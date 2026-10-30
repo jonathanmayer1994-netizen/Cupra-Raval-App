@@ -2849,7 +2849,9 @@ function createOutput(data, callback) {
           WeatherService.setAdaptiveMode(newMode);
         }
         triggerHaptic();
-        // Daten & Views sofort mit neuem Modus aktualisieren
+        // Sofortiges reaktives UI-Update (0ms Feedback)
+        renderSolarAdaptiveCard();
+        // Daten & Forecast im Hintergrund mit neuem Modus aktualisieren
         await fetchWeatherCluster(false);
       });
     }

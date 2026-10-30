@@ -747,26 +747,24 @@
         <!-- ======================================================= -->
         <div class="swift-glass-card solar-adaptive-card" id="solarAdaptiveCard">
           <div class="adaptive-card-header">
-            <div class="adaptive-header-left">
+            <div class="adaptive-heading">
               <div class="adaptive-icon-glow">☀️</div>
               <div class="adaptive-title-group">
-                <div class="adaptive-title-row">
-                  <span class="adaptive-main-title">Allgäu Solar-Adaptive Engine</span>
-                  <span class="adaptive-precision-pill" id="adaptiveAccuracyBadge">🎯 94.6% Treffer</span>
-                </div>
-                <span class="adaptive-subtitle">Selbstlernender Abgleich: Prognose vs. Reale Sonnenstunden (DWD &amp; Open-Meteo)</span>
+                <span class="adaptive-main-title">Allgäu Solar-Adaptive Engine</span>
+                <span class="adaptive-subtitle">Selbstlernender Abgleich • DWD &amp; Open-Meteo</span>
               </div>
             </div>
+            <span class="adaptive-precision-pill" id="adaptiveAccuracyBadge">🎯 94.6% Treffer</span>
           </div>
 
           <!-- Modus-Umschalter: Segmented Control -->
           <div class="adaptive-mode-picker-wrapper">
             <div class="swift-segmented-picker adaptive-segmented" id="adaptiveModePicker" role="tablist" aria-label="Solar Prognose Modus">
               <button type="button" class="picker-seg active" data-mode="calibrated">
-                <span>✨ KI-Kalibriert (Allgäu)</span>
+                <span>✨ KI-Kalibriert</span>
               </button>
               <button type="button" class="picker-seg" data-mode="raw">
-                <span>📊 Roh-Wettermodelle</span>
+                <span>📊 Roh-Modelle</span>
               </button>
             </div>
           </div>
@@ -785,8 +783,8 @@
           <!-- Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.) -->
           <div class="adaptive-history-section">
             <div class="adaptive-history-header">
-              <span class="ah-title">HISTORISCHER GROUND-TRUTH ABGLEICH</span>
-              <span class="ah-hint" id="adaptiveHistoryHint">DWD-Messung vs. Modell</span>
+              <span class="ah-title">GROUND-TRUTH ABGLEICH</span>
+              <span class="ah-hint" id="adaptiveHistoryHint">DWD vs. Modell</span>
             </div>
             <div class="adaptive-comparison-list" id="adaptiveComparisonList">
               <!-- Dynamisch via JavaScript befüllt -->
@@ -797,7 +795,7 @@
           <div class="adaptive-footer-bar">
             <div class="adaptive-footer-item">
               <span class="af-dot"></span>
-              <span id="adaptiveLastTrainedText">Aktives Lernen: DWD ICON-D2 Leitmodell (58% Gewicht)</span>
+              <span id="adaptiveLastTrainedText">DWD ICON-D2 Leitmodell (58% Gewicht)</span>
             </div>
             <button type="button" class="btn-adaptive-recalibrate" id="btnAdaptiveRecalibrate" title="Jetzt mit neuesten Stationsdaten abgleichen">
               <span>Feinjustieren ⟳</span>

@@ -463,17 +463,17 @@
         deltaHours: 0.0,
         accuracyPct: 98.2,
         status: 'exact',
-        note: '✓ Exakte Vorhersage'
+        note: '✓ Exakte Prognose'
       },
       {
         dateStr: '2026-10-28',
-        dayLabel: 'Vorgestern (Mi, 28.10.)',
+        dayLabel: 'Mi, 28.10.',
         predictedSunHours: 1.4,
         actualSunHours: 0.0,
         deltaHours: -1.4,
         accuracyPct: 76.0,
         status: 'fog',
-        note: '🌫️ Vormittagsnebel gedämpft'
+        note: '🌫️ Nebel gedämpft'
       },
       {
         dateStr: '2026-10-27',
@@ -564,7 +564,7 @@
             deltaHours: delta,
             accuracyPct: accuracy,
             status: Math.abs(delta) <= 0.5 ? 'exact' : (delta < -1.0 ? 'fog' : 'slight'),
-            note: Math.abs(delta) <= 0.5 ? '✓ Exakte Vorhersage' : (delta < -1.0 ? '🌫️ Vormittagsnebel korrigiert' : '✓ Gute Annäherung')
+            note: Math.abs(delta) <= 0.5 ? '✓ Exakte Prognose' : (delta < -1.0 ? '🌫️ Nebel gedämpft' : '✓ Hohe Trefferquote')
           });
         }
         if (comparisons.length > 0) {
