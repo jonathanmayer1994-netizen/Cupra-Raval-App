@@ -755,67 +755,6 @@
           </div>
         </div>
 
-        <!-- ======================================================= -->
-        <!-- ALLGÄU SOLAR-ADAPTIVE ENGINE (GROUND TRUTH & LERNEN)    -->
-        <!-- ======================================================= -->
-        <div class="swift-glass-card solar-adaptive-card" id="solarAdaptiveCard">
-          <div class="adaptive-card-header">
-            <div class="adaptive-heading">
-              <div class="adaptive-icon-glow">☀️</div>
-              <div class="adaptive-title-group">
-                <span class="adaptive-main-title">Allgäu Solar-Adaptive Engine</span>
-                <span class="adaptive-subtitle">Selbstlernender Abgleich • DWD &amp; Open-Meteo</span>
-              </div>
-            </div>
-            <span class="adaptive-precision-pill" id="adaptiveAccuracyBadge">🎯 94.6% Treffer</span>
-          </div>
-
-          <!-- Modus-Umschalter: Segmented Control -->
-          <div class="adaptive-mode-picker-wrapper">
-            <div class="swift-segmented-picker adaptive-segmented" id="adaptiveModePicker" role="tablist" aria-label="Solar Prognose Modus">
-              <button type="button" class="picker-seg active" data-mode="calibrated">
-                <span>✨ KI-Kalibriert</span>
-              </button>
-              <button type="button" class="picker-seg" data-mode="raw">
-                <span>📊 Roh-Modelle</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Allgäu Inversion / Mikroklima Box -->
-          <div class="adaptive-inversion-box" id="adaptiveInversionBox">
-            <div class="inversion-status-row">
-              <span class="inversion-badge" id="adaptiveInversionBadge">🌫️ Hochnebel-Filter aktiv (Illertal)</span>
-              <span class="inversion-sub" id="adaptiveInversionSub">Dämpfung Vormittag: -1.4h</span>
-            </div>
-            <div class="inversion-explainer" id="adaptiveInversionText">
-              Lokale Allgäu-Kalibrierung dämpft morgendliche Inversions-Übertreibungen der Wettermodelle ab. Voller PV-Ertrag fokussiert auf <strong>12:15 – 15:45 Uhr</strong>.
-            </div>
-          </div>
-
-          <!-- Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.) -->
-          <div class="adaptive-history-section">
-            <div class="adaptive-history-header">
-              <span class="ah-title">GROUND-TRUTH ABGLEICH</span>
-              <span class="ah-hint" id="adaptiveHistoryHint">DWD vs. Modell</span>
-            </div>
-            <div class="adaptive-comparison-list" id="adaptiveComparisonList">
-              <!-- Dynamisch via JavaScript befüllt -->
-            </div>
-          </div>
-
-          <!-- Footer-Info mit Auto-Lern-Status -->
-          <div class="adaptive-footer-bar">
-            <div class="adaptive-footer-item">
-              <span class="af-dot"></span>
-              <span id="adaptiveLastTrainedText">DWD ICON-D2 Leitmodell (58% Gewicht)</span>
-            </div>
-            <button type="button" class="btn-adaptive-recalibrate" id="btnAdaptiveRecalibrate" title="Jetzt mit neuesten Stationsdaten abgleichen">
-              <span>Feinjustieren ⟳</span>
-            </button>
-          </div>
-        </div>
-
         <!-- 4-Tage Vorschau & 14-Tage Ausklappmenü -->
         <div class="forecast-section-title">
           <span class="forecast-title-text">PV-Ladefenster & Wetter</span>
@@ -842,6 +781,74 @@
           <span id="toggleForecastText">Weitere 10 Tage anzeigen (14-Tage Trend)</span>
           <span class="toggle-arrow" id="toggleForecastArrow">▾</span>
         </button>
+
+        <!-- ======================================================= -->
+        <!-- ALLGÄU SOLAR-ADAPTIVE ENGINE (GROUND TRUTH & LERNEN)    -->
+        <!-- ======================================================= -->
+        <div class="swift-glass-card solar-adaptive-card is-collapsed" id="solarAdaptiveCard">
+          <!-- Minimaler Schnellansicht-Header (Akkordeon-Trigger) -->
+          <button type="button" class="adaptive-accordion-header" id="adaptiveAccordionToggle" aria-expanded="false" aria-controls="adaptiveAccordionBody">
+            <div class="adaptive-heading">
+              <div class="adaptive-icon-glow">☀️</div>
+              <div class="adaptive-title-group">
+                <span class="adaptive-main-title">Allgäu Solar-Adaptive Engine</span>
+                <span class="adaptive-subtitle">Selbstlernender Abgleich • DWD &amp; Open-Meteo</span>
+              </div>
+            </div>
+            <div class="adaptive-header-right">
+              <span class="adaptive-precision-pill" id="adaptiveAccuracyBadge">🎯 94.6% Treffer</span>
+              <span class="adaptive-accordion-chevron" id="adaptiveAccordionChevron" aria-hidden="true">▾</span>
+            </div>
+          </button>
+
+          <!-- Ausklappbarer Detailbereich -->
+          <div class="adaptive-accordion-body" id="adaptiveAccordionBody">
+            <!-- Modus-Umschalter: Segmented Control -->
+            <div class="adaptive-mode-picker-wrapper">
+              <div class="swift-segmented-picker adaptive-segmented" id="adaptiveModePicker" role="tablist" aria-label="Solar Prognose Modus">
+                <button type="button" class="picker-seg active" data-mode="calibrated">
+                  <span>✨ KI-Kalibriert</span>
+                </button>
+                <button type="button" class="picker-seg" data-mode="raw">
+                  <span>📊 Roh-Modelle</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Allgäu Inversion / Mikroklima Box -->
+            <div class="adaptive-inversion-box" id="adaptiveInversionBox">
+              <div class="inversion-status-row">
+                <span class="inversion-badge" id="adaptiveInversionBadge">🌫️ Hochnebel-Filter aktiv (Illertal)</span>
+                <span class="inversion-sub" id="adaptiveInversionSub">Dämpfung Vormittag: -1.4h</span>
+              </div>
+              <div class="inversion-explainer" id="adaptiveInversionText">
+                Lokale Allgäu-Kalibrierung dämpft morgendliche Inversions-Übertreibungen der Wettermodelle ab. Voller PV-Ertrag fokussiert auf <strong>12:15 – 15:45 Uhr</strong>.
+              </div>
+            </div>
+
+            <!-- Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.) -->
+            <div class="adaptive-history-section">
+              <div class="adaptive-history-header">
+                <span class="ah-title">GROUND-TRUTH ABGLEICH</span>
+                <span class="ah-hint" id="adaptiveHistoryHint">DWD vs. Modell</span>
+              </div>
+              <div class="adaptive-comparison-list" id="adaptiveComparisonList">
+                <!-- Dynamisch via JavaScript befüllt -->
+              </div>
+            </div>
+
+            <!-- Footer-Info mit Auto-Lern-Status -->
+            <div class="adaptive-footer-bar">
+              <div class="adaptive-footer-item">
+                <span class="af-dot"></span>
+                <span id="adaptiveLastTrainedText">DWD ICON-D2 Leitmodell (58% Gewicht)</span>
+              </div>
+              <button type="button" class="btn-adaptive-recalibrate" id="btnAdaptiveRecalibrate" title="Jetzt mit neuesten Stationsdaten abgleichen">
+                <span>Feinjustieren ⟳</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
       </section>
 

@@ -340,6 +340,9 @@
 
     // Allgäu Solar-Adaptive Engine
     DOM.solarAdaptiveCard = document.getElementById('solarAdaptiveCard');
+    DOM.adaptiveAccordionToggle = document.getElementById('adaptiveAccordionToggle');
+    DOM.adaptiveAccordionChevron = document.getElementById('adaptiveAccordionChevron');
+    DOM.adaptiveAccordionBody = document.getElementById('adaptiveAccordionBody');
     DOM.adaptiveAccuracyBadge = document.getElementById('adaptiveAccuracyBadge');
     DOM.adaptiveModePicker = document.getElementById('adaptiveModePicker');
     DOM.adaptiveInversionBox = document.getElementById('adaptiveInversionBox');
@@ -2838,6 +2841,17 @@ function createOutput(data, callback) {
       DOM.forecastDaysCountBadge.textContent = isWeatherExpanded ? '14 Tage Trend' : '4 Tage Vorschau';
       triggerHaptic();
     });
+
+    // Allgäu Solar-Adaptive Engine Akkordeon (Schnellansicht / Aufklappen)
+    if (DOM.adaptiveAccordionToggle && DOM.solarAdaptiveCard) {
+      DOM.adaptiveAccordionToggle.addEventListener('click', (e) => {
+        // Falls auf Badge geklickt wurde, trotzdem öffnen/schließen
+        const isExpanded = DOM.solarAdaptiveCard.classList.toggle('is-expanded');
+        DOM.solarAdaptiveCard.classList.toggle('is-collapsed', !isExpanded);
+        DOM.adaptiveAccordionToggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        triggerHaptic();
+      });
+    }
 
     // Allgäu Solar-Adaptive Engine Controls (Modus-Wechsel & Feinjustierung)
     if (DOM.adaptiveModePicker) {

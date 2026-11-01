@@ -2191,18 +2191,29 @@ body {
    ALLGÄU SOLAR-ADAPTIVE ENGINE (GROUND TRUTH & ONLINE LERNEN)
    ========================================================================== */
 .solar-adaptive-card {
-  padding: 15px 15px 13px 15px;
   background: radial-gradient(130% 120% at 0% 0%, rgba(28, 36, 52, 0.78) 0%, rgba(10, 16, 24, 0.90) 100%);
   border: 1px solid rgba(245, 158, 11, 0.32);
   border-radius: var(--radius-lg);
   box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 12px;
   position: relative;
   overflow: hidden;
-  margin-top: 2px;
-  margin-bottom: 4px;
+  margin-top: 10px;
+  margin-bottom: 6px;
+  transition: padding 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.solar-adaptive-card.is-collapsed {
+  padding: 12px 14px;
+  gap: 0;
+}
+
+.solar-adaptive-card.is-expanded {
+  padding: 14px 14px 14px 14px;
+  gap: 12px;
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.65), 0 0 20px -8px rgba(245, 158, 11, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .solar-adaptive-card::before {
@@ -2216,11 +2227,97 @@ body {
   opacity: 0.85;
 }
 
-.adaptive-card-header {
+/* Accordion Trigger Header (Minimal Schnellansicht) */
+.adaptive-accordion-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease;
+}
+
+.adaptive-accordion-header:active {
+  opacity: 0.82;
+}
+
+.adaptive-accordion-header:focus-visible {
+  outline: 2px solid var(--cupra-bronze);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.adaptive-heading {
+  display: flex;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.adaptive-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.adaptive-accordion-chevron {
+  font-size: 0.90rem;
+  line-height: 1;
+  color: var(--cupra-bronze-light);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(226, 142, 78, 0.12);
+  border: 1px solid rgba(226, 142, 78, 0.28);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.solar-adaptive-card.is-expanded .adaptive-accordion-chevron {
+  transform: rotate(180deg);
+  background: rgba(226, 142, 78, 0.24);
+  border-color: rgba(226, 142, 78, 0.55);
+  color: #ffffff;
+}
+
+/* Accordion Collapsible Detail Body */
+.adaptive-accordion-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  overflow: hidden;
+  transition: max-height 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease, visibility 0.38s;
+}
+
+.solar-adaptive-card.is-collapsed .adaptive-accordion-body {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.solar-adaptive-card.is-expanded .adaptive-accordion-body {
+  max-height: 1200px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .adaptive-heading {
@@ -2546,15 +2643,27 @@ body {
 }
 
 @media (max-width: 380px) {
-  .solar-adaptive-card {
+  .solar-adaptive-card.is-collapsed {
+    padding: 10px 10px;
+    gap: 0;
+  }
+  .solar-adaptive-card.is-expanded {
     padding: 12px 10px 10px 10px;
     gap: 10px;
   }
-  .adaptive-card-header {
+  .adaptive-accordion-header {
     gap: 6px;
   }
   .adaptive-heading {
     gap: 8px;
+  }
+  .adaptive-header-right {
+    gap: 5px;
+  }
+  .adaptive-accordion-chevron {
+    width: 20px;
+    height: 20px;
+    font-size: 0.82rem;
   }
   .adaptive-icon-glow {
     width: 30px;

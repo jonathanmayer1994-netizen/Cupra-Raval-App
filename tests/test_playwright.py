@@ -1432,17 +1432,37 @@ def run_tests():
                      geofence_cache_check["matched"] is not None and "Bayrhof" in geofence_cache_check["matched"],
                      f"Match: {geofence_cache_check['matched']}, Dist: {geofence_cache_check['distance']}")
 
-            # --- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth & KI-Kalibrierung) ---
-            print("\n--- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth & KI-Kalibrierung) ---")
+            # --- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth, Akkordeon & KI-Kalibrierung) ---
+            print("\n--- SUITE 15: Allgäu Solar-Adaptive Engine (Ground Truth, Akkordeon & KI-Kalibrierung) ---")
 
-            # 15.1 Allgäu Solar-Adaptive Card sichtbar in Tab 3 mit Icon & Trefferquote-Badge
+            # 15.1 Allgäu Solar-Adaptive Card unterhalb der Wettervorhersage platziert & initial eingeklappt
             page.locator('.dock-tab-btn[data-tab="weather"]').click()
             time.sleep(0.08)
             card_vis = page.locator("#solarAdaptiveCard").is_visible()
             badge_txt = page.locator("#adaptiveAccuracyBadge").inner_text()
-            log_test("15.1 Allgäu Solar-Adaptive Card sichtbar in Tab 3 mit Treffer-Badge",
-                     card_vis and ("Treffer" in badge_txt or "%" in badge_txt),
-                     f"Sichtbar: {card_vis}, Badge: '{badge_txt}'")
+            
+            # Überprüfen, ob Solar-Adaptive Card NACH der Wettervorhersage im DOM platziert ist
+            order_correct = page.evaluate("""() => {
+                const forecast = document.getElementById('weatherPrimary4Container');
+                const engine = document.getElementById('solarAdaptiveCard');
+                if (!forecast || !engine) return false;
+                return Boolean(forecast.compareDocumentPosition(engine) & Node.DOCUMENT_POSITION_FOLLOWING);
+            }""")
+
+            # Überprüfen, ob Card initial im minimalen Schnellansicht-Akkordeon (eingeklappt) startet
+            initially_collapsed = page.locator("#solarAdaptiveCard").evaluate("el => el.classList.contains('is-collapsed') && !el.classList.contains('is-expanded')")
+            log_test("15.1 Allgäu Solar-Adaptive Card unter Wettervorhersage platziert & initial eingeklappt",
+                     card_vis and ("Treffer" in badge_txt or "%" in badge_txt) and order_correct and initially_collapsed,
+                     f"Sichtbar: {card_vis}, Badge: '{badge_txt}', Nach Wetter: {order_correct}, Eingeklappt: {initially_collapsed}")
+
+            # 15.1b Akkordeon per Klick auf Schnellansicht-Header aufklappen
+            page.locator("#adaptiveAccordionToggle").click()
+            time.sleep(0.08)
+            now_expanded = page.locator("#solarAdaptiveCard").evaluate("el => el.classList.contains('is-expanded') && !el.classList.contains('is-collapsed')")
+            aria_expanded = page.locator("#adaptiveAccordionToggle").get_attribute("aria-expanded")
+            log_test("15.1b Akkordeon öffnet sich bei Klick mit Details",
+                     now_expanded and aria_expanded == "true",
+                     f"Expanded: {now_expanded}, aria-expanded: '{aria_expanded}'")
 
             # 15.2 Segmented Mode Picker: Standardmodus 'calibrated' aktiv
             cal_active = page.locator('#adaptiveModePicker .picker-seg[data-mode="calibrated"]').evaluate("el => el.classList.contains('active')")
@@ -1482,6 +1502,14 @@ def run_tests():
             log_test("15.6 Rückkehr zu KI-Kalibriert reaktiviert Allgäu-Kalibrierung",
                      cal_restored and ("Treffer" in cal_badge_txt or "%" in cal_badge_txt),
                      f"Calibrated Button Active: {cal_restored}, Badge: '{cal_badge_txt}'")
+
+            # 15.6b Akkordeon schließt sich bei weiterem Klick wieder sauber
+            page.locator("#adaptiveAccordionToggle").click()
+            time.sleep(0.08)
+            collapsed_again = page.locator("#solarAdaptiveCard").evaluate("el => el.classList.contains('is-collapsed') && !el.classList.contains('is-expanded')")
+            log_test("15.6b Akkordeon schließt sich per Klick wieder zur Schnellansicht",
+                     collapsed_again,
+                     f"Wieder eingeklappt: {collapsed_again}")
 
             # 15.7 24h Stündlicher Modal Chart zeigt Dual-Kurve (KI-Kalibriert & Roh-Modell)
             page.locator(".day-forecast-card").first.click()
