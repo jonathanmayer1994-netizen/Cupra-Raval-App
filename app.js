@@ -6164,10 +6164,117 @@ function createOutput(data, callback) {
     });
   }
 
+  let isOlderChargesExpanded = false;
+
+  function renderSessionCardHtml(s, isRecent = false) {
+    const d = new Date(s.date);
+    const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const deltaInfo = getSessionDelta(s);
+    const locObj = appData.settings.locations.find(l => l.name === s.location);
+    const locIcon = locObj ? locObj.icon : '📍';
+    const batteryCap = (appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
+    const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
+    const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
+    const netKwh = (deltaSoc > 0) ? ((deltaSoc / 100) * batteryCap) : 0;
+    const eff = (hasBothSoc && netKwh > 0 && s.kwh > 0) ? Math.min(100, Math.round((netKwh / s.kwh) * 1000) / 10) : null;
+    const isBayrhof = isBayrhofsLocation(s.location);
+    const isPaid = isSessionPaid(s);
+    const compInfo = getSessionCompleteness(s);
+    const isComplete = compInfo.isComplete;
+    const kwhDisplay = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '' && Number(s.kwh) > 0) ? Number(s.kwh).toFixed(1) : '--';
+    const costDisplay = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? `${formatDe(s.totalCost)} €` : '-- €';
+    const priceDisplay = (s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? `${Number(s.pricePerKwh).toFixed(2).replace('.', ',')} €/kWh` : '-- €/kWh';
+
+    return `
+      <div class="swift-glass-card session-swift-card ${isRecent ? 'is-recent' : 'is-older'} ${!isComplete ? 'is-incomplete' : ''}" data-id="${s.id}">
+        <div class="session-top-meta session-header-block">
+          <div class="session-header-row">
+            <div class="session-timestamp">
+              <span class="timestamp-calendar-icon">📅</span>
+              <span>${dStr}</span>
+              <span class="timestamp-separator">•</span>
+              <span class="timestamp-clock-val">${tStr}</span>
+            </div>
+            <div class="session-header-tags session-badges-wrap">
+              <span class="loc-badge-item" title="${escapeHtml(s.location)}">${locIcon} ${escapeHtml(s.location)}</span>
+              ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
+              ${!isComplete ? `<span class="session-incomplete-badge" title="Noch unvollständig erfasst – fehlend: ${escapeHtml(compInfo.missing.join(', '))}">⏳ Unvollständig</span>` : ''}
+            </div>
+          </div>
+
+          ${(isBayrhof || hasBothSoc || (s.soc !== undefined && s.soc !== null)) ? `
+          <div class="session-status-row">
+            <div class="session-status-left">
+              ${isBayrhof
+                ? (isPaid
+                    ? '<span class="pay-status-badge paid" title="Über Sammelabrechnung abgerechnet">✓ Bezahlt</span>'
+                    : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>')
+                : '<span class="pay-status-badge direct" title="Direkt bei Ladung bezahlt">✓ Direkt bezahlt</span>'}
+            </div>
+            <div class="session-status-right">
+              ${hasBothSoc
+                ? `<span class="soc-badge-item">
+                    <span class="soc-icon">🔋</span>
+                    <span class="soc-range">${s.socStart}% <span class="soc-arrow">→</span> ${s.soc}%</span>
+                    <span class="soc-delta">+${deltaSoc}%</span>
+                   </span>`
+                : ((s.soc !== undefined && s.soc !== null)
+                    ? `<span class="soc-badge-item">
+                        <span class="soc-icon">🔋</span>
+                        <span class="soc-range">${s.soc}%</span>
+                       </span>`
+                    : '')}
+            </div>
+          </div>` : ''}
+        </div>
+
+        <div class="session-primary-row">
+          <div class="session-kwh-display">
+            <span class="session-kwh-val">${kwhDisplay}</span>
+            <span class="session-kwh-unit">kWh</span>
+          </div>
+          <div class="session-cost-val">${costDisplay}</div>
+        </div>
+
+        <div class="session-details-row">
+          <div>
+            <span>📍 ${s.odometer ? s.odometer.toLocaleString('de-DE') + ' km' : 'km nicht notiert'}</span>
+            ${deltaInfo.deltaKm > 0 ? `<span class="delta-tag-live" style="margin-left: 6px;">+${deltaInfo.deltaKm} km</span>` : ''}
+          </div>
+          <div>
+            <span>${priceDisplay}</span>
+            ${deltaInfo.consumption ? `<span style="margin-left: 4px; color: var(--cupra-bronze-light);">(${deltaInfo.consumption.toFixed(1)} kWh/100)</span>` : ''}
+          </div>
+        </div>
+
+        ${eff !== null ? `
+        <div style="font-size:0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 6px;">
+          ⚡️ Wirkungsgrad: <strong style="color: var(--cupra-bronze-bright);">${eff.toFixed(1).replace('.', ',')}%</strong> (Netto: +${netKwh.toFixed(1).replace('.', ',')} kWh im Akku)
+        </div>` : ''}
+
+        ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
+
+        <div class="session-actions-bar">
+          ${isBayrhof ? `
+            <button class="btn-card-action btn-pay-toggle ${isPaid ? 'paid' : 'unpaid'}" data-id="${s.id}" title="${isPaid ? 'Als noch offen markieren' : 'Als bezahlt markieren'}">
+              ${isPaid ? '↩️ Als offen' : '💶 Als bezahlt'}
+            </button>
+          ` : ''}
+          <button class="btn-card-action btn-edit-charge" data-id="${s.id}">${!isComplete ? '✏️ Ergänzen' : '✏️ Bearbeiten'}</button>
+          <button class="btn-card-action danger btn-del-charge" data-id="${s.id}">🗑️ Löschen</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderChargesStream() {
     if (!DOM.chargesStreamContainer) return;
 
     let list = [...appData.sessions];
+    // Stets chronologisch absteigend (neueste zuerst)
+    list.sort((a, b) => new Date(b.date) - new Date(a.date));
+
     if (activeChargingFilter === 'unpaid_bayrhofs') {
       list = list.filter(s => isBayrhofsLocation(s.location) && !s.paid);
     } else if (activeChargingFilter !== 'all') {
@@ -6185,107 +6292,134 @@ function createOutput(data, callback) {
       return;
     }
 
-    DOM.chargesStreamContainer.innerHTML = list.map(s => {
-      const d = new Date(s.date);
-      const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const tStr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-      const deltaInfo = getSessionDelta(s);
-      const locObj = appData.settings.locations.find(l => l.name === s.location);
-      const locIcon = locObj ? locObj.icon : '📍';
-      const batteryCap = (appData.vehicle && appData.vehicle.batteryKwh) || 52.0;
-      const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
-      const deltaSoc = hasBothSoc ? (s.soc - s.socStart) : 0;
-      const netKwh = (deltaSoc > 0) ? ((deltaSoc / 100) * batteryCap) : 0;
-      const eff = (hasBothSoc && netKwh > 0 && s.kwh > 0) ? Math.min(100, Math.round((netKwh / s.kwh) * 1000) / 10) : null;
-      const isBayrhof = isBayrhofsLocation(s.location);
-      const isPaid = isSessionPaid(s);
-      const compInfo = getSessionCompleteness(s);
-      const isComplete = compInfo.isComplete;
-      const kwhDisplay = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '' && Number(s.kwh) > 0) ? Number(s.kwh).toFixed(1) : '--';
-      const costDisplay = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? `${formatDe(s.totalCost)} €` : '-- €';
-      const priceDisplay = (s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? `${Number(s.pricePerKwh).toFixed(2).replace('.', ',')} €/kWh` : '-- €/kWh';
+    // Top 2 Ladevorgänge immer groß mit allen Infos
+    const topSessions = list.slice(0, 2);
+    const olderSessions = list.slice(2);
 
-      return `
-        <div class="swift-glass-card session-swift-card ${!isComplete ? 'is-incomplete' : ''}" data-id="${s.id}">
-          <div class="session-top-meta session-header-block">
-            <div class="session-header-row">
-              <div class="session-timestamp">
-                <span class="timestamp-calendar-icon">📅</span>
-                <span>${dStr}</span>
-                <span class="timestamp-separator">•</span>
-                <span class="timestamp-clock-val">${tStr}</span>
-              </div>
-              <div class="session-header-tags session-badges-wrap">
-                <span class="loc-badge-item" title="${escapeHtml(s.location)}">${locIcon} ${escapeHtml(s.location)}</span>
-                ${s.pvSurplus ? '<span class="pv-badge-item">☀️ PV</span>' : ''}
-                ${!isComplete ? `<span class="session-incomplete-badge" title="Noch unvollständig erfasst – fehlend: ${escapeHtml(compInfo.missing.join(', '))}">⏳ Unvollständig</span>` : ''}
-              </div>
+    const topHtml = topSessions.map(s => renderSessionCardHtml(s, true)).join('');
+
+    let olderHtml = '';
+    if (olderSessions.length > 0) {
+      const olderTotalKwh = olderSessions.reduce((sum, s) => sum + (Number(s.kwh) || 0), 0);
+      const olderTotalCost = olderSessions.reduce((sum, s) => sum + (Number(s.totalCost) || 0), 0);
+      const collapsedSubtitle = `${olderSessions.length} ältere${olderSessions.length === 1 ? 'r' : ''} Ladevorgang${olderSessions.length === 1 ? '' : 'e'} • ${olderTotalKwh.toFixed(1).replace('.', ',')} kWh • ${formatDe(olderTotalCost)} €`;
+
+      const compactRowsHtml = olderSessions.map(s => {
+        const d = new Date(s.date);
+        const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+        const locObj = appData.settings.locations.find(l => l.name === s.location);
+        const locIcon = locObj ? locObj.icon : '📍';
+        const isBayrhof = isBayrhofsLocation(s.location);
+        const isPaid = isSessionPaid(s);
+        const kwhDisplay = (s.kwh !== null && s.kwh !== undefined && s.kwh !== '' && Number(s.kwh) > 0) ? `${Number(s.kwh).toFixed(1)} kWh` : '-- kWh';
+        const costDisplay = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '') ? `${formatDe(s.totalCost)} €` : '-- €';
+        const hasBothSoc = (s.socStart !== undefined && s.socStart !== null && s.soc !== undefined && s.soc !== null);
+        const socPill = hasBothSoc ? `<span class="compact-soc-pill">${s.socStart}% → ${s.soc}%</span>` : '';
+        const payPill = isBayrhof
+          ? `<span class="compact-pay-pill ${isPaid ? 'paid' : 'unpaid'}">${isPaid ? '✓ Bezahlt' : '⏳ Offen'}</span>`
+          : `<span class="compact-pay-pill direct">✓ Direkt</span>`;
+
+        return `
+          <div class="compact-charge-row" data-id="${s.id}" title="Tippen für vollständige Kartendetails">
+            <div class="compact-row-left">
+              <span class="compact-date">${dStr}</span>
+              <span class="compact-loc">${locIcon} ${escapeHtml(s.location)}</span>
             </div>
-
-            ${(isBayrhof || hasBothSoc || (s.soc !== undefined && s.soc !== null)) ? `
-            <div class="session-status-row">
-              <div class="session-status-left">
-                ${isBayrhof
-                  ? (isPaid
-                      ? '<span class="pay-status-badge paid" title="Über Sammelabrechnung abgerechnet">✓ Bezahlt</span>'
-                      : '<span class="pay-status-badge unpaid" title="Wird über spätere Sammelabrechnung bezahlt">⏳ Offen</span>')
-                  : '<span class="pay-status-badge direct" title="Direkt bei Ladung bezahlt">✓ Direkt bezahlt</span>'}
-              </div>
-              <div class="session-status-right">
-                ${hasBothSoc
-                  ? `<span class="soc-badge-item">
-                      <span class="soc-icon">🔋</span>
-                      <span class="soc-range">${s.socStart}% <span class="soc-arrow">→</span> ${s.soc}%</span>
-                      <span class="soc-delta">+${deltaSoc}%</span>
-                     </span>`
-                  : ((s.soc !== undefined && s.soc !== null)
-                      ? `<span class="soc-badge-item">
-                          <span class="soc-icon">🔋</span>
-                          <span class="soc-range">${s.soc}%</span>
-                         </span>`
-                      : '')}
-              </div>
-            </div>` : ''}
+            <div class="compact-row-right">
+              ${socPill}
+              <span class="compact-kwh">${kwhDisplay}</span>
+              <span class="compact-cost">${costDisplay}</span>
+              ${payPill}
+            </div>
           </div>
+        `;
+      }).join('');
 
-          <div class="session-primary-row">
-            <div class="session-kwh-display">
-              <span class="session-kwh-val">${kwhDisplay}</span>
-              <span class="session-kwh-unit">kWh</span>
-            </div>
-            <div class="session-cost-val">${costDisplay}</div>
-          </div>
+      const olderFullCardsHtml = olderSessions.map(s => renderSessionCardHtml(s, false)).join('');
 
-          <div class="session-details-row">
-            <div>
-              <span>📍 ${s.odometer ? s.odometer.toLocaleString('de-DE') + ' km' : 'km nicht notiert'}</span>
-              ${deltaInfo.deltaKm > 0 ? `<span class="delta-tag-live" style="margin-left: 6px;">+${deltaInfo.deltaKm} km</span>` : ''}
+      olderHtml = `
+        <div class="swift-glass-card older-charges-card ${isOlderChargesExpanded ? 'is-expanded' : 'is-collapsed'}" id="olderChargesAccordion">
+          <button type="button" class="older-charges-header" id="olderChargesToggle" aria-expanded="${isOlderChargesExpanded ? 'true' : 'false'}" aria-controls="olderChargesExpandedView">
+            <div class="older-heading">
+              <div class="older-icon-glow">📜</div>
+              <div class="older-title-group">
+                <span class="older-main-title">Frühere Ladevorgänge</span>
+                <span class="older-subtitle" id="olderChargesSubtitle" data-collapsed-text="${escapeHtml(collapsedSubtitle)}">${isOlderChargesExpanded ? 'Alle Kartendetails geöffnet • Tippen zum Zuklappen' : escapeHtml(collapsedSubtitle)}</span>
+              </div>
             </div>
-            <div>
-              <span>${priceDisplay}</span>
-              ${deltaInfo.consumption ? `<span style="margin-left: 4px; color: var(--cupra-bronze-light);">(${deltaInfo.consumption.toFixed(1)} kWh/100)</span>` : ''}
+            <div class="older-header-right">
+              <span class="older-count-badge">${olderSessions.length} Archiv</span>
+              <span class="older-chevron" aria-hidden="true">▾</span>
+            </div>
+          </button>
+
+          <!-- Kompakte Schnellansicht im zugeklappten Zustand -->
+          <div class="older-compact-view" id="olderChargesCompactView">
+            <div class="older-compact-list">
+              ${compactRowsHtml}
+            </div>
+            <div class="older-expand-prompt">
+              <span>👇 Antippen für vollständige Kartendetails &amp; Aktionen</span>
             </div>
           </div>
 
-          ${eff !== null ? `
-          <div style="font-size:0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 6px;">
-            ⚡️ Wirkungsgrad: <strong style="color: var(--cupra-bronze-bright);">${eff.toFixed(1).replace('.', ',')}%</strong> (Netto: +${netKwh.toFixed(1).replace('.', ',')} kWh im Akku)
-          </div>` : ''}
-
-          ${s.notes ? `<div class="session-note-text">„${escapeHtml(s.notes)}“</div>` : ''}
-
-          <div class="session-actions-bar">
-            ${isBayrhof ? `
-              <button class="btn-card-action btn-pay-toggle ${isPaid ? 'paid' : 'unpaid'}" data-id="${s.id}" title="${isPaid ? 'Als noch offen markieren' : 'Als bezahlt markieren'}">
-                ${isPaid ? '↩️ Als offen' : '💶 Als bezahlt'}
-              </button>
-            ` : ''}
-            <button class="btn-card-action btn-edit-charge" data-id="${s.id}">${!isComplete ? '✏️ Ergänzen' : '✏️ Bearbeiten'}</button>
-            <button class="btn-card-action danger btn-del-charge" data-id="${s.id}">🗑️ Löschen</button>
+          <!-- Vollständige Detail-Karten im aufgeklappten Zustand -->
+          <div class="older-expanded-view" id="olderChargesExpandedView">
+            <div class="older-full-cards-stream">
+              ${olderFullCardsHtml}
+            </div>
+            <button type="button" class="btn-collapse-older" id="btnCollapseOlderCharges">
+              <span>Frühere Ladungen wieder einklappen ▴</span>
+            </button>
           </div>
         </div>
       `;
-    }).join('');
+    }
+
+    DOM.chargesStreamContainer.innerHTML = topHtml + olderHtml;
+
+    function setOlderAccordionState(expanded) {
+      isOlderChargesExpanded = expanded;
+      const acc = document.getElementById('olderChargesAccordion');
+      if (!acc) return;
+      acc.classList.toggle('is-expanded', isOlderChargesExpanded);
+      acc.classList.toggle('is-collapsed', !isOlderChargesExpanded);
+      const toggleBtn = acc.querySelector('#olderChargesToggle');
+      if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', isOlderChargesExpanded ? 'true' : 'false');
+      }
+      const sub = acc.querySelector('#olderChargesSubtitle');
+      if (sub) {
+        sub.textContent = isOlderChargesExpanded
+          ? 'Alle Kartendetails geöffnet • Tippen zum Zuklappen'
+          : sub.getAttribute('data-collapsed-text') || '';
+      }
+      triggerHaptic();
+    }
+
+    const toggleBtn = DOM.chargesStreamContainer.querySelector('#olderChargesToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        setOlderAccordionState(!isOlderChargesExpanded);
+      });
+    }
+
+    const compactView = DOM.chargesStreamContainer.querySelector('#olderChargesCompactView');
+    if (compactView) {
+      compactView.addEventListener('click', () => {
+        setOlderAccordionState(true);
+      });
+    }
+
+    const collapseBtn = DOM.chargesStreamContainer.querySelector('#btnCollapseOlderCharges');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setOlderAccordionState(false);
+        const acc = document.getElementById('olderChargesAccordion');
+        if (acc) acc.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
 
     DOM.chargesStreamContainer.querySelectorAll('.btn-pay-toggle').forEach(btn => {
       btn.addEventListener('click', () => handleToggleSessionPaid(btn.getAttribute('data-id')));

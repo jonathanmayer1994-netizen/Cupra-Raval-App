@@ -435,6 +435,26 @@ def run_tests():
             has_soc_badge = "🔋" in card_html and ("82%" in card_html or "20%" in card_html or "71%" in card_html)
             log_test("5.1b Ladekarte zeigt Akkustand (SoC) & Wirkungsgrad", has_soc_badge, f"Akkustand-Badge in Ladekarte vorhanden (Gefunden: {has_soc_badge})")
 
+            # 5.1c: Die neuesten 2 Ladevorgänge werden groß dargestellt, ältere im Akkordeon
+            recent_count = page.locator(".session-swift-card.is-recent").count()
+            has_accordion = page.locator("#olderChargesAccordion").count() > 0
+            log_test("5.1c Neueste 2 Ladevorgänge groß gerendert & Archiv-Akkordeon vorhanden",
+                     recent_count <= 2 and (has_accordion or stream_cards_count <= 2),
+                     f"Recent (groß): {recent_count}, Accordion vorhanden: {has_accordion}")
+
+            # 5.1d: Archiv-Akkordeon öffnet und schließt sich bei Klick
+            if has_accordion:
+                is_init_collapsed = page.locator("#olderChargesAccordion").evaluate("el => el.classList.contains('is-collapsed')")
+                page.locator("#olderChargesToggle").click()
+                time.sleep(0.08)
+                is_now_expanded = page.locator("#olderChargesAccordion").evaluate("el => el.classList.contains('is-expanded')")
+                page.locator("#btnCollapseOlderCharges").click()
+                time.sleep(0.08)
+                is_re_collapsed = page.locator("#olderChargesAccordion").evaluate("el => el.classList.contains('is-collapsed')")
+                log_test("5.1d Ladehistorie-Akkordeon öffnet und schließt sich einwandfrei",
+                         is_init_collapsed and is_now_expanded and is_re_collapsed,
+                         f"Init collapsed: {is_init_collapsed}, Expanded: {is_now_expanded}, Re-collapsed: {is_re_collapsed}")
+
             # Test Filter Chips (Nur Ladeorte & Alle, kein 'Nur PV')
             pv_chip_count = page.locator('.chip-filter[data-filter="pv"]').count()
             log_test("5.2 Filterchip 'Nur PV' entfernt", pv_chip_count == 0, f"PV-Chip Count: {pv_chip_count}")
@@ -1153,6 +1173,9 @@ def run_tests():
             # Ältere Session öffnen & editieren (auf soc = 42%)
             page.locator('.dock-tab-btn[data-tab="charging"]').click()
             time.sleep(0.08)
+            if page.locator("#olderChargesAccordion.is-collapsed").count() > 0:
+                page.locator("#olderChargesToggle").click()
+                time.sleep(0.08)
             old_card = page.locator(".session-swift-card", has_text="Playwright Older Session")
             if old_card.count() > 0:
                 old_card.locator(".btn-edit-charge").click()
