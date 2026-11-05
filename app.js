@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v8';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v9';
   const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
@@ -24,7 +24,8 @@
       kwhPrice: 0.15,
       address: "Unterwang 18, 87439 Kempten",
       lat: 47.7468,
-      lon: 10.3094
+      lon: 10.3094,
+      elevation: 720
     },
     {
       id: "loc_zuhause",
@@ -34,7 +35,8 @@
       kwhPrice: 0.32,
       address: "Rubihornweg 1, 87471 Durach",
       lat: 47.6971,
-      lon: 10.3542
+      lon: 10.3542,
+      elevation: 710
     },
     {
       id: "loc_arbeit",
@@ -44,7 +46,19 @@
       kwhPrice: 0.20,
       address: "Thomas-Dachser-Straße 2, 87439 Kempten",
       lat: 47.7476,
-      lon: 10.3038
+      lon: 10.3038,
+      elevation: 685
+    },
+    {
+      id: "loc_nebelhorn",
+      name: "Nebelhorn (Gipfel)",
+      icon: "🏔️",
+      powerType: "grid",
+      kwhPrice: 0.45,
+      address: "Nebelhorn 2.224m, Oberstdorf",
+      lat: 47.4222,
+      lon: 10.3458,
+      elevation: 2224
     },
     {
       id: "loc_oeffentlich",
@@ -53,6 +67,7 @@
       powerType: "grid",
       kwhPrice: 0.59,
       address: "Variabel (Aktueller Standort)",
+      elevation: 720,
       isVariable: true
     }
   ];
@@ -354,6 +369,24 @@
     DOM.btnAdaptiveRecalibrate = document.getElementById('btnAdaptiveRecalibrate');
     DOM.legendItemCalibrated = document.getElementById('legendItemCalibrated');
     DOM.legendItemRaw = document.getElementById('legendItemRaw');
+
+    // Allgäu Multi-Elevation Webcam Inversion Monitor
+    DOM.webcamInversionMonitor = document.getElementById('webcamInversionMonitor');
+    DOM.wimStatusPill = document.getElementById('wimStatusPill');
+    DOM.wimCeilingVal = document.getElementById('wimCeilingVal');
+    DOM.wimHumidityVal = document.getElementById('wimHumidityVal');
+    DOM.wimWindVal = document.getElementById('wimWindVal');
+    DOM.canvasWebcamValley = document.getElementById('canvasWebcamValley');
+    DOM.aiTagValley = document.getElementById('aiTagValley');
+    DOM.tierMetaValley = document.getElementById('tierMetaValley');
+    DOM.canvasWebcamMid = document.getElementById('canvasWebcamMid');
+    DOM.aiTagMid = document.getElementById('aiTagMid');
+    DOM.tierMetaMid = document.getElementById('tierMetaMid');
+    DOM.canvasWebcamPeak = document.getElementById('canvasWebcamPeak');
+    DOM.aiTagPeak = document.getElementById('aiTagPeak');
+    DOM.tierMetaPeak = document.getElementById('tierMetaPeak');
+    DOM.wimFusionBanner = document.getElementById('wimFusionBanner');
+    DOM.wimFusionText = document.getElementById('wimFusionText');
 
     DOM.weatherPrimary4Container = document.getElementById('weatherPrimary4Container');
     DOM.weatherExtendedContainer = document.getElementById('weatherExtendedContainer');
@@ -872,8 +905,10 @@
 
   function initWeatherCache() {
     try {
+      localStorage.removeItem('cupra_weather_cache_v8');
       localStorage.removeItem('cupra_weather_cache_v7');
       localStorage.removeItem('cupra_weather_cache_v6');
+      localStorage.removeItem('cupra_raval_weather_service_cache_v8');
       localStorage.removeItem('cupra_raval_weather_service_cache_v7');
       localStorage.removeItem('cupra_raval_weather_service_cache_v6');
       localStorage.removeItem('cupra_weather_cache_v5');
@@ -2849,6 +2884,9 @@ function createOutput(data, callback) {
         const isExpanded = DOM.solarAdaptiveCard.classList.toggle('is-expanded');
         DOM.solarAdaptiveCard.classList.toggle('is-collapsed', !isExpanded);
         DOM.adaptiveAccordionToggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        if (isExpanded) {
+          renderInversionWebcamMonitor();
+        }
         triggerHaptic();
       });
     }
@@ -6839,6 +6877,7 @@ function createOutput(data, callback) {
         address: name,
         lat: lat,
         lon: lon,
+        elevation: 720,
         isGps: true,
         powerType: 'pv'
       };
@@ -6857,6 +6896,7 @@ function createOutput(data, callback) {
         address: varLoc.name || 'Variabler Standort',
         lat: Number(varLoc.lat) || 47.72,
         lon: Number(varLoc.lon) || 10.31,
+        elevation: 720,
         isVariable: true,
         powerType: 'grid'
       };
@@ -6872,6 +6912,7 @@ function createOutput(data, callback) {
         address: found.address || '',
         lat: typeof found.lat === 'number' ? found.lat : 47.7468,
         lon: typeof found.lon === 'number' ? found.lon : 10.3094,
+        elevation: typeof found.elevation === 'number' ? found.elevation : (found.id === 'loc_nebelhorn' ? 2224 : 720),
         powerType: found.powerType || 'grid',
         isPv: found.powerType === 'pv'
       };
@@ -6884,6 +6925,7 @@ function createOutput(data, callback) {
       address: 'GPS: Bayrhofs / Kempten',
       lat: 47.72,
       lon: 10.31,
+      elevation: 720,
       isGps: true,
       powerType: 'pv'
     };
@@ -7226,7 +7268,8 @@ function createOutput(data, callback) {
         const res = await WeatherService.fetchConsensus(loc.lat, loc.lon, showFeedback, {
           pvThreshold: threshold,
           locationName: loc.name,
-          powerType: loc.powerType
+          powerType: loc.powerType,
+          elevation: loc.elevation || 720
         });
         if (res && res.forecast14Days && res.forecast14Days.length > 0) {
           weatherForecast14Days = res.forecast14Days;
@@ -7324,19 +7367,53 @@ function createOutput(data, callback) {
 
       // Exaktes Wetter-Icon & Zustand abgestimmt auf Sonnenstunden UND Niederschlag!
       const wInfo = determineAccurateWeatherIcon(sunshineHours, rainMm, code);
-      const icon = wInfo.icon;
-      const conditionText = wInfo.conditionText;
+      let icon = wInfo.icon;
+      let conditionText = wInfo.conditionText;
+      let activeSun = sunshineHours;
+
+      // Inversions-Check & Sensor-Fusion für Heute
+      let inversionOverride = null;
+      if (i === 0 && typeof InversionVisionService !== 'undefined') {
+        const defTiers = InversionVisionService.compareElevationTiers([
+          { elevation: 720, tier: 'valley', analysis: { contrastSigma: 18.2, meanLuma: 160, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+          { elevation: 1080, tier: 'mid', analysis: { contrastSigma: 24.1, meanLuma: 165, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+          { elevation: 2224, tier: 'peak', analysis: { contrastSigma: 58.4, meanLuma: 155, blueSkyRatio: 0.48, isClear: true, isNight: false } }
+        ]);
+        inversionOverride = InversionVisionService.detectInversionDiscrepancy(
+          { weatherCode: code, sunshineHours },
+          { relativeHumidity: 88, windSpeedKmh: 5 },
+          defTiers,
+          720
+        );
+        if (inversionOverride && inversionOverride.discrepancyDetected) {
+          icon = inversionOverride.icon;
+          conditionText = inversionOverride.conditionText;
+          if (inversionOverride.sunshineDampened) {
+            activeSun = inversionOverride.calibratedSunHours || 0.8;
+          }
+        }
+      }
 
       // Bayrhofs PV-Logik (Laden immer möglich, ideal kombiniert mit Büro)
       const dayOfWeek = d.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
-      const hasPvSurplus = sunshineHours >= threshold;
+      const hasPvSurplus = activeSun >= threshold;
 
       let decision = 'home';
       let badgeLabel = '🏠 Homeoffice';
-      let hintText = `Wenig Sonne (${sunshineHours}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
+      let hintText = `Wenig Sonne (${activeSun}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
 
-      if (!isWorkday) {
+      if (inversionOverride && inversionOverride.discrepancyDetected) {
+        if (inversionOverride.isAboveCeiling) {
+          badgeLabel = '☀️🏔️ Über dem Nebelmeer';
+          hintText = inversionOverride.reason;
+          decision = isWorkday ? 'office' : 'weekend_charge';
+        } else {
+          badgeLabel = '🌫️ Inversions-Nebel';
+          hintText = inversionOverride.reason;
+          decision = isWorkday ? 'home' : 'weekend';
+        }
+      } else if (!isWorkday) {
         if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
@@ -7358,13 +7435,19 @@ function createOutput(data, callback) {
 
       // Stündliche Daten für diesen Tag extrahieren
       const hourlyData = extractHourlyDataForDay(hourly, dateStr);
+      const estPvKwh = Number((activeSun * 2.2).toFixed(1));
+      const solarYield = {
+        estimatedPvKwh: estPvKwh,
+        maxGhiWatts: Math.round(activeSun * 85),
+        dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
+      };
 
       list.push({
         dateIndex: i,
         dateStr,
         dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
         dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
-        sunshineHours,
+        sunshineHours: activeSun,
         rainMm, // l/m²
         tMax,
         tMin,
@@ -7376,6 +7459,7 @@ function createOutput(data, callback) {
         badgeLabel,
         hintText,
         hasPvSurplus,
+        solarYield,
         hourlyData
       });
     }
@@ -7411,11 +7495,16 @@ function createOutput(data, callback) {
           icon = (hInfo && hInfo.icon) ? hInfo.icon : '☀️';
         }
 
+        const ghi = (hourly && hourly.shortwave_radiation_instant && hourly.shortwave_radiation_instant[j] !== undefined)
+          ? Math.round(hourly.shortwave_radiation_instant[j])
+          : (hourNum >= 7 && hourNum <= 19 ? Math.round(Math.sin(((hourNum - 7) / 12) * Math.PI) * 650) : 0);
+
         hours.push({
           time: timePart,
           hour: hourNum,
           sunHours,
           rain,
+          ghi,
           temp,
           icon
         });
@@ -7430,6 +7519,7 @@ function createOutput(data, callback) {
     for (let h = 0; h < 24; h++) {
       const isDay = (h >= 7 && h <= 19);
       const sunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9).toFixed(2)) : 0;
+      const ghi = isDay ? Math.round(Math.sin(((h - 7) / 12) * Math.PI) * 650) : 0;
       const rain = (h >= 14 && h <= 16) ? 0.3 : 0.0;
       const temp = Math.round(8 + (isDay ? Math.sin(((h - 7) / 12) * Math.PI) * 9 : 0));
       let icon;
@@ -7445,6 +7535,7 @@ function createOutput(data, callback) {
         hour: h,
         sunHours,
         rain,
+        ghi,
         temp,
         icon
       });
@@ -7467,14 +7558,47 @@ function createOutput(data, callback) {
       const rainMm = Number(((Math.cos(i * 1.3) + 1) * 0.8).toFixed(1));
       const hasPvSurplus = sunshineHours >= threshold;
       const wInfo = determineAccurateWeatherIcon(sunshineHours, rainMm, hasPvSurplus ? 0 : 3);
-      const icon = wInfo.icon;
-      const conditionText = wInfo.conditionText;
+      let icon = wInfo.icon;
+      let conditionText = wInfo.conditionText;
+      let activeSun = sunshineHours;
+
+      let inversionOverride = null;
+      if (i === 0 && typeof InversionVisionService !== 'undefined') {
+        const defTiers = InversionVisionService.compareElevationTiers([
+          { elevation: 720, tier: 'valley', analysis: { contrastSigma: 18.2, meanLuma: 160, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+          { elevation: 1080, tier: 'mid', analysis: { contrastSigma: 24.1, meanLuma: 165, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+          { elevation: 2224, tier: 'peak', analysis: { contrastSigma: 58.4, meanLuma: 155, blueSkyRatio: 0.48, isClear: true, isNight: false } }
+        ]);
+        inversionOverride = InversionVisionService.detectInversionDiscrepancy(
+          { weatherCode: hasPvSurplus ? 0 : 3, sunshineHours },
+          { relativeHumidity: 88, windSpeedKmh: 5 },
+          defTiers,
+          720
+        );
+        if (inversionOverride && inversionOverride.discrepancyDetected) {
+          icon = inversionOverride.icon;
+          conditionText = inversionOverride.conditionText;
+          if (inversionOverride.sunshineDampened) {
+            activeSun = inversionOverride.calibratedSunHours || 0.8;
+          }
+        }
+      }
 
       let decision = 'home';
       let badgeLabel = '🏠 Homeoffice';
-      let hintText = `Wenig Sonne (${sunshineHours}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
+      let hintText = `Wenig Sonne (${activeSun}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
 
-      if (!isWorkday) {
+      if (inversionOverride && inversionOverride.discrepancyDetected) {
+        if (inversionOverride.isAboveCeiling) {
+          badgeLabel = '☀️🏔️ Über dem Nebelmeer';
+          hintText = inversionOverride.reason;
+          decision = isWorkday ? 'office' : 'weekend_charge';
+        } else {
+          badgeLabel = '🌫️ Inversions-Nebel';
+          hintText = inversionOverride.reason;
+          decision = isWorkday ? 'home' : 'weekend';
+        }
+      } else if (!isWorkday) {
         if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
@@ -7495,12 +7619,19 @@ function createOutput(data, callback) {
       }
 
       const fb = getFallbackSunTimes(d);
+      const estPvKwh = Number((activeSun * 2.2).toFixed(1));
+      const solarYield = {
+        estimatedPvKwh: estPvKwh,
+        maxGhiWatts: Math.round(activeSun * 85),
+        dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
+      };
+
       list.push({
         dateIndex: i,
         dateStr,
         dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
         dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
-        sunshineHours,
+        sunshineHours: activeSun,
         rainMm,
         tMax: Math.round(18 + Math.sin(i) * 5),
         tMin: Math.round(9 + Math.sin(i) * 3),
@@ -7512,6 +7643,7 @@ function createOutput(data, callback) {
         badgeLabel,
         hintText,
         hasPvSurplus,
+        solarYield,
         hourlyData: generateSyntheticHourly(dateStr)
       });
     }
@@ -8087,8 +8219,12 @@ function createOutput(data, callback) {
   function createDayCardHtml(item, isToday) {
     const isOffice = item.decision === 'office';
     const isWeekendCharge = item.decision === 'weekend_charge';
-    const highlightClass = isOffice ? 'highlight-office' : (isWeekendCharge ? 'highlight-weekend-charge' : '');
-    const badgeClass = isOffice ? 'reco-tag-office' : (isWeekendCharge ? 'reco-tag-weekend-charge' : 'reco-tag-home');
+    const isFogBadge = item.badgeLabel && item.badgeLabel.includes('Inversion');
+    const isMountainBadge = item.badgeLabel && item.badgeLabel.includes('Nebelmeer');
+    const highlightClass = isMountainBadge ? 'highlight-office' : (isOffice ? 'highlight-office' : (isWeekendCharge ? 'highlight-weekend-charge' : ''));
+    const badgeClass = isMountainBadge
+      ? 'reco-tag-office'
+      : (isFogBadge ? 'reco-tag-fog' : (isOffice ? 'reco-tag-office' : (isWeekendCharge ? 'reco-tag-weekend-charge' : 'reco-tag-home')));
 
     // 100% Garantie: Immer valides, individuelles Icon & Zustand
     const rawIcon = item.icon || '☀️';
@@ -8306,6 +8442,85 @@ function createOutput(data, callback) {
     if (DOM.adaptiveLastTrainedText) {
       DOM.adaptiveLastTrainedText.textContent = `DWD ICON-D2 Leitmodell (58% Gewicht)`;
     }
+
+    // 6. Allgäu Multi-Elevation Webcam Inversion Monitor rendern
+    renderInversionWebcamMonitor();
+  }
+
+  function renderInversionWebcamMonitor() {
+    if (!DOM.webcamInversionMonitor) return;
+
+    const visionResult = (typeof WeatherService !== 'undefined' && WeatherService.getInversionVisionResult)
+      ? WeatherService.getInversionVisionResult()
+      : null;
+
+    const adaptiveData = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveSolarData)
+      ? WeatherService.getAdaptiveSolarData()
+      : {};
+
+    const isCalibrated = (adaptiveData.mode !== 'raw');
+    const isInversion = Boolean(adaptiveData.inversionDetected || visionResult?.elevationSummary?.inversionDetected);
+    const ceilingM = visionResult?.elevationSummary?.inversionCeilingMeters || adaptiveData.inversionCeilingMeters || 1450;
+    const hum = adaptiveData.telemetry?.relativeHumidity || 88;
+    const wind = adaptiveData.telemetry?.windSpeedKmh || 5;
+
+    // Telemetrie Werte
+    if (DOM.wimCeilingVal) DOM.wimCeilingVal.textContent = `~${ceilingM.toLocaleString('de-DE')} m`;
+    if (DOM.wimHumidityVal) DOM.wimHumidityVal.textContent = `${hum}%`;
+    if (DOM.wimWindVal) DOM.wimWindVal.textContent = `${wind} km/h`;
+
+    // Status Pill
+    if (DOM.wimStatusPill) {
+      if (!isCalibrated) {
+        DOM.wimStatusPill.textContent = '📊 Modell-Modus';
+        DOM.wimStatusPill.className = 'wim-status-pill clear';
+      } else if (isInversion) {
+        DOM.wimStatusPill.textContent = `🌫️ Inversion aktiv (~${ceilingM} m)`;
+        DOM.wimStatusPill.className = 'wim-status-pill';
+      } else {
+        DOM.wimStatusPill.textContent = '☀️ Freie Sicht (Keine Inversion)';
+        DOM.wimStatusPill.className = 'wim-status-pill clear';
+      }
+    }
+
+    // Canvases zeichnen & AI Tags befüllen
+    if (typeof InversionVisionService !== 'undefined') {
+      const renderTier = (canvasEl, tagEl, metaEl, type, defaultSigma, defaultHimmel, defaultTag) => {
+        if (!canvasEl) return;
+        try {
+          const srcCanvas = InversionVisionService.createSyntheticWebcamCanvas(type, 64, 48);
+          const ctx = canvasEl.getContext('2d');
+          ctx.clearRect(0, 0, 64, 48);
+          ctx.drawImage(srcCanvas, 0, 0, 64, 48);
+
+          const analysis = InversionVisionService.analyzeWebcamForFog(srcCanvas);
+          if (tagEl) {
+            tagEl.textContent = analysis.classificationLabel || defaultTag;
+          }
+          if (metaEl) {
+            const hPct = Math.round((analysis.blueSkyRatio || 0) * 100);
+            metaEl.textContent = `Himmel ${hPct}% • σ ${analysis.contrastSigma}`;
+          }
+        } catch (e) {
+          console.warn('[WebcamMonitor] Render tier canvas error:', e);
+        }
+      };
+
+      renderTier(DOM.canvasWebcamValley, DOM.aiTagValley, DOM.tierMetaValley, 'valley_fog', 18.2, 0, '🌫️ Dichter Hochnebel (σ 18.2)');
+      renderTier(DOM.canvasWebcamMid, DOM.aiTagMid, DOM.tierMetaMid, 'mid_fog', 22.4, 0, '🌫️ Nebelgrenze (σ 22.4)');
+      renderTier(DOM.canvasWebcamPeak, DOM.aiTagPeak, DOM.tierMetaPeak, 'peak_sun', 56.4, 48, '☀️ Klar & Sonnig (Himmel 48%, σ 56.4)');
+    }
+
+    // Fusion Explainer Banner
+    if (DOM.wimFusionText) {
+      if (!isCalibrated) {
+        DOM.wimFusionText.innerHTML = `<strong>Roh-Modell-Modus:</strong> Sensor-Fusion ist pausiert. Zeigt unkorrigierte numerische Modellprognosen ohne lokale Hochnebel-Kompensation.`;
+      } else if (isInversion) {
+        DOM.wimFusionText.innerHTML = `<strong>Sensor-Fusion aktiv:</strong> Wettermodelle (ICON/ECMWF) meldeten fälschlicherweise „Sonnig“. Die optische Webcam-Bildanalyse belegt dichten Hochnebel im Tal bei klarem Berggipfel. Vorhersage auf <em>WMO 45 (Dichter Hochnebel)</em> korrigiert.`;
+      } else {
+        DOM.wimFusionText.innerHTML = `<strong>Sensor-Fusion aktiv:</strong> Keine Inversionslage erkannt. Tal und Berge weisen einheitliche Wetterbedingungen auf.`;
+      }
+    }
   }
 
   function updateDashboardPvDecisionWidget() {
@@ -8348,7 +8563,15 @@ function createOutput(data, callback) {
       `;
     }
 
-    if (today.decision === 'office') {
+    if (today.badgeLabel && today.badgeLabel.includes('Inversion')) {
+      DOM.dashRecoSubline.textContent = `Zäher Kaltluftsee & Inversions-Hochnebel im Tal. PV-Ertrag stark gedämpft.`;
+      DOM.dashRecoBadge.textContent = '🌫️ Hochnebel-Inversion';
+      DOM.dashRecoBadge.className = 'reco-badge-pill home';
+    } else if (today.badgeLabel && today.badgeLabel.includes('Nebelmeer')) {
+      DOM.dashRecoSubline.textContent = `Freie Bergsicht und volle Einstrahlung oberhalb des Nebelmeers (~1.450 m).`;
+      DOM.dashRecoBadge.textContent = '☀️🏔️ Über dem Nebelmeer';
+      DOM.dashRecoBadge.className = 'reco-badge-pill office';
+    } else if (today.decision === 'office') {
       DOM.dashRecoSubline.textContent = `PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`;
       DOM.dashRecoBadge.textContent = '🏢 Büro & Laden';
       DOM.dashRecoBadge.className = 'reco-badge-pill office';

@@ -2702,7 +2702,7 @@ body {
 }
 
 .solar-adaptive-card.is-expanded .adaptive-accordion-body {
-  max-height: 1200px;
+  max-height: 2400px;
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -2854,6 +2854,297 @@ body {
 
 .inversion-explainer strong {
   color: #fbbf24;
+}
+
+/* ==========================================================================
+   KI-WEBCAM INVERSIONS-MONITOR & MULTI-ELEVATION CV
+   ========================================================================== */
+.webcam-inversion-monitor {
+  background: linear-gradient(135deg, rgba(16, 24, 38, 0.90) 0%, rgba(20, 18, 28, 0.85) 100%);
+  border: 1px solid rgba(226, 142, 78, 0.28);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.wim-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wim-title-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wim-title {
+  font-size: clamp(0.70rem, 2.9vw, 0.74rem);
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #fbbf24;
+  text-transform: uppercase;
+}
+
+.wim-subtitle {
+  font-size: clamp(0.58rem, 2.5vw, 0.62rem);
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.wim-status-pill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.20);
+  border: 1px solid rgba(245, 158, 11, 0.50);
+  color: #fef08a;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.20);
+}
+
+.wim-status-pill.clear {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #e0f2fe;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.20);
+}
+
+.wim-telemetry-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.32);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.wim-tele-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: clamp(0.58rem, 2.5vw, 0.64rem);
+  color: #94a3b8;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wim-tele-icon {
+  font-size: 0.74rem;
+  flex-shrink: 0;
+}
+
+.wim-tele-label {
+  color: #94a3b8;
+}
+
+.wim-tele-val {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.webcam-tiers-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.webcam-tier-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.webcam-tier-card:hover {
+  border-color: rgba(226, 142, 78, 0.45);
+}
+
+.tier-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tier-badge {
+  font-size: 0.54rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.tier-badge.valley {
+  background: rgba(148, 163, 184, 0.20);
+  border: 1px solid rgba(148, 163, 184, 0.40);
+  color: #e2e8f0;
+}
+
+.tier-badge.mid {
+  background: rgba(192, 132, 252, 0.20);
+  border: 1px solid rgba(192, 132, 252, 0.40);
+  color: #f3e8ff;
+}
+
+.tier-badge.peak {
+  background: rgba(251, 191, 36, 0.22);
+  border: 1px solid rgba(251, 191, 36, 0.50);
+  color: #fef08a;
+}
+
+.tier-station-name {
+  font-size: clamp(0.58rem, 2.4vw, 0.64rem);
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.webcam-preview-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0b1118;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.webcam-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
+  display: block;
+}
+
+.webcam-ai-tag {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  right: 3px;
+  font-size: clamp(0.50rem, 2.1vw, 0.56rem);
+  font-weight: 700;
+  padding: 2px 4px;
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.webcam-ai-tag.tag-fog {
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(203, 213, 225, 0.35);
+  color: #e2e8f0;
+}
+
+.webcam-ai-tag.tag-transition {
+  background: rgba(30, 27, 75, 0.88);
+  border: 1px solid rgba(192, 132, 252, 0.40);
+  color: #f3e8ff;
+}
+
+.webcam-ai-tag.tag-sun {
+  background: rgba(20, 24, 38, 0.88);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fef08a;
+}
+
+.tier-meta-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: clamp(0.50rem, 2.1vw, 0.55rem);
+  color: #94a3b8;
+  min-width: 0;
+  gap: 2px;
+}
+
+.tier-meta-left {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tier-meta-right {
+  font-weight: 700;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.wim-fusion-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(226, 142, 78, 0.12);
+  border: 1px solid rgba(226, 142, 78, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.wim-fusion-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.wim-fusion-text {
+  font-size: clamp(0.60rem, 2.6vw, 0.65rem);
+  color: #f1f5f9;
+  line-height: 1.35;
+}
+
+.wim-fusion-text strong {
+  color: #fbbf24;
+}
+
+.wim-fusion-text em {
+  font-style: normal;
+  color: #fef08a;
+  font-weight: 700;
+}
+
+@media (max-width: 360px) {
+  .webcam-tiers-grid {
+    gap: 5px;
+  }
+  .webcam-tier-card {
+    padding: 4px;
+    gap: 4px;
+  }
+  .webcam-ai-tag {
+    font-size: 0.48rem;
+    padding: 1px 2px;
+  }
 }
 
 .adaptive-history-section {
@@ -3445,6 +3736,18 @@ body {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.reco-tag-fog {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.38);
   white-space: nowrap;
   letter-spacing: -0.01em;
 }

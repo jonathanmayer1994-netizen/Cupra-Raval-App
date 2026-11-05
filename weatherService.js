@@ -21,8 +21,10 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const CACHE_KEY = 'cupra_raval_weather_service_cache_v8';
+  const CACHE_KEY = 'cupra_raval_weather_service_cache_v9';
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten Cache wie angefordert
+
+  let latestInversionResult = null;
 
   // Fallback-Sonnenzeiten für Kempten/Allgäu (Bayrhofs Region)
   const FALLBACK_SUN_TIMES = [
@@ -138,10 +140,10 @@
 
   // =========================================================================
   // QUELLE 1: OPEN-METEO API (DWD ICON-D2 & ECMWF IFS)
-  // GHI Globalstrahlung (W/m²), Regenrisiko (%) & 14-Tage Prognose + 3 Tage Ground Truth
+  // GHI Globalstrahlung (W/m²), Telemetrie (Feuchte, Wind), 14-Tage Prognose + 3 Tage Ground Truth
   // =========================================================================
   async function fetchOpenMeteo(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&past_days=3&forecast_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
     const resp = await fetchWithTimeout(url, {}, 6500);
     if (!resp.ok) throw new Error(`Open-Meteo HTTP ${resp.status}`);
     const json = await resp.json();
@@ -524,12 +526,13 @@
   // =========================================================================
   // SYNTHESE: 5 QUELLEN ZU KONSOLIDIERTER PROGNOSE VERBINDEN
   // =========================================================================
-  function synthesizeForecast(openMeteo, brightSkyList, dwdAlerts, geoSphere, metNorway, threshold = 4.5) {
+  function synthesizeForecast(openMeteo, brightSkyList, dwdAlerts, geoSphere, metNorway, threshold = 4.5, options = {}) {
     const list = [];
     const daily = openMeteo ? openMeteo.daily : null;
     const hourly = openMeteo ? openMeteo.hourly : null;
     const adaptiveStore = getAdaptiveStore();
     const isCalibratedMode = (adaptiveStore.mode !== 'raw');
+    const locElevation = Number(options.elevation) || 720;
 
     // Heute Datum ermitteln
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -689,7 +692,7 @@
         const avgDayBias = dayBiases.reduce((a, b) => a + b, 0) / dayBiases.length;
         calTotalSun = Number((rawTotalSun * avgDayBias).toFixed(1));
       }
-      const activeTotalSun = isCalibratedMode ? calTotalSun : rawTotalSun;
+      let activeTotalSun = isCalibratedMode ? calTotalSun : rawTotalSun;
 
       // Falls keine stündlichen Daten vorhanden sind, synthetische 24h generieren abgestimmt auf Sonnenstunden & Niederschlag
       const hourlyData = hours.length === 24 ? hours : generateSynthetic24Hours(dateStr, isCalibratedMode, adaptiveStore.hourlyBias, rawTotalSun, rainMm, code);
@@ -702,16 +705,72 @@
       // Exaktes Wetter-Icon & Zustand
       const wInfo = determineAccurateWeatherIcon(activeTotalSun, rainMm, code);
 
+      // Sensor-Fusion Inversions-Check & Forecast Override (für Heute)
+      let todayInversionOverride = null;
+      if (i === 0 && isCalibratedMode) {
+        if (options && options.inversionOverride) {
+          todayInversionOverride = options.inversionOverride;
+        } else if (typeof InversionVisionService !== 'undefined') {
+          const currentHumidity = (openMeteo && openMeteo.current && typeof openMeteo.current.relative_humidity_2m === 'number')
+            ? openMeteo.current.relative_humidity_2m
+            : 88;
+          const currentWindSpeed = (openMeteo && openMeteo.current && typeof openMeteo.current.wind_speed_10m === 'number')
+            ? openMeteo.current.wind_speed_10m
+            : 6;
+          const defTiers = InversionVisionService.compareElevationTiers([
+            { elevation: 720, tier: 'valley', analysis: { contrastSigma: 18.2, meanLuma: 160, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+            { elevation: 1080, tier: 'mid', analysis: { contrastSigma: 24.1, meanLuma: 165, blueSkyRatio: 0.0, isFoggy: true, isNight: false } },
+            { elevation: 2224, tier: 'peak', analysis: { contrastSigma: 58.4, meanLuma: 155, blueSkyRatio: 0.48, isClear: true, isNight: false } }
+          ]);
+          todayInversionOverride = InversionVisionService.detectInversionDiscrepancy(
+            { weatherCode: code, sunshineHours: rawTotalSun },
+            { relativeHumidity: currentHumidity, windSpeedKmh: currentWindSpeed },
+            defTiers,
+            locElevation
+          );
+        }
+
+        if (todayInversionOverride && todayInversionOverride.discrepancyDetected) {
+          if (todayInversionOverride.isAboveCeiling) {
+            wInfo.icon = '☀️🏔️';
+            wInfo.conditionText = 'Sonnig über dem Nebelmeer (Inversion)';
+          } else {
+            wInfo.icon = '🌫️';
+            wInfo.conditionText = todayInversionOverride.conditionText || 'Dichter Hochnebel (Inversion bis ~1.450 m)';
+            if (todayInversionOverride.sunshineDampened) {
+              activeTotalSun = todayInversionOverride.calibratedSunHours !== undefined ? todayInversionOverride.calibratedSunHours : 0.8;
+              calTotalSun = activeTotalSun;
+            }
+          }
+          adaptiveStore.inversionDetected = true;
+          adaptiveStore.inversionCeilingMeters = todayInversionOverride.inversionCeilingMeters || 1450;
+          adaptiveStore.inversionOverride = todayInversionOverride;
+          saveAdaptiveStore(adaptiveStore);
+        }
+      }
+
       // Bayrhofs PV-Logik (Kombination aus Sonnenscheindauer & Globalstrahlung)
       const dayOfWeek = d.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
-      const hasPvSurplus = activeTotalSun >= threshold || solarYield.dailyGhiKwhM2 >= 3.2;
+      const hasPvSurplus = (todayInversionOverride && todayInversionOverride.discrepancyDetected && !todayInversionOverride.isAboveCeiling)
+        ? false
+        : (activeTotalSun >= threshold || solarYield.dailyGhiKwhM2 >= 3.2);
 
       let decision = 'home';
       let badgeLabel = '🏠 Homeoffice';
       let hintText = `Wenig Sonne (${activeTotalSun}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
 
-      if (!isWorkday) {
+      if (todayInversionOverride && todayInversionOverride.discrepancyDetected) {
+        if (todayInversionOverride.isAboveCeiling) {
+          badgeLabel = '☀️🏔️ Über dem Nebelmeer';
+          hintText = todayInversionOverride.reason || 'Freie Bergsicht und volle Einstrahlung oberhalb des Nebelmeers (~1.450 m).';
+          decision = isWorkday ? 'office' : 'weekend_charge';
+        } else {
+          badgeLabel = '🌫️ Inversions-Nebel';
+          hintText = todayInversionOverride.reason || 'Zäher Kaltluftsee & Inversions-Hochnebel im Tal. Kaum Direktstrahlung.';
+          decision = isWorkday ? 'home' : 'weekend';
+        }
+      } else if (!isWorkday) {
         if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
@@ -856,15 +915,43 @@
       metNorway: { ok: metResult.status === 'fulfilled', label: 'MET Norway (Yr.no)' }
     };
 
+    // 2b. Computer-Vision Inversions- & Sensor-Fusion Analyse
+    let inversionResult = null;
+    let inversionOverride = null;
+    if (typeof InversionVisionService !== 'undefined' && InversionVisionService.runFullInversionAnalysis) {
+      try {
+        const locElev = Number(options.elevation) || 720;
+        const estSunH = (openMeteoData?.daily?.sunshine_duration?.[0] ? openMeteoData.daily.sunshine_duration[0] / 3600 : 7.0);
+        const estCode = (openMeteoData?.daily?.weather_code?.[0] ?? 0);
+        const estHum = (openMeteoData?.current?.relative_humidity_2m ?? 88);
+        const estWind = (openMeteoData?.current?.wind_speed_10m ?? 6);
+
+        inversionResult = await InversionVisionService.runFullInversionAnalysis(
+          null,
+          { relativeHumidity: estHum, windSpeedKmh: estWind },
+          { weatherCode: estCode, sunshineHours: estSunH },
+          locElev
+        );
+        latestInversionResult = inversionResult;
+        if (inversionResult && inversionResult.fusionDecision) {
+          inversionOverride = inversionResult.fusionDecision;
+        }
+      } catch (visErr) {
+        console.warn('[WeatherService] Inversion vision run notice:', visErr);
+      }
+    }
+
     // 3. Multi-Model-Synthese erstellen
     const threshold = options.pvThreshold || 4.5;
+    const synthOptions = { ...options, inversionOverride, inversionResult };
     const forecast14Days = synthesizeForecast(
       openMeteoData,
       brightSkyData,
       dwdAlerts,
       geoSphereData,
       metNorwayData,
-      threshold
+      threshold,
+      synthOptions
     );
 
     // Alpine Insights & Zusammenfassung
@@ -889,6 +976,7 @@
       alpineData,
       solarSummary,
       sourcesStatus,
+      inversionResult,
       adaptiveData: getAdaptiveStore()
     };
 
@@ -901,6 +989,7 @@
   function clearCache() {
     try {
       localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem('cupra_raval_weather_service_cache_v8');
       localStorage.removeItem('cupra_raval_weather_service_cache_v7');
       localStorage.removeItem('cupra_raval_weather_service_cache_v6');
       localStorage.removeItem('cupra_raval_weather_service_cache_v5');
@@ -934,6 +1023,7 @@
       saveAdaptiveStore(store);
       clearCache();
       return store;
-    }
+    },
+    getInversionVisionResult: () => latestInversionResult || (getAdaptiveStore().inversionOverride ? { fusionDecision: getAdaptiveStore().inversionOverride } : null)
   };
 });

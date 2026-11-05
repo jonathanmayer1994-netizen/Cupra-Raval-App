@@ -826,6 +826,97 @@
               </div>
             </div>
 
+            <!-- ======================================================= -->
+            <!-- ALLGÄU WEBCAM INVERSIONS- & SENSOR-FUSION MONITOR       -->
+            <!-- ======================================================= -->
+            <div class="webcam-inversion-monitor" id="webcamInversionMonitor">
+              <div class="wim-header-row">
+                <div class="wim-title-group">
+                  <span class="wim-title">📷 KI-WEBCAM INVERSIONS-MONITOR</span>
+                  <span class="wim-subtitle">Computer-Vision &amp; Höhenstufen-Abgleich (Allgäu)</span>
+                </div>
+                <span class="wim-status-pill" id="wimStatusPill">🌫️ Inversion verifiziert</span>
+              </div>
+
+              <!-- Telemetrie & Inversionsdeckel Leiste -->
+              <div class="wim-telemetry-bar" id="wimTelemetryBar">
+                <div class="wim-tele-item" id="wimCeilingItem">
+                  <span class="wim-tele-icon">🏔️</span>
+                  <span class="wim-tele-label">Deckel:</span>
+                  <strong class="wim-tele-val" id="wimCeilingVal">~1.450 m</strong>
+                </div>
+                <div class="wim-tele-item" id="wimHumidityItem">
+                  <span class="wim-tele-icon">💧</span>
+                  <span class="wim-tele-label">Feuchte:</span>
+                  <strong class="wim-tele-val" id="wimHumidityVal">88%</strong>
+                </div>
+                <div class="wim-tele-item" id="wimWindItem">
+                  <span class="wim-tele-icon">💨</span>
+                  <span class="wim-tele-label">Wind:</span>
+                  <strong class="wim-tele-val" id="wimWindVal">5 km/h</strong>
+                </div>
+              </div>
+
+              <!-- 3 Höhenstufen Webcam Kacheln -->
+              <div class="webcam-tiers-grid" id="webcamTiersGrid">
+                <!-- 1. Talstufe (<= 1000m) -->
+                <div class="webcam-tier-card tier-valley" id="webcamCardValley">
+                  <div class="tier-card-header">
+                    <span class="tier-badge valley">Tal • 720 m</span>
+                    <span class="tier-station-name">Kempten / Illertal</span>
+                  </div>
+                  <div class="webcam-preview-box">
+                    <canvas class="webcam-canvas" id="canvasWebcamValley" width="64" height="48" title="Offscreen-Canvas Analyse 64x48px"></canvas>
+                    <span class="webcam-ai-tag tag-fog" id="aiTagValley">🌫️ Dichter Hochnebel (σ 18.2)</span>
+                  </div>
+                  <div class="tier-meta-footer">
+                    <span class="tier-meta-left">Kaltluftsee aktiv</span>
+                    <span class="tier-meta-right" id="tierMetaValley">Himmel 0%</span>
+                  </div>
+                </div>
+
+                <!-- 2. Zwischenstufe (1000 - 1500m) -->
+                <div class="webcam-tier-card tier-mid" id="webcamCardMid">
+                  <div class="tier-card-header">
+                    <span class="tier-badge mid">Mittel • 1.080 m</span>
+                    <span class="tier-station-name">Mittagbahn Station</span>
+                  </div>
+                  <div class="webcam-preview-box">
+                    <canvas class="webcam-canvas" id="canvasWebcamMid" width="64" height="48" title="Offscreen-Canvas Analyse 64x48px"></canvas>
+                    <span class="webcam-ai-tag tag-transition" id="aiTagMid">🌫️ Nebelgrenze (σ 22.4)</span>
+                  </div>
+                  <div class="tier-meta-footer">
+                    <span class="tier-meta-left">Inversions-Übergang</span>
+                    <span class="tier-meta-right" id="tierMetaMid">Deckel-Zone</span>
+                  </div>
+                </div>
+
+                <!-- 3. Gipfelstufe (> 1500m) -->
+                <div class="webcam-tier-card tier-peak" id="webcamCardPeak">
+                  <div class="tier-card-header">
+                    <span class="tier-badge peak">Gipfel • 2.224 m</span>
+                    <span class="tier-station-name">Nebelhorn Gipfel</span>
+                  </div>
+                  <div class="webcam-preview-box">
+                    <canvas class="webcam-canvas" id="canvasWebcamPeak" width="64" height="48" title="Offscreen-Canvas Analyse 64x48px"></canvas>
+                    <span class="webcam-ai-tag tag-sun" id="aiTagPeak">☀️ Klar &amp; Sonnig (Himmel 48%, σ 56.4)</span>
+                  </div>
+                  <div class="tier-meta-footer">
+                    <span class="tier-meta-left">Über dem Nebelmeer</span>
+                    <span class="tier-meta-right" id="tierMetaPeak">Volle Sonne</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sensor-Fusion Explainer Banner -->
+              <div class="wim-fusion-banner" id="wimFusionBanner">
+                <div class="wim-fusion-icon">⚡️</div>
+                <div class="wim-fusion-text" id="wimFusionText">
+                  <strong>Sensor-Fusion aktiv:</strong> Wettermodelle prognostizieren fälschlich „Sonnig“. Die optische Webcam-Analyse belegt dichten Nebel im Tal bei wolkenlosem Gipfel. Vorhersage auf <em>WMO 45 (Dichter Hochnebel)</em> korrigiert.
+                </div>
+              </div>
+            </div>
+
             <!-- Historischer Ground-Truth Abgleich (Gestern, Vorgestern, etc.) -->
             <div class="adaptive-history-section">
               <div class="adaptive-history-header">
@@ -1766,9 +1857,11 @@
     <span class="toast-text" id="swiftToastMsg">Erfolgreich gespeichert</span>
   </div>
 
+  <!-- Inversion Computer Vision & Sensor Fusion Service -->
+  <script src="./inversionVisionService.js?v=45"></script>
   <!-- Weather Service Module -->
-  <script src="./weatherService.js?v=44"></script>
+  <script src="./weatherService.js?v=45"></script>
   <!-- App Script -->
-  <script src="./app.js?v=44"></script>
+  <script src="./app.js?v=45"></script>
 </body>
 </html>

@@ -82,6 +82,12 @@ def run_tests():
         dates_14 = [(now_dt + datetime.timedelta(days=i)).strftime("%Y-%m-%d") for i in range(14)]
         mock_open_meteo = {
             "latitude": 47.7468, "longitude": 10.3094,
+            "current": {
+                "temperature_2m": 8.0,
+                "relative_humidity_2m": 88,
+                "wind_speed_10m": 6.0,
+                "weather_code": 1
+            },
             "daily": {
                 "time": dates_14,
                 "weather_code": [0, 1, 2, 3, 45, 61, 80, 0, 1, 2, 3, 0, 1, 2],
@@ -140,6 +146,8 @@ def run_tests():
                 return route.fulfill(status=200, content_type='application/json', body=json.dumps({"timestamps": dates_14, "features": []}))
             elif 'met.no' in u:
                 return route.fulfill(status=200, content_type='application/json', body=json.dumps({"properties": {"timeseries": []}}))
+            elif 'bergfex' in u or 'webcam' in u or '.jpg' in u:
+                return route.fulfill(status=404)
 
             route.continue_()
 
@@ -537,10 +545,20 @@ def run_tests():
             log_test("7.1b WeatherService Modul mit 5 Open-Source Diensten verfügbar", ws_check.get("ok") is True, f"Methoden vorhanden, TTL: {ws_check.get('ttl')}ms")
 
             # 7.1c: 5-Minuten Caching in localStorage
+            for _ in range(60):
+                cached_ready = page.evaluate("""() => {
+                    const s = window.WeatherService;
+                    const cacheKey = s?.CACHE_KEY;
+                    return cacheKey && !!localStorage.getItem(cacheKey);
+                }""")
+                if cached_ready:
+                    break
+                time.sleep(0.1)
+
             cache_check = page.evaluate("""() => {
                 const s = window.WeatherService;
                 const ttl = s?.CACHE_TTL_MS;
-                const cacheKey = s?.CACHE_KEY || 'cupra_raval_weather_service_cache_v6';
+                const cacheKey = s?.CACHE_KEY || 'cupra_raval_weather_service_cache_v9';
                 const raw = localStorage.getItem(cacheKey);
                 const parsed = raw ? JSON.parse(raw) : null;
                 return {
@@ -1071,8 +1089,8 @@ def run_tests():
 
             # 11.6: Warten bis Wetter-Refresh fertiggestellt ist und Banner einklappt (bis zu 9s für echte Open-Source API Calls)
             weather_done_state = False
-            for _ in range(25):
-                time.sleep(0.04)
+            for _ in range(60):
+                time.sleep(0.1)
                 weather_done_state = page.evaluate("""() => {
                     const el = document.getElementById('ptrWeather');
                     return !el.classList.contains('ptr-visible') &&
