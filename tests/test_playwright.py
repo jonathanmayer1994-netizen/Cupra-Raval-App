@@ -558,7 +558,7 @@ def run_tests():
             cache_check = page.evaluate("""() => {
                 const s = window.WeatherService;
                 const ttl = s?.CACHE_TTL_MS;
-                const cacheKey = s?.CACHE_KEY || 'cupra_raval_weather_service_cache_v9';
+                const cacheKey = s?.CACHE_KEY || 'cupra_raval_weather_service_cache_v10';
                 const raw = localStorage.getItem(cacheKey);
                 const parsed = raw ? JSON.parse(raw) : null;
                 return {

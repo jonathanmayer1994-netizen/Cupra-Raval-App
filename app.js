@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v9';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v10';
   const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
@@ -916,12 +916,14 @@
       const cached = localStorage.getItem(WEATHER_CACHE_KEY);
       if (cached) {
         weatherForecast14Days = JSON.parse(cached);
+        window.weatherForecast14Days = weatherForecast14Days;
       }
     } catch (_) {}
   }
 
   function saveWeatherCache(data) {
     try {
+      window.weatherForecast14Days = data;
       localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
     } catch (_) {}
   }
@@ -7442,12 +7444,31 @@ function createOutput(data, callback) {
         dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
       };
 
+      // Zukunftsprojektion der Sonnenstunden
+      const isToday = (i === 0);
+      const sunCalc = (typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
+        ? WeatherService.calculateRemainingSunHours(activeSun, hourlyData)
+        : { total: activeSun, past: 0, remaining: activeSun, fractionPassed: 0 };
+
+      const sunshineRemainingDisplay = isToday
+        ? (sunCalc.past > 0 ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h` : `0.0h verbleibend`) : `noch ${sunCalc.remaining}h`)
+        : `${activeSun}h`;
+
+      const sunshineFullDisplayText = isToday
+        ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h Sonne heute` : `keine Sonne mehr heute`)
+        : `${activeSun}h Sonne`;
+
       list.push({
         dateIndex: i,
         dateStr,
         dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
         dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
         sunshineHours: activeSun,
+        totalSunshineHours: activeSun,
+        remainingSunshineHours: sunCalc.remaining,
+        pastSunshineHours: sunCalc.past,
+        sunshineRemainingDisplay,
+        sunshineFullDisplayText,
         rainMm, // l/m²
         tMax,
         tMin,
@@ -7625,6 +7646,20 @@ function createOutput(data, callback) {
         maxGhiWatts: Math.round(activeSun * 85),
         dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
       };
+      const synthHours = generateSyntheticHourly(dateStr);
+
+      const isToday = (i === 0);
+      const sunCalc = (typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
+        ? WeatherService.calculateRemainingSunHours(activeSun, synthHours)
+        : { total: activeSun, past: 0, remaining: activeSun, fractionPassed: 0 };
+
+      const sunshineRemainingDisplay = isToday
+        ? (sunCalc.past > 0 ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h` : `0.0h verbleibend`) : `noch ${sunCalc.remaining}h`)
+        : `${activeSun}h`;
+
+      const sunshineFullDisplayText = isToday
+        ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h Sonne heute` : `keine Sonne mehr heute`)
+        : `${activeSun}h Sonne`;
 
       list.push({
         dateIndex: i,
@@ -7632,6 +7667,11 @@ function createOutput(data, callback) {
         dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
         dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
         sunshineHours: activeSun,
+        totalSunshineHours: activeSun,
+        remainingSunshineHours: sunCalc.remaining,
+        pastSunshineHours: sunCalc.past,
+        sunshineRemainingDisplay,
+        sunshineFullDisplayText,
         rainMm,
         tMax: Math.round(18 + Math.sin(i) * 5),
         tMin: Math.round(9 + Math.sin(i) * 3),
@@ -7644,7 +7684,7 @@ function createOutput(data, callback) {
         hintText,
         hasPvSurplus,
         solarYield,
-        hourlyData: generateSyntheticHourly(dateStr)
+        hourlyData: synthHours
       });
     }
     return list;
@@ -7817,7 +7857,7 @@ function createOutput(data, callback) {
       const dAvgTemp = Math.round((d.tMax + d.tMin) / 2);
       const dNmcFactor = getNmcTemperatureEfficiency(dAvgTemp);
       const pvYield = (d.solarYield && d.solarYield.estimatedPvKwh) ? d.solarYield.estimatedPvKwh : 0;
-      const sunHours = d.sunshineHours || 0;
+      const sunHours = (i === 0 && d.remainingSunshineHours !== undefined) ? d.remainingSunshineHours : (d.sunshineHours || 0);
       const rainMm = d.rainMm || 0;
       const dDate = new Date(d.dateStr);
       const dayOfWeek = dDate.getDay();
@@ -8059,7 +8099,13 @@ function createOutput(data, callback) {
     // 10. Intelligente Begründung mit klarer 3-Tage-Transparenz
     let reasoning = ``;
     if (isTodaySlot) {
-      reasoning = `<strong>Heute direkt nutzen:</strong> Nachmittags (${timeWindow}) herrschen gute Bedingungen mit <strong>${activeCandidate.sunHours}h Sonne</strong> und <strong>~${activeCandidate.pvYield} kWh Solarertrag</strong> bei ${bDay.tMax}°C für eine Zwischenladung. `;
+      const pastH = (bDay.pastSunshineHours !== undefined) ? bDay.pastSunshineHours : 0;
+      const remH = (bDay.remainingSunshineHours !== undefined) ? bDay.remainingSunshineHours : activeCandidate.sunHours;
+      const totH = bDay.sunshineHours || remH;
+      const sunNote = (pastH > 0)
+        ? `noch <strong>${remH}h Sonne heute</strong> (${pastH}h bereits vorbei • ${totH}h gesamt)`
+        : `<strong>noch ${remH}h Sonne</strong>`;
+      reasoning = `<strong>Heute direkt nutzen:</strong> Nachmittags (${timeWindow}) herrschen gute Bedingungen mit ${sunNote} und <strong>~${activeCandidate.pvYield} kWh Solarertrag</strong> bei ${bDay.tMax}°C für eine Zwischenladung. `;
     } else {
       reasoning = `<strong>${slotDayLabel} (${timeWindow}):</strong> Bei <strong>${activeCandidate.sunHours}h Sonne</strong> und <strong>~${activeCandidate.pvYield} kWh PV-Ertrag</strong> erreichst du maximalen Solarüberschuss. `;
     }
@@ -8069,8 +8115,9 @@ function createOutput(data, callback) {
     const d1 = candidateDays[1];
     const d2 = candidateDays[2];
     if (d0 && d1 && d2) {
+      const d0Sun = d0.day.remainingSunshineHours !== undefined ? `noch ${d0.day.remainingSunshineHours}h` : `${d0.day.sunshineHours}h`;
       reasoning += `<br><br>📊 <strong>3-Tage-Check:</strong> ` +
-        `<strong>Heute:</strong> ${escapeHtml(d0.badgeLabel)} (~${d0.pvYield} kWh PV, ${d0.timeWindow}) • ` +
+        `<strong>Heute:</strong> ${escapeHtml(d0.badgeLabel)} (~${d0.pvYield} kWh PV, ${d0Sun} Sonne, ${d0.timeWindow}) • ` +
         `<strong>Morgen:</strong> ${escapeHtml(d1.badgeLabel)} (~${d1.pvYield} kWh PV) • ` +
         `<strong>${escapeHtml(d2.day.dayName)}:</strong> ${escapeHtml(d2.badgeLabel)} (~${d2.pvYield} kWh PV). `;
     }
@@ -8165,7 +8212,14 @@ function createOutput(data, callback) {
       DOM.smartMetricSolar.textContent = `${bDay.dayName} • ~${activeCandidate.pvYield} kWh`;
     }
     if (DOM.smartMetricSolarSub) {
-      DOM.smartMetricSolarSub.textContent = `${activeCandidate.sunHours}h Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
+      if (activeCandidate.isToday) {
+        const remH = (bDay.remainingSunshineHours !== undefined) ? bDay.remainingSunshineHours : activeCandidate.sunHours;
+        const pastH = (bDay.pastSunshineHours !== undefined) ? bDay.pastSunshineHours : 0;
+        const disp = (pastH > 0) ? `noch ${remH}h (${bDay.sunshineHours}h)` : `${remH}h`;
+        DOM.smartMetricSolarSub.textContent = `${disp} Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
+      } else {
+        DOM.smartMetricSolarSub.textContent = `${activeCandidate.sunHours}h Sonne • Max ${bDay.solarYield?.maxGhiWatts || 0} W`;
+      }
     }
   }
 
@@ -8236,6 +8290,25 @@ function createOutput(data, callback) {
       ? ` (${item.rainProbMax}%)`
       : '';
 
+    let sunStatHtml = `☀️ ${item.sunshineHours}h`;
+    let sunStatTitle = `${item.sunshineHours}h Sonne`;
+    if (isToday) {
+      const remH = (item.remainingSunshineHours !== undefined) ? item.remainingSunshineHours : item.sunshineHours;
+      const pastH = (item.pastSunshineHours !== undefined) ? item.pastSunshineHours : 0;
+      if (pastH > 0) {
+        if (remH > 0) {
+          sunStatHtml = `☀️ noch ${remH}h <span class="day-sun-total-sub" style="font-size:0.80em; opacity:0.75;">(${item.sunshineHours}h)</span>`;
+          sunStatTitle = `Heute: noch ${remH}h Sonne verbleibend (${pastH}h vorbei • ${item.sunshineHours}h gesamt)`;
+        } else {
+          sunStatHtml = `☀️ 0h verbleibend <span class="day-sun-total-sub" style="font-size:0.80em; opacity:0.75;">(${item.sunshineHours}h)</span>`;
+          sunStatTitle = `Heute: keine Sonne mehr verbleibend (${item.sunshineHours}h vorbei)`;
+        }
+      } else {
+        sunStatHtml = `☀️ noch ${remH}h`;
+        sunStatTitle = `Heute: noch ${remH}h Sonne`;
+      }
+    }
+
     return `
       <div class="swift-glass-card day-forecast-card ${highlightClass}" data-dayindex="${item.dateIndex}">
         <div class="day-left-meta">
@@ -8253,7 +8326,7 @@ function createOutput(data, callback) {
             <span class="day-condition-label">• ${conditionText}</span>
           </div>
           <div class="day-stats-row">
-            <span class="day-sun-stat">☀️ ${item.sunshineHours}h</span>
+            <span class="day-sun-stat" title="${sunStatTitle}">${sunStatHtml}</span>
             <span class="day-rain-stat">💧 ${item.rainMm} l/m²${rainProbText}</span>
             ${item.solarYield && item.solarYield.estimatedPvKwh > 0 ? `<span class="day-solar-stat" style="color:#fbbf24; font-size:0.64rem; font-weight:700; white-space:nowrap; flex-shrink:0;">⚡️ ${item.solarYield.estimatedPvKwh} kWh</span>` : ''}
           </div>
@@ -8534,27 +8607,42 @@ function createOutput(data, callback) {
       DOM.dashPvIconCircle.innerHTML = todayIconHtml;
     }
 
-    const kiHours = (today.calibratedSunshineHours !== undefined)
+    const kiTotal = (today.calibratedSunshineHours !== undefined)
       ? Number(today.calibratedSunshineHours).toFixed(1)
       : Number(today.sunshineHours || 0).toFixed(1);
-    const rawHours = (today.rawSunshineHours !== undefined)
+    const rawTotal = (today.rawSunshineHours !== undefined)
       ? Number(today.rawSunshineHours).toFixed(1)
       : Number(today.sunshineHours || 0).toFixed(1);
-    const rainMm = (today.rainMm !== undefined) ? today.rainMm : 0;
 
+    const kiRemaining = (today.remainingCalibratedSunshineHours !== undefined)
+      ? Number(today.remainingCalibratedSunshineHours).toFixed(1)
+      : (today.remainingSunshineHours !== undefined ? Number(today.remainingSunshineHours).toFixed(1) : kiTotal);
+    const rawRemaining = (today.remainingRawSunshineHours !== undefined)
+      ? Number(today.remainingRawSunshineHours).toFixed(1)
+      : (today.remainingSunshineHours !== undefined ? Number(today.remainingSunshineHours).toFixed(1) : rawTotal);
+
+    const hasPast = (today.pastSunshineHours !== undefined && today.pastSunshineHours > 0);
+    const kiDisplay = hasPast ? `noch ${kiRemaining}h` : `${kiTotal}h`;
+    const rawDisplay = hasPast ? `noch ${rawRemaining}h` : `${rawTotal}h`;
+    const kiTitle = hasPast ? `Allgäu KI: noch ${kiRemaining}h verbleibend (${today.pastSunshineHours}h vorbei • ${kiTotal}h gesamt)` : `Allgäu KI: ${kiTotal}h`;
+    const rawTitle = hasPast ? `Wettermodell: noch ${rawRemaining}h verbleibend (${today.pastRawSunshineHours || today.pastSunshineHours}h vorbei • ${rawTotal}h gesamt)` : `Wettermodell: ${rawTotal}h`;
+
+    const rainMm = (today.rainMm !== undefined) ? today.rainMm : 0;
     const isRawActive = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveStore && WeatherService.getAdaptiveStore().activeMode === 'raw');
 
     if (DOM.dashRecoHeadline) {
       DOM.dashRecoHeadline.innerHTML = `
-        <span class="pv-stat-chip chip-ki ${!isRawActive ? 'active-glow' : ''}" title="Allgäu KI-Kalibriert (DWD &amp; Inversions-Dämpfung)">
+        <span class="pv-stat-chip chip-ki ${!isRawActive ? 'active-glow' : ''}" title="${kiTitle}">
           <span class="chip-icon">✨</span>
           <span class="chip-label">KI:</span>
-          <strong class="chip-val">${kiHours}h</strong>
+          <strong class="chip-val">${kiDisplay}</strong>
+          ${hasPast ? `<span class="chip-total-hint" style="font-size:0.56rem; opacity:0.68; font-weight:normal; margin-left:1px;">/${kiTotal}h</span>` : ''}
         </span>
-        <span class="pv-stat-chip chip-raw ${isRawActive ? 'active-glow' : ''}" title="Standard-Wettermodell (DWD ICON / ECMWF)">
+        <span class="pv-stat-chip chip-raw ${isRawActive ? 'active-glow' : ''}" title="${rawTitle}">
           <span class="chip-icon">📊</span>
           <span class="chip-label">Modell:</span>
-          <strong class="chip-val">${rawHours}h</strong>
+          <strong class="chip-val">${rawDisplay}</strong>
+          ${hasPast ? `<span class="chip-total-hint" style="font-size:0.56rem; opacity:0.68; font-weight:normal; margin-left:1px;">/${rawTotal}h</span>` : ''}
         </span>
         <span class="pv-stat-chip chip-rain" title="Niederschlag">
           <span class="chip-icon">💧</span>
@@ -8563,28 +8651,41 @@ function createOutput(data, callback) {
       `;
     }
 
+    const activeRemaining = (today.remainingSunshineHours !== undefined) ? today.remainingSunshineHours : Number(today.sunshineHours || 0);
+    const activeTotal = Number(today.sunshineHours || 0);
+
     if (today.badgeLabel && today.badgeLabel.includes('Inversion')) {
-      DOM.dashRecoSubline.textContent = `Zäher Kaltluftsee & Inversions-Hochnebel im Tal. PV-Ertrag stark gedämpft.`;
+      DOM.dashRecoSubline.textContent = `Zäher Kaltluftsee & Inversions-Hochnebel im Tal (noch ${activeRemaining}h gedämpfte Sonne). PV-Ertrag stark gedämpft.`;
       DOM.dashRecoBadge.textContent = '🌫️ Hochnebel-Inversion';
       DOM.dashRecoBadge.className = 'reco-badge-pill home';
     } else if (today.badgeLabel && today.badgeLabel.includes('Nebelmeer')) {
-      DOM.dashRecoSubline.textContent = `Freie Bergsicht und volle Einstrahlung oberhalb des Nebelmeers (~1.450 m).`;
+      DOM.dashRecoSubline.textContent = `Freie Bergsicht und volle Einstrahlung oberhalb des Nebelmeers (~1.450 m, noch ${activeRemaining}h Sonne).`;
       DOM.dashRecoBadge.textContent = '☀️🏔️ Über dem Nebelmeer';
       DOM.dashRecoBadge.className = 'reco-badge-pill office';
     } else if (today.decision === 'office') {
-      DOM.dashRecoSubline.textContent = `PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`;
+      DOM.dashRecoSubline.textContent = (hasPast && activeRemaining > 0)
+        ? `Heute noch ${activeRemaining}h Sonne (von ${activeTotal}h). PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`
+        : `PV-Überschuss bei Bayrhofs vorhanden. Ideal: Büro-Tag mit Laden verbinden!`;
       DOM.dashRecoBadge.textContent = '🏢 Büro & Laden';
       DOM.dashRecoBadge.className = 'reco-badge-pill office';
     } else if (today.decision === 'weekend_charge') {
-      DOM.dashRecoSubline.textContent = `PV-Überschuss am Wochenende! Fahrt zu Bayrhofs zum Laden lohnt sich.`;
+      DOM.dashRecoSubline.textContent = (hasPast && activeRemaining > 0)
+        ? `Wochenende: Noch ${activeRemaining}h Sonne (von ${activeTotal}h). Fahrt zu Bayrhofs zum Laden lohnt sich.`
+        : `PV-Überschuss am Wochenende! Fahrt zu Bayrhofs zum Laden lohnt sich.`;
       DOM.dashRecoBadge.textContent = '⚡️ Bayrhofs PV';
       DOM.dashRecoBadge.className = 'reco-badge-pill office';
     } else if (today.decision === 'weekend') {
-      DOM.dashRecoSubline.textContent = `Wochenende mit wenig Sonne. Kaum PV-Ertrag bei Bayrhofs.`;
+      DOM.dashRecoSubline.textContent = (hasPast && activeRemaining <= 0)
+        ? `Wochenende: Keine Sonne mehr verbleibend (${activeTotal}h vorbei). Kaum PV-Ertrag bei Bayrhofs.`
+        : `Wochenende mit wenig Sonne. Kaum PV-Ertrag bei Bayrhofs.`;
       DOM.dashRecoBadge.textContent = '🛋️ Wochenende';
       DOM.dashRecoBadge.className = 'reco-badge-pill';
     } else {
-      DOM.dashRecoSubline.textContent = `Wenig/Kein PV-Überschuss. Heute lohnt sich Büro-Laden nicht (Homeoffice).`;
+      DOM.dashRecoSubline.textContent = (hasPast && activeRemaining <= 0)
+        ? `Heute keine Sonne mehr verbleibend (${activeTotal}h vorbei). Homeoffice empfohlen.`
+        : (hasPast && activeRemaining > 0)
+          ? `Heute noch ${activeRemaining}h Restsonne (von ${activeTotal}h). Lohnt sich für Büro-Laden nicht (Homeoffice).`
+          : `Wenig/Kein PV-Überschuss. Heute lohnt sich Büro-Laden nicht (Homeoffice).`;
       DOM.dashRecoBadge.textContent = '🏠 Homeoffice';
       DOM.dashRecoBadge.className = 'reco-badge-pill home';
     }
@@ -8852,9 +8953,14 @@ function createOutput(data, callback) {
     // Nur der relevante Tageszeitraum: 06:00 bis 22:00 Uhr (vom Nutzer gewünscht)
     const displayHours = (day.hourlyData || []).filter(h => h.hour >= 6 && h.hour <= 22);
 
+    const remSun = (day.remainingSunshineHours !== undefined) ? day.remainingSunshineHours : day.sunshineHours;
+    const pastSun = (day.pastSunshineHours !== undefined) ? day.pastSunshineHours : 0;
+
     DOM.hourlyModalTitle.textContent = `${day.dayName}, ${day.dateDisplay}`;
     DOM.hourlyModalSub.textContent = isToday
-      ? `Heute • ${day.conditionText || 'Prognose'} • Aktuell: ${currentTimeStr} Uhr`
+      ? (pastSun > 0 
+          ? `Heute • Aktuell noch ${remSun}h Sonne heute verbleibend (${day.sunshineHours}h gesamt)`
+          : `Heute • Aktuell noch ${remSun}h Sonne verbleibend`)
       : `${day.conditionText || 'Prognose'} • Verlauf von 06:00 bis 22:00 Uhr`;
 
     // Status der Vor-/Zurück-Pfeile und Tages-Badge aktualisieren
@@ -8879,7 +8985,15 @@ function createOutput(data, callback) {
       }
     }
 
-    DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
+    if (isToday) {
+      if (pastSun > 0) {
+        DOM.hourlyTotalSun.innerHTML = `noch ${remSun}h<span style="font-size:0.56rem; display:block; opacity:0.72; font-weight:normal; margin-top:-1px;">von ${day.sunshineHours}h</span>`;
+      } else {
+        DOM.hourlyTotalSun.innerHTML = `noch ${remSun}h`;
+      }
+    } else {
+      DOM.hourlyTotalSun.textContent = `${day.sunshineHours} h`;
+    }
     DOM.hourlyTotalRain.textContent = `${day.rainMm} l/m²`;
     DOM.hourlyTempRange.textContent = `${day.tMax}° / ${day.tMin}°`;
     if (DOM.hourlySunrise) DOM.hourlySunrise.textContent = day.sunrise || '--:--';

@@ -619,8 +619,8 @@ body {
 .dash-pv-dual-stat-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
+  gap: 5px;
+  flex-wrap: wrap;
   width: 100%;
 }
 
@@ -630,9 +630,17 @@ body {
   gap: 4px;
   padding: 3px 8px;
   border-radius: var(--radius-full);
-  font-size: clamp(0.66rem, 2.8vw, 0.71rem);
+  font-size: clamp(0.64rem, 2.7vw, 0.70rem);
   white-space: nowrap;
   transition: all 0.2s ease;
+}
+
+.pv-stat-chip .chip-total-hint {
+  font-size: 0.58rem;
+  font-weight: 500;
+  opacity: 0.70;
+  letter-spacing: 0;
+  margin-left: 1px;
 }
 
 .pv-stat-chip.chip-ki {
@@ -3679,6 +3687,13 @@ body {
   flex-shrink: 0;
 }
 
+.day-sun-total-sub {
+  font-size: 0.82em;
+  font-weight: 500;
+  opacity: 0.72;
+  margin-left: 1px;
+}
+
 .day-rain-stat {
   font-size: 0.63rem;
   color: var(--accent-cyan);
@@ -4355,10 +4370,11 @@ input[type="number"] {
 }
 
 .hourly-sum-val {
-  font-size: 0.88rem;
+  font-size: clamp(0.72rem, 2.8vw, 0.86rem);
   font-weight: 800;
   color: #ffffff;
   white-space: nowrap;
+  line-height: 1.15;
 }
 
 .hourly-hour-card.sun-event-hour {

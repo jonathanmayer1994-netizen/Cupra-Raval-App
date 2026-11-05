@@ -21,7 +21,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const CACHE_KEY = 'cupra_raval_weather_service_cache_v9';
+  const CACHE_KEY = 'cupra_raval_weather_service_cache_v10';
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten Cache wie angefordert
 
   let latestInversionResult = null;
@@ -408,6 +408,97 @@
   }
 
   // =========================================================================
+  // METEOROLOGISCHE ZUKUNFTS-PROJEKTION: VERBLEIBENDE SONNENSTUNDEN
+  // =========================================================================
+  /**
+   * Berechnet meteorologisch exakt die verbleibenden und vergangenen Sonnenstunden
+   * für den aktuellen Tag anhand von Uhrzeit und stündlicher Globalstrahlung / Sonnenscheindauer.
+   *
+   * @param {number} totalSunHours - Tagessumme der Sonnenstunden
+   * @param {Array} hourlyData - 24h Stunden-Array (optional)
+   * @param {Date} [referenceDate] - Referenzzeit (Standard: jetzt)
+   * @returns {{ total: number, past: number, remaining: number, fractionPassed: number }}
+   */
+  function calculateRemainingSunHours(totalSunHours, hourlyData, referenceDate = new Date()) {
+    const total = Math.max(0, Number(totalSunHours) || 0);
+    if (total <= 0) {
+      return { total: 0, past: 0, remaining: 0, fractionPassed: 1 };
+    }
+
+    const ref = (referenceDate instanceof Date && !isNaN(referenceDate.getTime())) ? referenceDate : new Date();
+    const currentHour = ref.getHours();
+    const currentMinute = ref.getMinutes();
+
+    // 1. Wenn stündliche Daten vorliegen (24 Stunden Array)
+    if (Array.isArray(hourlyData) && hourlyData.length === 24) {
+      let pastSum = 0;
+      let remSum = 0;
+
+      for (let h = 0; h < 24; h++) {
+        const item = hourlyData[h];
+        const hSun = Number(item.calibratedSunHours !== undefined ? item.calibratedSunHours : (item.sunHours || 0));
+
+        if (h < currentHour) {
+          pastSum += hSun;
+        } else if (h === currentHour) {
+          const fPast = Math.min(1, Math.max(0, currentMinute / 60));
+          const fRem = 1 - fPast;
+          pastSum += hSun * fPast;
+          remSum += hSun * fRem;
+        } else {
+          remSum += hSun;
+        }
+      }
+
+      const hourlyTotal = pastSum + remSum;
+      let remaining, past;
+      if (hourlyTotal > 0.05) {
+        remaining = Number(((remSum / hourlyTotal) * total).toFixed(1));
+        past = Number((total - remaining).toFixed(1));
+      } else {
+        remaining = (currentHour < 12) ? total : 0;
+        past = Number((total - remaining).toFixed(1));
+      }
+
+      return {
+        total,
+        past: Math.max(0, past),
+        remaining: Math.max(0, remaining),
+        fractionPassed: total > 0 ? Number((past / total).toFixed(3)) : 1
+      };
+    }
+
+    // 2. Fallback: Astronomische Modellierung über Allgäuer Tageslichtkurve
+    // Im Herbst/Winter im Allgäu typisch: 07:30 Sonnenaufgang, 17:00 Sonnenuntergang
+    const sunriseH = 7.5;
+    const sunsetH = 17.0;
+    const nowTimeH = currentHour + (currentMinute / 60);
+
+    let fractionPassed = 0;
+    if (nowTimeH <= sunriseH) {
+      fractionPassed = 0;
+    } else if (nowTimeH >= sunsetH) {
+      fractionPassed = 1;
+    } else {
+      // Sinusförmige Verteilung der Einstrahlungsintensität:
+      // I(t) ~ sin(pi * (t - t_rise) / (t_set - t_rise))
+      // Das Integral von 0 bis t ergibt: (1 - cos(pi * t)) / 2
+      const t = (nowTimeH - sunriseH) / (sunsetH - sunriseH);
+      fractionPassed = (1 - Math.cos(Math.PI * t)) / 2;
+    }
+
+    const past = Number((total * fractionPassed).toFixed(1));
+    const remaining = Number((total - past).toFixed(1));
+
+    return {
+      total,
+      past: Math.max(0, past),
+      remaining: Math.max(0, remaining),
+      fractionPassed: Number(fractionPassed.toFixed(3))
+    };
+  }
+
+  // =========================================================================
   // ALLGÄU SOLAR-ADAPTIVE ENGINE: GROUND TRUTH & ADAPTIVE CALIBRATION
   // =========================================================================
   const ADAPTIVE_KEY = 'cupra_raval_solar_adaptive_v1';
@@ -749,16 +840,31 @@
         }
       }
 
-      // Bayrhofs PV-Logik (Kombination aus Sonnenscheindauer & Globalstrahlung)
+      // Meteorologisch exakte Zukunftsprojektion der Sonnenstunden
+      const isToday = (i === 0);
+      const sunCalc = isToday
+        ? calculateRemainingSunHours(activeTotalSun, hourlyData)
+        : { total: activeTotalSun, past: 0, remaining: activeTotalSun, fractionPassed: 0 };
+
+      const rawSunCalc = isToday
+        ? calculateRemainingSunHours(rawTotalSun, hourlyData.map(h => ({ ...h, sunHours: h.sunHours })))
+        : { total: rawTotalSun, past: 0, remaining: rawTotalSun, fractionPassed: 0 };
+
+      const calSunCalc = isToday
+        ? calculateRemainingSunHours(calTotalSun, hourlyData.map(h => ({ ...h, sunHours: h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours })))
+        : { total: calTotalSun, past: 0, remaining: calTotalSun, fractionPassed: 0 };
+
+      // Bayrhofs PV-Logik (Kombination aus verbleibender Sonnenscheindauer & Globalstrahlung)
       const dayOfWeek = d.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
+      const effectiveSunForDecision = isToday ? sunCalc.remaining : activeTotalSun;
       const hasPvSurplus = (todayInversionOverride && todayInversionOverride.discrepancyDetected && !todayInversionOverride.isAboveCeiling)
         ? false
-        : (activeTotalSun >= threshold || solarYield.dailyGhiKwhM2 >= 3.2);
+        : (effectiveSunForDecision >= (isToday ? Math.min(2.0, threshold) : threshold) || solarYield.dailyGhiKwhM2 >= 3.2);
 
       let decision = 'home';
       let badgeLabel = '🏠 Homeoffice';
-      let hintText = `Wenig Sonne (${activeTotalSun}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
+      let hintText = `Wenig Sonne (${effectiveSunForDecision}h). Fahrt zu Bayrhofs lohnt sich heute nicht.`;
 
       if (todayInversionOverride && todayInversionOverride.discrepancyDetected) {
         if (todayInversionOverride.isAboveCeiling) {
@@ -774,24 +880,40 @@
         if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
-          hintText = `Hoher Solarertrag (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ladung bei Bayrhofs am Wochenende möglich!`;
+          hintText = isToday
+            ? `Hoher Solarertrag (noch ${sunCalc.remaining}h Sonne, ${activeTotalSun}h gesamt). Ladung bei Bayrhofs am Wochenende möglich!`
+            : `Hoher Solarertrag (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ladung bei Bayrhofs am Wochenende möglich!`;
         } else {
           decision = 'weekend';
           badgeLabel = '🛋️ Wochenende';
-          hintText = `Wochenende mit wenig Sonne (${activeTotalSun}h). Kaum PV-Überschuss bei Bayrhofs.`;
+          hintText = isToday
+            ? (sunCalc.remaining > 0 ? `Wochenende mit wenig Sonne (noch ${sunCalc.remaining}h). Kaum PV-Überschuss bei Bayrhofs.` : `Wochenende: Keine Sonne mehr heute (${activeTotalSun}h vorbei).`)
+            : `Wochenende mit wenig Sonne (${activeTotalSun}h). Kaum PV-Überschuss bei Bayrhofs.`;
         }
       } else if (hasPvSurplus) {
         decision = 'office';
         badgeLabel = '🏢 Büro & Laden';
-        hintText = `Hoher PV-Überschuss (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
+        hintText = isToday
+          ? `Hoher PV-Überschuss (noch ${sunCalc.remaining}h Sonne verbleibend von ${activeTotalSun}h). Ideal: Büro mit Laden bei Bayrhofs verbinden!`
+          : `Hoher PV-Überschuss (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
       } else {
         decision = 'home';
         badgeLabel = '🏠 Homeoffice';
-        hintText = `Wenig Sonne (${activeTotalSun}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
+        hintText = isToday
+          ? (sunCalc.remaining > 0 ? `Wenig Restsonne heute (noch ${sunCalc.remaining}h von ${activeTotalSun}h). Kein lohnender PV-Überschuss mehr – Homeoffice empfohlen.` : `Heute keine Sonne mehr verbleibend (${activeTotalSun}h vorbei). Homeoffice empfohlen.`)
+          : `Wenig Sonne (${activeTotalSun}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
       }
 
       const rainProbMax = hourlyRainProb.length > 0 ? Math.max(...hourlyRainProb) : (rainMm > 2 ? 80 : (rainMm > 0 ? 40 : 10));
       const optimalPvWindow = getOptimalPvWindow(hourlyData);
+
+      const sunshineRemainingDisplay = isToday
+        ? (sunCalc.past > 0 ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h` : `0.0h verbleibend`) : `noch ${sunCalc.remaining}h`)
+        : `${activeTotalSun}h`;
+
+      const sunshineFullDisplayText = isToday
+        ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h Sonne heute` : `keine Sonne mehr heute`)
+        : `${activeTotalSun}h Sonne`;
 
       list.push({
         dateIndex: i,
@@ -799,6 +921,15 @@
         dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
         dateDisplay: d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
         sunshineHours: activeTotalSun,
+        totalSunshineHours: activeTotalSun,
+        remainingSunshineHours: sunCalc.remaining,
+        pastSunshineHours: sunCalc.past,
+        remainingRawSunshineHours: rawSunCalc.remaining,
+        pastRawSunshineHours: rawSunCalc.past,
+        remainingCalibratedSunshineHours: calSunCalc.remaining,
+        pastCalibratedSunshineHours: calSunCalc.past,
+        sunshineRemainingDisplay,
+        sunshineFullDisplayText,
         rawSunshineHours: rawTotalSun,
         calibratedSunshineHours: calTotalSun,
         isCalibrated: isCalibratedMode,
@@ -1024,6 +1155,7 @@
       clearCache();
       return store;
     },
-    getInversionVisionResult: () => latestInversionResult || (getAdaptiveStore().inversionOverride ? { fusionDecision: getAdaptiveStore().inversionOverride } : null)
+    getInversionVisionResult: () => latestInversionResult || (getAdaptiveStore().inversionOverride ? { fusionDecision: getAdaptiveStore().inversionOverride } : null),
+    calculateRemainingSunHours
   };
 });
