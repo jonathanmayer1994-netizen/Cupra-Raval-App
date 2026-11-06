@@ -11,7 +11,7 @@
   // KONSTANTEN & DATENMODELL (SCHEMA V3)
   // =========================================================================
   const STORAGE_KEY = 'cupra_raval_data';
-  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v10';
+  const WEATHER_CACHE_KEY = 'cupra_weather_cache_v11';
   const CURRENT_SCHEMA = 4;
   const DEFAULT_GOOGLE_SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwlKhi7dukN5p3UDlM-6sxg72zVH9is2jKN1Wh8H0WCSeCAGmm7tjH0DxhIclf0k5Qv/exec';
 
@@ -105,6 +105,7 @@
         lon: 10.31
       },
       pvThresholdSunshineHours: 4.5,
+      bayrhofsBaseLoadKw: 3.5,
       thg: {
         year: 2026,
         amount: 110.00,
@@ -491,6 +492,14 @@
     DOM.locEditLon = document.getElementById('locEditLon');
     DOM.locGeofenceIndicator = document.getElementById('locGeofenceIndicator');
 
+    // Bayrhofs PV & Grundlast Settings
+    DOM.bayrhofsPvConfigCard = document.getElementById('bayrhofsPvConfigCard');
+    DOM.sliderBayrhofsBaseLoad = document.getElementById('sliderBayrhofsBaseLoad');
+    DOM.inputBayrhofsBaseLoad = document.getElementById('inputBayrhofsBaseLoad');
+    DOM.lblBayrhofsBaseLoad = document.getElementById('lblBayrhofsBaseLoad');
+    DOM.bayrhofsBaseLoadHint = document.getElementById('bayrhofsBaseLoadHint');
+    DOM.btnSaveBayrhofsPvSettings = document.getElementById('btnSaveBayrhofsPvSettings');
+
     // Hourly Weather Modal
     DOM.modalHourlyWeather = document.getElementById('modalHourlyWeather');
     DOM.hourlyModalTitle = document.getElementById('hourlyModalTitle');
@@ -612,7 +621,8 @@
           lat: 47.72,
           lon: 10.31
         },
-        pvThresholdSunshineHours: Number((data.settings && data.settings.pvThresholdSunshineHours) ?? DEFAULT_DATA.settings.pvThresholdSunshineHours)
+        pvThresholdSunshineHours: Number((data.settings && data.settings.pvThresholdSunshineHours) ?? DEFAULT_DATA.settings.pvThresholdSunshineHours),
+        bayrhofsBaseLoadKw: (data.settings && data.settings.bayrhofsBaseLoadKw !== undefined && !isNaN(Number(data.settings.bayrhofsBaseLoadKw))) ? Number(data.settings.bayrhofsBaseLoadKw) : 3.5
       },
       sessions: Array.isArray(data.sessions) ? data.sessions : [],
       pendingSyncQueue: Array.isArray(data.pendingSyncQueue) ? data.pendingSyncQueue : []
@@ -925,6 +935,15 @@
     try {
       window.weatherForecast14Days = data;
       localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data));
+    } catch (_) {}
+  }
+
+  function clearWeatherCache() {
+    try {
+      localStorage.removeItem(WEATHER_CACHE_KEY);
+      if (typeof WeatherService !== 'undefined' && WeatherService.clearCache) {
+        WeatherService.clearCache();
+      }
     } catch (_) {}
   }
 
@@ -1661,6 +1680,9 @@
     if (cloudCfg.batteryKwh && !appData.vehicle.batteryKwh) {
       appData.vehicle.batteryKwh = Number(cloudCfg.batteryKwh);
     }
+    if (cloudCfg.bayrhofsBaseLoadKw !== undefined && !isNaN(Number(cloudCfg.bayrhofsBaseLoadKw))) {
+      appData.settings.bayrhofsBaseLoadKw = Number(cloudCfg.bayrhofsBaseLoadKw);
+    }
 
     saveData();
     renderSettingsForms();
@@ -1721,7 +1743,8 @@
       thgAmount: Number(thg.amount) || 110.00,
       thgActive: thg.status !== 'inactive' && thg.active !== false,
       thgStatus: (thg.status !== 'inactive' && thg.active !== false) ? 'active' : 'inactive',
-      thgByYear: appData.settings.thgByYear || {}
+      thgByYear: appData.settings.thgByYear || {},
+      bayrhofsBaseLoadKw: appData.settings.bayrhofsBaseLoadKw !== undefined ? appData.settings.bayrhofsBaseLoadKw : 3.5
     };
 
     const payload = {
@@ -3293,6 +3316,56 @@ function createOutput(data, callback) {
     DOM.importJsonInput.addEventListener('change', handleImportJson);
     DOM.btnLoadSampleData.addEventListener('click', handleLoadSampleData);
     DOM.btnWipeAllData.addEventListener('click', handleWipeAllData);
+
+    // Bayrhofs PV & Grundlast Settings Event Listeners
+    if (DOM.sliderBayrhofsBaseLoad) {
+      DOM.sliderBayrhofsBaseLoad.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (DOM.inputBayrhofsBaseLoad) DOM.inputBayrhofsBaseLoad.value = val.toFixed(1);
+        if (DOM.lblBayrhofsBaseLoad) DOM.lblBayrhofsBaseLoad.textContent = `${val.toFixed(1)} kW`;
+        if (DOM.bayrhofsBaseLoadHint) {
+          DOM.bayrhofsBaseLoadHint.textContent = `Standort-Grundlast (${val.toFixed(1)} kW) wird vor dem Laden von der PV-Erzeugung abgezogen. Mind. 4.1 kW Netto-Überschuss für Wallbox nötig.`;
+        }
+        appData.settings.bayrhofsBaseLoadKw = val;
+        saveData();
+      });
+      DOM.sliderBayrhofsBaseLoad.addEventListener('change', () => {
+        triggerHaptic();
+        clearWeatherCache();
+        autoRequestGpsAndFetchWeather(true, false);
+      });
+    }
+
+    if (DOM.inputBayrhofsBaseLoad) {
+      DOM.inputBayrhofsBaseLoad.addEventListener('change', (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val)) val = 3.5;
+        val = Math.max(0, Math.min(10, val));
+        e.target.value = val.toFixed(1);
+        if (DOM.sliderBayrhofsBaseLoad) DOM.sliderBayrhofsBaseLoad.value = val;
+        if (DOM.lblBayrhofsBaseLoad) DOM.lblBayrhofsBaseLoad.textContent = `${val.toFixed(1)} kW`;
+        if (DOM.bayrhofsBaseLoadHint) {
+          DOM.bayrhofsBaseLoadHint.textContent = `Standort-Grundlast (${val.toFixed(1)} kW) wird vor dem Laden von der PV-Erzeugung abgezogen. Mind. 4.1 kW Netto-Überschuss für Wallbox nötig.`;
+        }
+        appData.settings.bayrhofsBaseLoadKw = val;
+        saveData();
+        triggerHaptic();
+        clearWeatherCache();
+        autoRequestGpsAndFetchWeather(true, false);
+      });
+    }
+
+    if (DOM.btnSaveBayrhofsPvSettings) {
+      DOM.btnSaveBayrhofsPvSettings.addEventListener('click', () => {
+        triggerHaptic();
+        const val = parseFloat(DOM.sliderBayrhofsBaseLoad?.value || '3.5');
+        appData.settings.bayrhofsBaseLoadKw = val;
+        saveData();
+        clearWeatherCache();
+        autoRequestGpsAndFetchWeather(true, true);
+        showToast(`Bayrhofs Grundlast (${val.toFixed(1)} kW) & PV-Modell angewendet ✓`);
+      });
+    }
 
     // Bayrhofs Abrechnung & Zahlungsabgleich Event Listeners
     if (DOM.btnBayModeOpen) {
@@ -7271,7 +7344,8 @@ function createOutput(data, callback) {
           pvThreshold: threshold,
           locationName: loc.name,
           powerType: loc.powerType,
-          elevation: loc.elevation || 720
+          elevation: loc.elevation || 720,
+          bayrhofsBaseLoadKw: appData.settings.bayrhofsBaseLoadKw !== undefined ? appData.settings.bayrhofsBaseLoadKw : 3.5
         });
         if (res && res.forecast14Days && res.forecast14Days.length > 0) {
           weatherForecast14Days = res.forecast14Days;
@@ -7437,12 +7511,13 @@ function createOutput(data, callback) {
 
       // Stündliche Daten für diesen Tag extrahieren
       const hourlyData = extractHourlyDataForDay(hourly, dateStr);
-      const estPvKwh = Number((activeSun * 2.2).toFixed(1));
-      const solarYield = {
-        estimatedPvKwh: estPvKwh,
-        maxGhiWatts: Math.round(activeSun * 85),
-        dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
-      };
+      const solarYield = (typeof WeatherService !== 'undefined' && WeatherService.calculateSolarYield)
+        ? WeatherService.calculateSolarYield(hourlyData, activeSun, { baseLoadKw: appData.settings.bayrhofsBaseLoadKw || 3.5 })
+        : {
+            estimatedPvKwh: Number((activeSun * 5.2).toFixed(1)),
+            maxGhiWatts: Math.round(activeSun * 95),
+            dailyGhiKwhM2: Number((activeSun * 0.65).toFixed(1))
+          };
 
       // Zukunftsprojektion der Sonnenstunden
       const isToday = (i === 0);
@@ -7520,12 +7595,21 @@ function createOutput(data, callback) {
           ? Math.round(hourly.shortwave_radiation_instant[j])
           : (hourNum >= 7 && hourNum <= 19 ? Math.round(Math.sin(((hourNum - 7) / 12) * Math.PI) * 650) : 0);
 
+        const phys = (typeof WeatherService !== 'undefined' && WeatherService.calculateBayrhofsSolarPhysics)
+          ? WeatherService.calculateBayrhofsSolarPhysics(new Date(dateStr), hourNum, ghi, 0, 0, temp, appData.settings.bayrhofsBaseLoadKw || 3.5)
+          : { gti: Math.round(ghi * 1.35), pvKw: Number(((ghi * 1.35 / 1000) * 18.7 * 0.9).toFixed(2)), surplusKw: Number(Math.max(0, ((ghi * 1.35 / 1000) * 18.7 * 0.9) - 3.5).toFixed(2)), isWallboxActive: false, evChargeKw: 0 };
+
         hours.push({
           time: timePart,
           hour: hourNum,
           sunHours,
           rain,
           ghi,
+          gti: phys.gti,
+          pvKw: phys.pvKw,
+          surplusKw: phys.surplusKw,
+          evChargeKw: phys.evChargeKw,
+          isWallboxActive: phys.isWallboxActive,
           temp,
           icon
         });
@@ -7537,6 +7621,7 @@ function createOutput(data, callback) {
 
   function generateSyntheticHourly(dateStr) {
     const hours = [];
+    const dObj = dateStr ? new Date(dateStr) : new Date();
     for (let h = 0; h < 24; h++) {
       const isDay = (h >= 7 && h <= 19);
       const sunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9).toFixed(2)) : 0;
@@ -7551,12 +7636,21 @@ function createOutput(data, callback) {
         icon = hInfo.icon;
       }
 
+      const phys = (typeof WeatherService !== 'undefined' && WeatherService.calculateBayrhofsSolarPhysics)
+        ? WeatherService.calculateBayrhofsSolarPhysics(dObj, h, ghi, 0, 0, temp, (appData && appData.settings && appData.settings.bayrhofsBaseLoadKw) || 3.5)
+        : { gti: Math.round(ghi * 1.35), pvKw: Number(((ghi * 1.35 / 1000) * 18.7 * 0.9).toFixed(2)), surplusKw: Number(Math.max(0, ((ghi * 1.35 / 1000) * 18.7 * 0.9) - 3.5).toFixed(2)), isWallboxActive: false, evChargeKw: 0 };
+
       hours.push({
         time: `${String(h).padStart(2, '0')}:00`,
         hour: h,
         sunHours,
         rain,
         ghi,
+        gti: phys.gti,
+        pvKw: phys.pvKw,
+        surplusKw: phys.surplusKw,
+        evChargeKw: phys.evChargeKw,
+        isWallboxActive: phys.isWallboxActive,
         temp,
         icon
       });
@@ -7640,13 +7734,14 @@ function createOutput(data, callback) {
       }
 
       const fb = getFallbackSunTimes(d);
-      const estPvKwh = Number((activeSun * 2.2).toFixed(1));
-      const solarYield = {
-        estimatedPvKwh: estPvKwh,
-        maxGhiWatts: Math.round(activeSun * 85),
-        dailyGhiKwhM2: Number((activeSun * 0.45).toFixed(1))
-      };
       const synthHours = generateSyntheticHourly(dateStr);
+      const solarYield = (typeof WeatherService !== 'undefined' && WeatherService.calculateSolarYield)
+        ? WeatherService.calculateSolarYield(synthHours, activeSun, { baseLoadKw: appData.settings.bayrhofsBaseLoadKw || 3.5 })
+        : {
+            estimatedPvKwh: Number((activeSun * 5.2).toFixed(1)),
+            maxGhiWatts: Math.round(activeSun * 95),
+            dailyGhiKwhM2: Number((activeSun * 0.65).toFixed(1))
+          };
 
       const isToday = (i === 0);
       const sunCalc = (typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
@@ -8369,12 +8464,14 @@ function createOutput(data, callback) {
       const today = weatherForecast14Days && weatherForecast14Days[0];
       const badges = [];
 
-      // Solar GHI
+      // Solar GTI & 18.7 kWp PV
       if (today && today.solarYield) {
+        const gtiWatts = today.solarYield.maxGtiWatts || today.solarYield.maxGhiWatts;
         badges.push(`
-          <div class="meta-badge-item highlight-solar">
-            <span>☀️ Solar-GHI: <strong>${today.solarYield.maxGhiWatts} W/m²</strong></span>
+          <div class="meta-badge-item highlight-solar" title="18.7 kWp Süddach (30° Neigung, Unterwang)">
+            <span>☀️ Süddach-GTI: <strong>${gtiWatts} W/m²</strong></span>
             <span>• ~${today.solarYield.estimatedPvKwh} kWh PV</span>
+            ${today.solarYield.estimatedSurplusKwh > 0 ? `<span>• ~${today.solarYield.estimatedSurplusKwh} kWh Überschuss</span>` : ''}
           </div>
         `);
       }
@@ -9413,12 +9510,20 @@ function createOutput(data, callback) {
                 const hIdx = c.dataIndex;
                 const h = hours[hIdx] || {};
                 if (c.dataset.label && c.dataset.label.includes('KI-Kalibriert')) {
-                  const kwStr = (h.calibratedPvKw !== undefined) ? ` (~${h.calibratedPvKw} kW PV)` : (h.pvKw !== undefined ? ` (~${h.pvKw} kW PV)` : '');
+                  const kw = (h.calibratedPvKw !== undefined) ? h.calibratedPvKw : (h.pvKw !== undefined ? h.pvKw : null);
+                  const sur = (h.calibratedSurplusKw !== undefined) ? h.calibratedSurplusKw : (h.surplusKw !== undefined ? h.surplusKw : null);
+                  let kwStr = kw !== null ? ` (~${kw} kW PV` : '';
+                  if (sur !== null && sur > 0) kwStr += `, ${sur} kW Überschuss${h.isWallboxActive ? ' 🔌' : ''}`;
+                  if (kwStr) kwStr += ')';
                   return ` ✨ KI-Kalibriert: ${c.parsed.y} Min${kwStr}`;
                 }
                 if (c.dataset.label && c.dataset.label.includes('Roh-Modell')) {
-                  const rawKw = (h.rawPvKw !== undefined) ? ` (~${h.rawPvKw} kW PV)` : '';
-                  return ` 📊 Roh-Modell: ${c.parsed.y} Min${rawKw}`;
+                  const rawKw = (h.rawPvKw !== undefined) ? h.rawPvKw : null;
+                  const rawSur = (h.rawSurplusKw !== undefined) ? h.rawSurplusKw : null;
+                  let rawStr = rawKw !== null ? ` (~${rawKw} kW PV` : '';
+                  if (rawSur !== null && rawSur > 0) rawStr += `, ${rawSur} kW Überschuss`;
+                  if (rawStr) rawStr += ')';
+                  return ` 📊 Roh-Modell: ${c.parsed.y} Min${rawStr}`;
                 }
                 return ` 💧 Niederschlag: ${c.parsed.y} l/m²`;
               }
@@ -10626,6 +10731,15 @@ function createOutput(data, callback) {
     }
 
     renderThgYearChips();
+
+    // Bayrhofs PV- & Grundlast Settings befüllen
+    const bLoad = (appData.settings && appData.settings.bayrhofsBaseLoadKw !== undefined) ? Number(appData.settings.bayrhofsBaseLoadKw) : 3.5;
+    if (DOM.sliderBayrhofsBaseLoad) DOM.sliderBayrhofsBaseLoad.value = bLoad;
+    if (DOM.inputBayrhofsBaseLoad) DOM.inputBayrhofsBaseLoad.value = bLoad.toFixed(1);
+    if (DOM.lblBayrhofsBaseLoad) DOM.lblBayrhofsBaseLoad.textContent = `${bLoad.toFixed(1)} kW`;
+    if (DOM.bayrhofsBaseLoadHint) {
+      DOM.bayrhofsBaseLoadHint.textContent = `Standort-Grundlast (${bLoad.toFixed(1)} kW) wird vor dem Laden von der PV-Erzeugung abgezogen. Wallbox benötigt min. 4.1 kW Netto-Überschuss.`;
+    }
 
     if (DOM.inputCloudApiUrl) {
       DOM.inputCloudApiUrl.value = getCloudApiUrl();

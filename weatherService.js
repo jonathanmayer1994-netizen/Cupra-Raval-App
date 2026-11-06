@@ -21,7 +21,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const CACHE_KEY = 'cupra_raval_weather_service_cache_v10';
+  const CACHE_KEY = 'cupra_raval_weather_service_cache_v11';
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten Cache wie angefordert
 
   let latestInversionResult = null;
@@ -378,32 +378,256 @@
   }
 
   // =========================================================================
-  // SOLARSTRAHLUNG & PV-BERECHNUNG (GHI in W/m² -> kWh)
+  // PHYSIKALISCHE MODELLIERUNG: SÜDDACH BAYRHOFS (UNTERWANG 18, KEMPTEN)
+  // 18.7 kWp Peak, 30° Dachneigung, 180° Süd, Zelltemperatur (-0.38%/K),
+  // Dämpfung bei Sonnenhöhe < 18° (Südliche Baumreihe), Grundlast (3.5 kW),
+  // Strikte 3-Phasen Wallbox Mindestschwelle (4.1 kW = 3x 6A x 230V)
   // =========================================================================
-  function calculateSolarYield(hourlyGhiArray, sunshineHours) {
-    if (!Array.isArray(hourlyGhiArray) || hourlyGhiArray.length === 0) {
-      // Annäherung über Sonnenstunden
-      const estKwh = Number((sunshineHours * 5.2).toFixed(1));
+  const BAYRHOFS_CONFIG = {
+    lat: 47.7468,
+    lon: 10.3094,
+    elevation: 720,
+    peakPowerKwp: 18.7,       // A1: 18.7 kWp Peakleistung älterer Module
+    tiltDeg: 30.0,             // A2: 30° Dachneigung
+    azimuthDeg: 180.0,         // A2: 180° Süd (True South)
+    tempCoeff: -0.0038,        // A5: -0.38%/K Leistungstemperaturkoeffizient
+    tStc: 25.0,                // STC Referenztemperatur in °C
+    noctFactor: 0.03125,       // K pro W/m² (Delta-T Zelle vs. Luft)
+    systemPr: 0.90,            // AC-Wechselrichter & Leitungsverluste
+    albedo: 0.20,              // A2: Boden-Albedo
+    treeHorizonDeg: 18.0,      // A6: Horizont-Dämpfung südliche Baumreihe Unterwang
+    wallboxMinSurplusKw: 4.1,  // A7: Strikte 3-Phasen Mindestladeleistung (3x 6A x 230V)
+    defaultBaseLoadKw: 3.5     // A3: Standort-Grundlast Unterwang
+  };
+
+  /**
+   * Berechnet exakt für einen Tag und eine Stunde die physikalischen Strahlungs-
+   * und Leistungswerte für das 18.7 kWp Süddach bei Bayrhofs in Unterwang.
+   *
+   * @param {Date|string} dDate - Datum des Tages
+   * @param {number} hourNum - Stundenzahl (0 - 23)
+   * @param {number} ghi - Global Horizontal Irradiance in W/m²
+   * @param {number} dni - Direct Normal Irradiance in W/m² (optional)
+   * @param {number} dhi - Diffuse Horizontal Irradiance in W/m² (optional)
+   * @param {number} tempAmb - Umgebungstemperatur in °C
+   * @param {number} baseLoadKw - Standort-Grundlast in kW (Standard: 3.5 kW)
+   * @returns {Object} Physikalische Werte (alphaDeg, cosTheta, fShade, gti, pvKw, surplusKw, evChargeKw, isWallboxActive)
+   */
+  function calculateBayrhofsSolarPhysics(dDate, hourNum, ghi, dni, dhi, tempAmb, baseLoadKw = 3.5) {
+    const d = (dDate instanceof Date) ? dDate : new Date(dDate);
+    const startOfYear = new Date(Date.UTC(d.getFullYear(), 0, 1));
+    const dayOfYear = Math.floor((d.getTime() - startOfYear.getTime()) / 86400000) + 1;
+
+    // 1. Deklination delta (Cooper 1969)
+    const deltaRad = (23.45 * Math.PI / 180) * Math.sin((2 * Math.PI / 365) * (284 + dayOfYear));
+
+    // 2. Zeitgleichung EOT in Minuten
+    const B = (2 * Math.PI / 365) * (dayOfYear - 81);
+    const eotMinutes = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+
+    // 3. Sonnenzeit & Stundenwinkel omega (CET 15° vs CEST 30°)
+    const isDst = (d.getMonth() >= 3 && d.getMonth() <= 9); // April bis Oktober CEST
+    const standardMeridian = isDst ? 30.0 : 15.0;
+    const timeSolar = (hourNum + 0.5) + (4 * (BAYRHOFS_CONFIG.lon - standardMeridian) + eotMinutes) / 60;
+    const omegaRad = ((timeSolar - 12) * 15) * Math.PI / 180;
+
+    // 4. Sonnenhöhe alpha_s (Solar Altitude)
+    const phiRad = BAYRHOFS_CONFIG.lat * Math.PI / 180;
+    const sinAlpha = Math.sin(phiRad) * Math.sin(deltaRad) + Math.cos(phiRad) * Math.cos(deltaRad) * Math.cos(omegaRad);
+
+    const ghiVal = Math.max(0, Number(ghi) || 0);
+
+    // Wenn die Sonne unter dem Horizont steht oder keine Einstrahlung vorliegt
+    if (sinAlpha <= 0.01 || ghiVal <= 0) {
       return {
-        dailyGhiKwhM2: Number((sunshineHours * 0.65).toFixed(2)),
-        maxGhiWatts: sunshineHours > 5 ? 750 : (sunshineHours > 2 ? 400 : 150),
-        estimatedPvKwh: estKwh
+        alphaDeg: 0,
+        cosTheta: 0,
+        fShade: 0,
+        ghi: ghiVal,
+        gti: 0,
+        dni: 0,
+        dhi: 0,
+        tCell: (typeof tempAmb === 'number' && !isNaN(tempAmb)) ? tempAmb : 15,
+        etaTemp: 1.0,
+        pvKw: 0,
+        surplusKw: 0,
+        evChargeKw: 0,
+        isWallboxActive: false
       };
     }
 
-    // Integral über 24 Stunden (Summe W/m² * 1h = Wh/m² / 1000 = kWh/m²)
-    const totalGhiWhM2 = hourlyGhiArray.reduce((acc, val) => acc + (Math.max(0, val) || 0), 0);
-    const dailyGhiKwhM2 = Number((totalGhiWhM2 / 1000).toFixed(2));
-    const maxGhiWatts = Math.round(Math.max(0, ...hourlyGhiArray));
+    const alphaRad = Math.asin(Math.min(1.0, Math.max(0.0, sinAlpha)));
+    const alphaDeg = alphaRad * 180 / Math.PI;
 
-    // Typische Büro-PV-Anlage bei Bayrhofs (~8.5 kWp effektive Netto-Leistung)
-    // Ertrag = kWh/m² * Anlagen-Peak * PR (Performance Ratio ~0.82)
-    const estimatedPvKwh = Number((dailyGhiKwhM2 * 8.5 * 0.82).toFixed(1));
+    // 5. Sonnenazimut gamma_s relativ zu Süd (0 = Süd, negativ = Ost, positiv = West)
+    const cosGamma = (Math.sin(alphaRad) * Math.sin(phiRad) - Math.sin(deltaRad)) / (Math.cos(alphaRad) * Math.cos(phiRad));
+    const clampedCosGamma = Math.min(1.0, Math.max(-1.0, cosGamma));
+    const gammaSouthRad = (omegaRad >= 0 ? 1 : -1) * Math.acos(clampedCosGamma);
+
+    // 6. Einfallswinkel theta auf 30° geneigter Südfläche
+    const betaRad = BAYRHOFS_CONFIG.tiltDeg * Math.PI / 180;
+    const cosTheta = Math.sin(alphaRad) * Math.cos(betaRad) + Math.cos(alphaRad) * Math.sin(betaRad) * Math.cos(gammaSouthRad);
+    const effCosTheta = Math.max(0, cosTheta);
+
+    // 7. Horizont-Dämpfung südliche Baumreihe Unterwang (A6: Sonnenhöhe < 18°)
+    let fShade = 1.0;
+    if (alphaDeg < BAYRHOFS_CONFIG.treeHorizonDeg) {
+      fShade = Math.max(0.0, alphaDeg / BAYRHOFS_CONFIG.treeHorizonDeg);
+    }
+
+    // 8. Strahlungskomponenten-Zerlegung (GHI in Direct & Diffuse)
+    let dniVal = Math.max(0, Number(dni) || 0);
+    let dhiVal = Math.max(0, Number(dhi) || 0);
+
+    if (dniVal === 0 && dhiVal === 0) {
+      const sinA = Math.max(0.08, sinAlpha);
+      const kt = Math.min(1.0, ghiVal / (1367 * sinA));
+      const df = (kt <= 0.22) ? (1.0 - 0.09 * kt) : (kt <= 0.80 ? (0.9511 - 0.1604 * kt + 4.388 * Math.pow(kt, 2) - 16.638 * Math.pow(kt, 3) + 12.336 * Math.pow(kt, 4)) : 0.165);
+      dhiVal = Math.min(ghiVal, Math.max(0.15 * ghiVal, ghiVal * df));
+      dniVal = Math.max(0, (ghiVal - dhiVal) / sinA);
+    }
+
+    // 9. Liu-Jordan Transposition auf 30° Süddach (GTI)
+    const iBeam = dniVal * effCosTheta * fShade;
+    const iDiffuse = dhiVal * ((1 + Math.cos(betaRad)) / 2);
+    const iGround = ghiVal * BAYRHOFS_CONFIG.albedo * ((1 - Math.cos(betaRad)) / 2);
+    const gti = Math.round(iBeam + iDiffuse + iGround);
+
+    // 10. Physikalische Zelltemperatur & Wirkungsgrad (-0.38%/K ab 25°C STC)
+    const tAmb = (typeof tempAmb === 'number' && !isNaN(tempAmb)) ? tempAmb : 15;
+    const tCell = Number((tAmb + BAYRHOFS_CONFIG.noctFactor * gti).toFixed(1));
+    const etaTemp = 1 + BAYRHOFS_CONFIG.tempCoeff * (tCell - BAYRHOFS_CONFIG.tStc);
+
+    // 11. Brutto PV-Leistung (18.7 kWp STC * GTI / 1000 * etaTemp * PR 0.90)
+    const rawPv = BAYRHOFS_CONFIG.peakPowerKwp * (gti / 1000) * etaTemp * BAYRHOFS_CONFIG.systemPr;
+    const pvKw = Number(Math.max(0, Math.min(BAYRHOFS_CONFIG.peakPowerKwp, rawPv)).toFixed(2));
+
+    // 12. Standort-Grundlast (3.5 kW Standard) & Netto-Überschuss
+    const effectiveBase = Math.max(0, Number(baseLoadKw !== undefined ? baseLoadKw : BAYRHOFS_CONFIG.defaultBaseLoadKw));
+    const surplusKw = Number(Math.max(0, pvKw - effectiveBase).toFixed(2));
+
+    // 13. Strikte 3-Phasen Wallbox (Mindestens 4.1 kW = 3x 6A x 230V)
+    const isWallboxActive = (surplusKw >= BAYRHOFS_CONFIG.wallboxMinSurplusKw);
+    const evChargeKw = isWallboxActive ? Number(Math.min(11.0, surplusKw).toFixed(2)) : 0.0;
 
     return {
-      dailyGhiKwhM2,
-      maxGhiWatts,
-      estimatedPvKwh
+      alphaDeg: Number(alphaDeg.toFixed(1)),
+      cosTheta: Number(effCosTheta.toFixed(3)),
+      fShade: Number(fShade.toFixed(2)),
+      ghi: ghiVal,
+      gti,
+      dni: Math.round(dniVal),
+      dhi: Math.round(dhiVal),
+      tCell,
+      etaTemp: Number(etaTemp.toFixed(3)),
+      pvKw,
+      surplusKw,
+      evChargeKw,
+      isWallboxActive
+    };
+  }
+
+  // =========================================================================
+  // SOLARSTRAHLUNG & PV-BERECHNUNG (GTI & GHI -> kWh)
+  // =========================================================================
+  function calculateSolarYield(hourlyItemsOrGhiArray, sunshineHours, options = {}) {
+    const baseLoad = Number(options.baseLoadKw !== undefined ? options.baseLoadKw : BAYRHOFS_CONFIG.defaultBaseLoadKw);
+
+    // 1. Wenn ein Array von stündlichen Objekten vorliegt
+    if (Array.isArray(hourlyItemsOrGhiArray) && hourlyItemsOrGhiArray.length > 0 && typeof hourlyItemsOrGhiArray[0] === 'object') {
+      const hours = hourlyItemsOrGhiArray;
+      const totalGhiWhM2 = hours.reduce((acc, h) => acc + (Math.max(0, h.ghi || 0)), 0);
+      const totalGtiWhM2 = hours.reduce((acc, h) => acc + (Math.max(0, h.gti !== undefined ? h.gti : (h.ghi || 0))), 0);
+      const dailyGhiKwhM2 = Number((totalGhiWhM2 / 1000).toFixed(2));
+      const dailyGtiKwhM2 = Number((totalGtiWhM2 / 1000).toFixed(2));
+      const maxGhiWatts = Math.round(Math.max(0, ...hours.map(h => h.ghi || 0)));
+      const maxGtiWatts = Math.round(Math.max(0, ...hours.map(h => (h.gti !== undefined ? h.gti : (h.ghi || 0)))));
+
+      const estimatedPvKwh = Number(hours.reduce((acc, h) => acc + (h.pvKw || 0), 0).toFixed(1));
+      const estimatedSurplusKwh = Number(hours.reduce((acc, h) => acc + (h.surplusKw || 0), 0).toFixed(1));
+      const estimatedEvChargeKwh = Number(hours.reduce((acc, h) => acc + (h.evChargeKw || 0), 0).toFixed(1));
+      const maxPvKw = Number(Math.max(0, ...hours.map(h => h.pvKw || 0)).toFixed(2));
+      const maxSurplusKw = Number(Math.max(0, ...hours.map(h => h.surplusKw || 0)).toFixed(2));
+
+      // Wallbox Ladefenster ermitteln (Stunden mit Überschuss >= 4.1 kW)
+      const wallboxHours = hours.filter(h => h.isWallboxActive || (h.surplusKw >= BAYRHOFS_CONFIG.wallboxMinSurplusKw));
+      const wallboxActiveHours = wallboxHours.length;
+      let wallboxWindowRange = '';
+      if (wallboxActiveHours > 0) {
+        const startH = wallboxHours[0].hour;
+        const endH = wallboxHours[wallboxHours.length - 1].hour + 1;
+        wallboxWindowRange = `${String(startH).padStart(2, '0')}:00 – ${String(endH).padStart(2, '0')}:00 Uhr`;
+      }
+
+      return {
+        dailyGhiKwhM2,
+        dailyGtiKwhM2,
+        maxGhiWatts,
+        maxGtiWatts,
+        estimatedPvKwh,
+        estimatedSurplusKwh,
+        estimatedEvChargeKwh,
+        maxPvKw,
+        maxSurplusKw,
+        wallboxActiveHours,
+        hasWallboxWindow: wallboxActiveHours > 0,
+        wallboxWindowRange
+      };
+    }
+
+    // 2. Wenn ein Zahlen-Array übergeben wurde
+    if (Array.isArray(hourlyItemsOrGhiArray) && hourlyItemsOrGhiArray.length > 0) {
+      const ghiVals = hourlyItemsOrGhiArray;
+      const totalGhiWhM2 = ghiVals.reduce((acc, val) => acc + (Math.max(0, val) || 0), 0);
+      const dailyGhiKwhM2 = Number((totalGhiWhM2 / 1000).toFixed(2));
+      const maxGhiWatts = Math.round(Math.max(0, ...ghiVals));
+
+      // Physikalische Annäherung: 30° Süddach GTI-Faktor ca. 1.35x gegenüber flachem GHI
+      const gtiBoost = 1.35;
+      const dailyGtiKwhM2 = Number((dailyGhiKwhM2 * gtiBoost).toFixed(2));
+      const maxGtiWatts = Math.round(maxGhiWatts * gtiBoost);
+      const estimatedPvKwh = Number((dailyGtiKwhM2 * BAYRHOFS_CONFIG.peakPowerKwp * 0.90).toFixed(1));
+      const baseLoadDeduction = baseLoad * 6; // ca. 6h effektive Kern-Sonnenzeit
+      const estimatedSurplusKwh = Number(Math.max(0, estimatedPvKwh - baseLoadDeduction).toFixed(1));
+      const estimatedEvChargeKwh = estimatedSurplusKwh >= BAYRHOFS_CONFIG.wallboxMinSurplusKw ? estimatedSurplusKwh : 0;
+      const maxPvKw = Number(((maxGtiWatts / 1000) * BAYRHOFS_CONFIG.peakPowerKwp * 0.90).toFixed(2));
+      const maxSurplusKw = Number(Math.max(0, maxPvKw - baseLoad).toFixed(2));
+      const hasWallbox = maxSurplusKw >= BAYRHOFS_CONFIG.wallboxMinSurplusKw;
+
+      return {
+        dailyGhiKwhM2,
+        dailyGtiKwhM2,
+        maxGhiWatts,
+        maxGtiWatts,
+        estimatedPvKwh,
+        estimatedSurplusKwh,
+        estimatedEvChargeKwh,
+        maxPvKw,
+        maxSurplusKw,
+        wallboxActiveHours: hasWallbox ? 3 : 0,
+        hasWallboxWindow: hasWallbox,
+        wallboxWindowRange: hasWallbox ? '11:00 – 15:00 Uhr' : ''
+      };
+    }
+
+    // 3. Fallback über Sonnenstunden
+    const sH = Math.max(0, Number(sunshineHours) || 0);
+    const estKwh = Number((sH * (BAYRHOFS_CONFIG.peakPowerKwp * 0.45)).toFixed(1));
+    const estSurplus = Number(Math.max(0, estKwh - baseLoad * Math.min(6, sH)).toFixed(1));
+    const hasWb = sH >= 4.0;
+    return {
+      dailyGhiKwhM2: Number((sH * 0.65).toFixed(2)),
+      dailyGtiKwhM2: Number((sH * 0.88).toFixed(2)),
+      maxGhiWatts: sH > 5 ? 750 : (sH > 2 ? 400 : 150),
+      maxGtiWatts: sH > 5 ? 980 : (sH > 2 ? 550 : 200),
+      estimatedPvKwh: estKwh,
+      estimatedSurplusKwh: estSurplus,
+      estimatedEvChargeKwh: hasWb ? estSurplus : 0,
+      maxPvKw: sH > 5 ? 14.5 : (sH > 2 ? 8.2 : 3.0),
+      maxSurplusKw: sH > 5 ? 11.0 : (sH > 2 ? 4.7 : 0),
+      wallboxActiveHours: hasWb ? 4 : 0,
+      hasWallboxWindow: hasWb,
+      wallboxWindowRange: hasWb ? '11:30 – 15:30 Uhr' : ''
     };
   }
 
@@ -589,9 +813,23 @@
 
   function getOptimalPvWindow(hours) {
     if (!Array.isArray(hours) || hours.length === 0) {
-      return { start: '11:30', end: '15:30', label: '11:30 – 15:30', peakKw: 5.2 };
+      return { start: '11:30', end: '15:30', label: '11:30 – 15:30', peakKw: 5.2, isWallboxWindow: false };
     }
-    const sunHours = hours.filter(h => (h.pvKw >= 2.0 || h.sunHours >= 0.35));
+    // Priorität: 3-Phasen Wallbox Ladefenster (Überschuss >= 4.1 kW)
+    const wbHours = hours.filter(h => h.isWallboxActive || (h.surplusKw >= BAYRHOFS_CONFIG.wallboxMinSurplusKw));
+    if (wbHours.length > 0) {
+      const firstH = wbHours[0].hour;
+      const lastH = wbHours[wbHours.length - 1].hour;
+      const maxSurplus = Math.max(...wbHours.map(h => h.surplusKw || 0));
+      return {
+        start: `${String(firstH).padStart(2, '0')}:00`,
+        end: `${String(lastH + 1).padStart(2, '0')}:00`,
+        label: `${String(firstH).padStart(2, '0')}:00 – ${String(lastH + 1).padStart(2, '0')}:00`,
+        peakKw: Number(maxSurplus.toFixed(1)),
+        isWallboxWindow: true
+      };
+    }
+    const sunHours = hours.filter(h => (h.pvKw >= 3.0 || h.sunHours >= 0.35));
     if (sunHours.length === 0) {
       const maxH = hours.reduce((max, h) => ((h.pvKw || 0) > (max.pvKw || 0) ? h : max), hours[12] || hours[0]);
       const startH = Math.max(8, (maxH.hour || 12) - 1);
@@ -600,7 +838,8 @@
         start: `${String(startH).padStart(2, '0')}:00`,
         end: `${String(endH).padStart(2, '0')}:00`,
         label: `${String(startH).padStart(2, '0')}:00 – ${String(endH).padStart(2, '0')}:00`,
-        peakKw: maxH.pvKw || 2.5
+        peakKw: maxH.pvKw || 2.5,
+        isWallboxWindow: false
       };
     }
     const firstH = sunHours[0].hour;
@@ -610,7 +849,8 @@
       start: `${String(firstH).padStart(2, '0')}:15`,
       end: `${String(lastH + 1).padStart(2, '0')}:45`,
       label: `${String(firstH).padStart(2, '0')}:15 – ${String(lastH + 1).padStart(2, '0')}:45`,
-      peakKw: Number(maxKw.toFixed(1))
+      peakKw: Number(maxKw.toFixed(1)),
+      isWallboxWindow: false
     };
   }
 
@@ -619,6 +859,7 @@
   // =========================================================================
   function synthesizeForecast(openMeteo, brightSkyList, dwdAlerts, geoSphere, metNorway, threshold = 4.5, options = {}) {
     const list = [];
+    const baseLoadKw = Number(options && options.bayrhofsBaseLoadKw !== undefined ? options.bayrhofsBaseLoadKw : (options && options.baseLoadKw !== undefined ? options.baseLoadKw : BAYRHOFS_CONFIG.defaultBaseLoadKw));
     const daily = openMeteo ? openMeteo.daily : null;
     const hourly = openMeteo ? openMeteo.hourly : null;
     const adaptiveStore = getAdaptiveStore();
@@ -720,6 +961,8 @@
             const rain = Number((hourly.precipitation ? (hourly.precipitation[j] || 0) : 0).toFixed(1));
             const rainProb = hourly.precipitation_probability ? (hourly.precipitation_probability[j] || 0) : 0;
             const rawGhi = Math.round(hourly.shortwave_radiation_instant ? (hourly.shortwave_radiation_instant[j] || 0) : 0);
+            const rawDni = Math.round(hourly.direct_normal_irradiance ? (hourly.direct_normal_irradiance[j] || 0) : 0);
+            const rawDhi = Math.round(hourly.diffuse_radiation ? (hourly.diffuse_radiation[j] || 0) : 0);
             const temp = Math.round(hourly.temperature_2m ? hourly.temperature_2m[j] : 15);
             const hCode = hourly.weather_code ? hourly.weather_code[j] : 0;
 
@@ -727,12 +970,17 @@
             const bias = adaptiveStore.hourlyBias[hourNum] || 1.0;
             const calSunH = Number((rawSunH * bias).toFixed(2));
             const calGhi = Math.round(rawGhi * bias);
-            const rawPvKw = Number(((rawGhi / 1000) * 8.5 * 0.82).toFixed(2));
-            const calPvKw = Number(((calGhi / 1000) * 8.5 * 0.82).toFixed(2));
+            const calDni = Math.round(rawDni * bias);
+            const calDhi = Math.round(rawDhi * bias);
 
+            // Physikalische 18.7 kWp Süddach-Modellierung (30° Neigung, Kempten-Unterwang)
+            const rawPhysics = calculateBayrhofsSolarPhysics(d, hourNum, rawGhi, rawDni, rawDhi, temp, baseLoadKw);
+            const calPhysics = calculateBayrhofsSolarPhysics(d, hourNum, calGhi, calDni, calDhi, temp, baseLoadKw);
+
+            const activePhysics = isCalibratedMode ? calPhysics : rawPhysics;
             const activeSunH = isCalibratedMode ? calSunH : rawSunH;
             const activeGhi = isCalibratedMode ? calGhi : rawGhi;
-            const activePvKw = isCalibratedMode ? calPvKw : rawPvKw;
+            const activePvKw = activePhysics.pvKw;
 
             hourlyGhi.push(activeGhi);
             hourlyRainProb.push(rainProb);
@@ -763,9 +1011,21 @@
               ghi: activeGhi,
               rawGhi,
               calibratedGhi: calGhi,
+              gti: activePhysics.gti,
+              rawGti: rawPhysics.gti,
+              calibratedGti: calPhysics.gti,
               pvKw: activePvKw,
-              rawPvKw,
-              calibratedPvKw: calPvKw,
+              rawPvKw: rawPhysics.pvKw,
+              calibratedPvKw: calPhysics.pvKw,
+              surplusKw: activePhysics.surplusKw,
+              rawSurplusKw: rawPhysics.surplusKw,
+              calibratedSurplusKw: calPhysics.surplusKw,
+              evChargeKw: activePhysics.evChargeKw,
+              isWallboxActive: activePhysics.isWallboxActive,
+              tCell: activePhysics.tCell,
+              etaTemp: activePhysics.etaTemp,
+              cosTheta: activePhysics.cosTheta,
+              fShade: activePhysics.fShade,
               temp,
               icon
             });
@@ -786,12 +1046,29 @@
       let activeTotalSun = isCalibratedMode ? calTotalSun : rawTotalSun;
 
       // Falls keine stündlichen Daten vorhanden sind, synthetische 24h generieren abgestimmt auf Sonnenstunden & Niederschlag
-      const hourlyData = hours.length === 24 ? hours : generateSynthetic24Hours(dateStr, isCalibratedMode, adaptiveStore.hourlyBias, rawTotalSun, rainMm, code);
+      const hourlyData = hours.length === 24 ? hours : generateSynthetic24Hours(dateStr, isCalibratedMode, adaptiveStore.hourlyBias, rawTotalSun, rainMm, code, baseLoadKw, d);
 
-      // Solar & PV Berechnung
-      const solarYield = calculateSolarYield(hourlyGhi.length === 24 ? hourlyGhi : hourlyData.map(h => h.ghi), activeTotalSun);
-      const rawSolarYield = calculateSolarYield(hourlyData.map(h => h.rawGhi || h.ghi), rawTotalSun);
-      const calibratedSolarYield = calculateSolarYield(hourlyData.map(h => h.calibratedGhi || h.ghi), calTotalSun);
+      // Solar & PV Berechnung mit 18.7 kWp GTI Modell & 3.5 kW Grundlast
+      const solarYield = calculateSolarYield(hourlyData, activeTotalSun, { baseLoadKw });
+      const rawSolarYield = calculateSolarYield(hourlyData.map(h => ({
+        ...h,
+        ghi: h.rawGhi !== undefined ? h.rawGhi : h.ghi,
+        gti: h.rawGti !== undefined ? h.rawGti : (h.gti || h.ghi),
+        pvKw: h.rawPvKw !== undefined ? h.rawPvKw : h.pvKw,
+        surplusKw: h.rawSurplusKw !== undefined ? h.rawSurplusKw : h.surplusKw,
+        evChargeKw: (h.rawSurplusKw !== undefined ? h.rawSurplusKw : h.surplusKw) >= BAYRHOFS_CONFIG.wallboxMinSurplusKw ? Math.min(11.0, (h.rawSurplusKw !== undefined ? h.rawSurplusKw : h.surplusKw)) : 0,
+        isWallboxActive: (h.rawSurplusKw !== undefined ? h.rawSurplusKw : h.surplusKw) >= BAYRHOFS_CONFIG.wallboxMinSurplusKw
+      })), rawTotalSun, { baseLoadKw });
+
+      const calibratedSolarYield = calculateSolarYield(hourlyData.map(h => ({
+        ...h,
+        ghi: h.calibratedGhi !== undefined ? h.calibratedGhi : h.ghi,
+        gti: h.calibratedGti !== undefined ? h.calibratedGti : (h.gti || h.ghi),
+        pvKw: h.calibratedPvKw !== undefined ? h.calibratedPvKw : h.pvKw,
+        surplusKw: h.calibratedSurplusKw !== undefined ? h.calibratedSurplusKw : h.surplusKw,
+        evChargeKw: (h.calibratedSurplusKw !== undefined ? h.calibratedSurplusKw : h.surplusKw) >= BAYRHOFS_CONFIG.wallboxMinSurplusKw ? Math.min(11.0, (h.calibratedSurplusKw !== undefined ? h.calibratedSurplusKw : h.surplusKw)) : 0,
+        isWallboxActive: (h.calibratedSurplusKw !== undefined ? h.calibratedSurplusKw : h.surplusKw) >= BAYRHOFS_CONFIG.wallboxMinSurplusKw
+      })), calTotalSun, { baseLoadKw });
 
       // Exaktes Wetter-Icon & Zustand
       const wInfo = determineAccurateWeatherIcon(activeTotalSun, rainMm, code);
@@ -854,13 +1131,14 @@
         ? calculateRemainingSunHours(calTotalSun, hourlyData.map(h => ({ ...h, sunHours: h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours })))
         : { total: calTotalSun, past: 0, remaining: calTotalSun, fractionPassed: 0 };
 
-      // Bayrhofs PV-Logik (Kombination aus verbleibender Sonnenscheindauer & Globalstrahlung)
+      // Bayrhofs PV-Logik (Kombination aus verbleibender Sonnenscheindauer & 18.7 kWp GTI Ertrag)
       const dayOfWeek = d.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
       const effectiveSunForDecision = isToday ? sunCalc.remaining : activeTotalSun;
+      const hasWallboxWindow = solarYield.hasWallboxWindow;
       const hasPvSurplus = (todayInversionOverride && todayInversionOverride.discrepancyDetected && !todayInversionOverride.isAboveCeiling)
         ? false
-        : (effectiveSunForDecision >= (isToday ? Math.min(2.0, threshold) : threshold) || solarYield.dailyGhiKwhM2 >= 3.2);
+        : (hasWallboxWindow || (effectiveSunForDecision >= (isToday ? Math.min(2.0, threshold) : threshold) && solarYield.maxSurplusKw >= 1.5) || solarYield.dailyGtiKwhM2 >= 2.8);
 
       let decision = 'home';
       let badgeLabel = '🏠 Homeoffice';
@@ -877,30 +1155,42 @@
           decision = isWorkday ? 'home' : 'weekend';
         }
       } else if (!isWorkday) {
-        if (hasPvSurplus) {
+        if (hasWallboxWindow) {
+          decision = 'weekend_charge';
+          badgeLabel = '⚡️ 3-Phasen PV';
+          hintText = isToday
+            ? `Hoher Solarüberschuss (${solarYield.wallboxWindowRange || `noch ${sunCalc.remaining}h Sonne`}, max. ${solarYield.maxSurplusKw} kW Überschuss). Wallbox aktiv!`
+            : `Hoher Solarüberschuss (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV, ${solarYield.estimatedSurplusKwh} kWh Überschuss). Wallbox aktiv!`;
+        } else if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
           hintText = isToday
-            ? `Hoher Solarertrag (noch ${sunCalc.remaining}h Sonne, ${activeTotalSun}h gesamt). Ladung bei Bayrhofs am Wochenende möglich!`
+            ? `Solarertrag (noch ${sunCalc.remaining}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Überschuss knapp an 4.1 kW Ladeschwelle.`
             : `Hoher Solarertrag (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ladung bei Bayrhofs am Wochenende möglich!`;
         } else {
           decision = 'weekend';
           badgeLabel = '🛋️ Wochenende';
           hintText = isToday
-            ? (sunCalc.remaining > 0 ? `Wochenende mit wenig Sonne (noch ${sunCalc.remaining}h). Kaum PV-Überschuss bei Bayrhofs.` : `Wochenende: Keine Sonne mehr heute (${activeTotalSun}h vorbei).`)
-            : `Wochenende mit wenig Sonne (${activeTotalSun}h). Kaum PV-Überschuss bei Bayrhofs.`;
+            ? (sunCalc.remaining > 0 ? `Wochenende mit wenig Sonne (noch ${sunCalc.remaining}h). Kaum PV-Überschuss über Grundlast (${baseLoadKw} kW).` : `Wochenende: Keine Sonne mehr heute (${activeTotalSun}h vorbei).`)
+            : `Wochenende mit wenig Sonne (${activeTotalSun}h). Kaum PV-Überschuss über Grundlast (${baseLoadKw} kW).`;
         }
+      } else if (hasWallboxWindow) {
+        decision = 'office';
+        badgeLabel = '🏢 Büro & Laden';
+        hintText = isToday
+          ? `3-Phasen Wallbox-Fenster aktiv (${solarYield.wallboxWindowRange || `noch ${sunCalc.remaining}h Sonne`}, max. ${solarYield.maxSurplusKw} kW Überschuss nach ${baseLoadKw} kW Grundlast)!`
+          : `Hoher PV-Überschuss (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV, ${solarYield.wallboxWindowRange}). Büro mit Laden verbinden!`;
       } else if (hasPvSurplus) {
         decision = 'office';
         badgeLabel = '🏢 Büro & Laden';
         hintText = isToday
-          ? `Hoher PV-Überschuss (noch ${sunCalc.remaining}h Sonne verbleibend von ${activeTotalSun}h). Ideal: Büro mit Laden bei Bayrhofs verbinden!`
-          : `Hoher PV-Überschuss (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
+          ? `PV-Ertrag vorhanden (noch ${sunCalc.remaining}h Sonne, ${solarYield.estimatedPvKwh} kWh PV). Überschuss (${solarYield.maxSurplusKw} kW) unter 4.1 kW Wallbox-Schwelle.`
+          : `PV-Ertrag vorhanden (${activeTotalSun}h Sonne, ca. ${solarYield.estimatedPvKwh} kWh PV). Büro mit Laden verbinden!`;
       } else {
         decision = 'home';
         badgeLabel = '🏠 Homeoffice';
         hintText = isToday
-          ? (sunCalc.remaining > 0 ? `Wenig Restsonne heute (noch ${sunCalc.remaining}h von ${activeTotalSun}h). Kein lohnender PV-Überschuss mehr – Homeoffice empfohlen.` : `Heute keine Sonne mehr verbleibend (${activeTotalSun}h vorbei). Homeoffice empfohlen.`)
+          ? (sunCalc.remaining > 0 ? `Wenig Restsonne heute (noch ${sunCalc.remaining}h von ${activeTotalSun}h). Kein lohnender PV-Überschuss – Homeoffice empfohlen.` : `Heute keine Sonne mehr verbleibend (${activeTotalSun}h vorbei). Homeoffice empfohlen.`)
           : `Wenig Sonne (${activeTotalSun}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
       }
 
@@ -956,9 +1246,11 @@
     return list;
   }
 
-  function generateSynthetic24Hours(dateStr, isCalibrated = true, hourlyBias = DEFAULT_HOURLY_BIAS, targetSunHours = null, rainMm = 0, weatherCode = 0) {
+  function generateSynthetic24Hours(dateStr, isCalibrated = true, hourlyBias = DEFAULT_HOURLY_BIAS, targetSunHours = null, rainMm = 0, weatherCode = 0, baseLoadKw = 3.5, refDate = null) {
     const hours = [];
     const sunScale = (targetSunHours !== null) ? Math.max(0, targetSunHours / 6.8) : 1.0;
+    const dObj = refDate || (dateStr ? new Date(dateStr) : new Date());
+
     for (let h = 0; h < 24; h++) {
       const isDay = (h >= 7 && h <= 19);
       const rawSunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9 * sunScale).toFixed(2)) : 0;
@@ -972,11 +1264,14 @@
       const calGhi = isDay ? Math.round(rawGhi * bias) : 0;
       const activeGhi = isCalibrated ? calGhi : rawGhi;
 
-      const rawPvKw = Number(((rawGhi / 1000) * 8.5 * 0.82).toFixed(2));
-      const calPvKw = Number(((calGhi / 1000) * 8.5 * 0.82).toFixed(2));
-      const activePvKw = isCalibrated ? calPvKw : rawPvKw;
-
       const temp = Math.round(8 + (isDay ? Math.sin(((h - 7) / 12) * Math.PI) * 9 : 0));
+
+      // Physikalische Modellierung (18.7 kWp Süddach, 30°, Grundlast)
+      const rawPhysics = calculateBayrhofsSolarPhysics(dObj, h, rawGhi, 0, 0, temp, baseLoadKw);
+      const calPhysics = calculateBayrhofsSolarPhysics(dObj, h, calGhi, 0, 0, temp, baseLoadKw);
+      const activePhysics = isCalibrated ? calPhysics : rawPhysics;
+      const activePvKw = activePhysics.pvKw;
+
       let icon;
       if (!isDay) {
         icon = rain > 0 ? '🌧️' : '🌙';
@@ -996,9 +1291,21 @@
         ghi: activeGhi,
         rawGhi,
         calibratedGhi: calGhi,
+        gti: activePhysics.gti,
+        rawGti: rawPhysics.gti,
+        calibratedGti: calPhysics.gti,
         pvKw: activePvKw,
-        rawPvKw,
-        calibratedPvKw: calPvKw,
+        rawPvKw: rawPhysics.pvKw,
+        calibratedPvKw: calPhysics.pvKw,
+        surplusKw: activePhysics.surplusKw,
+        rawSurplusKw: rawPhysics.surplusKw,
+        calibratedSurplusKw: calPhysics.surplusKw,
+        evChargeKw: activePhysics.evChargeKw,
+        isWallboxActive: activePhysics.isWallboxActive,
+        tCell: activePhysics.tCell,
+        etaTemp: activePhysics.etaTemp,
+        cosTheta: activePhysics.cosTheta,
+        fShade: activePhysics.fShade,
         temp,
         icon
       });
@@ -1156,6 +1463,9 @@
       return store;
     },
     getInversionVisionResult: () => latestInversionResult || (getAdaptiveStore().inversionOverride ? { fusionDecision: getAdaptiveStore().inversionOverride } : null),
-    calculateRemainingSunHours
+    calculateRemainingSunHours,
+    calculateSolarYield,
+    calculateBayrhofsSolarPhysics,
+    BAYRHOFS_CONFIG
   };
 });

@@ -1099,6 +1099,72 @@
               ＋ Neuen Ladeort anlegen
             </button>
           </div>
+
+          <!-- Bayrhofs PV- & Wallbox-Konfiguration (Unterwang 18) -->
+          <div class="swift-inset-group bayrhofs-pv-config-card" id="bayrhofsPvConfigCard" style="margin-top: 16px;">
+            <div class="inset-group-header">☀️ Bayrhofs PV-Anlage &amp; 3-Phasen Wallbox</div>
+            <p class="inset-group-desc">
+              Physikalische Modellierung der 18,7 kWp Süddach-Anlage (Unterwang 18, 30° Neigung). 
+              GTI-Transposition, Zelltemperatur (-0,38%/K) und Baumreihen-Dämpfung (&lt; 18°).
+            </p>
+
+            <!-- Grundlast-Einstellung mit Slider & Zahl -->
+            <div class="pv-config-control-group">
+              <div class="pv-config-label-row">
+                <span class="pv-config-label">STANDORT-GRUNDLAST</span>
+                <span class="pv-config-val-badge" id="lblBayrhofsBaseLoad">3.5 kW</span>
+              </div>
+              <div class="pv-slider-wrapper">
+                <input type="range" id="sliderBayrhofsBaseLoad" class="swift-range-slider" min="0.0" max="10.0" step="0.1" value="3.5">
+              </div>
+              <div class="pv-config-input-row">
+                <label for="inputBayrhofsBaseLoad" class="pv-input-sublabel">Feinjustierung:</label>
+                <div class="pv-number-input-wrap">
+                  <input type="number" id="inputBayrhofsBaseLoad" class="specs-input-control num-val" min="0.0" max="10.0" step="0.1" value="3.5">
+                  <span class="specs-unit-badge">kW</span>
+                </div>
+              </div>
+              <p class="pv-config-hint" id="bayrhofsBaseLoadHint">
+                Standort-Grundlast (3.5 kW) wird vor dem Laden von der PV-Erzeugung abgezogen. Wallbox benötigt min. 4.1 kW Netto-Überschuss.
+              </p>
+            </div>
+
+            <!-- Hardware & Physik Spezifikationen -->
+            <div class="pv-specs-mini-grid">
+              <div class="pv-spec-item">
+                <span class="pv-spec-icon">⚡️</span>
+                <div class="pv-spec-info">
+                  <span class="pv-spec-val">18,7 kWp</span>
+                  <span class="pv-spec-desc">Süddach 30° (180°)</span>
+                </div>
+              </div>
+              <div class="pv-spec-item">
+                <span class="pv-spec-icon">🔌</span>
+                <div class="pv-spec-info">
+                  <span class="pv-spec-val">&ge; 4,1 kW</span>
+                  <span class="pv-spec-desc">3-Phasen Wallbox (3x 6A)</span>
+                </div>
+              </div>
+              <div class="pv-spec-item">
+                <span class="pv-spec-icon">🌡️</span>
+                <div class="pv-spec-info">
+                  <span class="pv-spec-val">-0,38 %/K</span>
+                  <span class="pv-spec-desc">STC Zelltemperatur</span>
+                </div>
+              </div>
+              <div class="pv-spec-item">
+                <span class="pv-spec-icon">🌲</span>
+                <div class="pv-spec-info">
+                  <span class="pv-spec-val">&lt; 18° Dämpfung</span>
+                  <span class="pv-spec-desc">Baumreihe Unterwang</span>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" class="btn-swift-secondary full-width" id="btnSaveBayrhofsPvSettings" style="margin-top: 10px;">
+              <span>PV- &amp; Grundlast-Parameter anwenden ✓</span>
+            </button>
+          </div>
         </div>
 
         <!-- Sub-Tab 3: Datensicherung & Backup -->
