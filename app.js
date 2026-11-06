@@ -65,7 +65,7 @@
       name: "Öffentlich",
       icon: "⚡️",
       powerType: "grid",
-      kwhPrice: 0.59,
+      kwhPrice: null, // Kein Default-Preis für öffentliche Ladesäulen, da variabler Ad-hoc / Betreiber-Tarif
       address: "Variabel (Aktueller Standort)",
       elevation: 720,
       isVariable: true
@@ -668,7 +668,8 @@
           address = address || "Variabel";
           isVariable = true;
           powerType = 'grid';
-          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.59;
+          // Öffentliche Ladesäule: Kein Default-Preis (weder 0.59 noch 0.35); immer variabel beim Erfassen
+          kwhPrice = (item && item.kwhPrice !== undefined && item.kwhPrice !== null && item.kwhPrice !== 0.59 && item.kwhPrice !== '') ? Number(item.kwhPrice) : null;
           icon = icon || '⚡️';
         }
 
@@ -768,7 +769,8 @@
           isPv = false;
         }
         const hasPrice = (s.pricePerKwh !== undefined && s.pricePerKwh !== null && s.pricePerKwh !== '') || (s.preis !== undefined && s.preis !== null && s.preis !== '');
-        const price = hasPrice ? Number(s.pricePerKwh || s.preis) : (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+        const isPublicLoc = matchingLoc && (matchingLoc.isVariable || matchingLoc.id === 'loc_oeffentlich' || (matchingLoc.name && matchingLoc.name.toLowerCase().includes('öffentlich')));
+        const price = hasPrice ? Number(s.pricePerKwh || s.preis) : ((matchingLoc && matchingLoc.kwhPrice !== null && matchingLoc.kwhPrice !== undefined && !isPublicLoc) ? matchingLoc.kwhPrice : null);
 
         const hasKwh = (s.kwh !== undefined && s.kwh !== null && s.kwh !== '') || (s.kWh !== undefined && s.kWh !== null && s.kWh !== '');
         const kwh = hasKwh && !isNaN(Number(s.kwh || s.kWh)) ? Number(s.kwh || s.kWh) : null;
@@ -1032,7 +1034,8 @@
       isPv = true;
     }
 
-    const price = parseNum(s.pricePerKwh || s.preis || s.Preis || s['Preis (€/kWh)']) || (matchingLoc ? matchingLoc.kwhPrice : 0.35);
+    const isPublicLocObj = matchingLoc && (matchingLoc.isVariable || matchingLoc.id === 'loc_oeffentlich' || (matchingLoc.name && matchingLoc.name.toLowerCase().includes('öffentlich')));
+    const price = parseNum(s.pricePerKwh || s.preis || s.Preis || s['Preis (€/kWh)']) || ((matchingLoc && matchingLoc.kwhPrice !== null && matchingLoc.kwhPrice !== undefined && !isPublicLocObj) ? matchingLoc.kwhPrice : null);
     const rawKwhVal = s.kwh !== undefined ? s.kwh : (s.kWh !== undefined ? s.kWh : (s.energie !== undefined ? s.energie : s.lademenge));
     const hasKwhVal = rawKwhVal !== undefined && rawKwhVal !== null && String(rawKwhVal).trim() !== '';
     const kwh = hasKwhVal && parseNum(rawKwhVal) > 0 ? parseNum(rawKwhVal) : null;
@@ -3039,6 +3042,9 @@ function createOutput(data, callback) {
       calculateModalSocDelta();
     });
     DOM.entryPrice.addEventListener('input', calculateModalCost);
+    if (DOM.entryTotalCost) {
+      DOM.entryTotalCost.addEventListener('input', calculateModalPriceFromTotal);
+    }
     DOM.entryOdometer.addEventListener('input', calculateModalOdoDelta);
     if (DOM.entryBatterySocStart) {
       DOM.entryBatterySocStart.addEventListener('input', () => {
@@ -4919,7 +4925,7 @@ function createOutput(data, callback) {
                 </div>
                 <div class="kpi-hr-right">
                   <span class="kpi-hr-value">${formatDe(s.totalCost)} €</span>
-                  <span class="kpi-hr-extra">${s.kwh.toFixed(1)} kWh @ ${s.pricePerKwh.toFixed(2)} €</span>
+                  <span class="kpi-hr-extra">${(s.kwh !== null && s.kwh !== undefined) ? s.kwh.toFixed(1) : '--'} kWh${(s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? ` @ ${Number(s.pricePerKwh).toFixed(2)} €` : ''}</span>
                 </div>
               </div>
             `;
@@ -5042,7 +5048,7 @@ function createOutput(data, callback) {
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${formatDe(s.totalCost)} €</span>
-                <span class="kpi-hr-extra">${s.kwh.toFixed(1)} kWh @ ${s.pricePerKwh.toFixed(2)} €</span>
+                <span class="kpi-hr-extra">${(s.kwh !== null && s.kwh !== undefined) ? s.kwh.toFixed(1) : '--'} kWh${(s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? ` @ ${Number(s.pricePerKwh).toFixed(2)} €` : ''}</span>
               </div>
             </div>
           `;
@@ -6142,7 +6148,7 @@ function createOutput(data, callback) {
               <input type="checkbox" class="reconcile-item-checkbox" data-id="${s.id}" data-cost="${s.totalCost}" ${isChecked ? 'checked' : ''}>
               <div>
                 <div class="reconcile-item-date">${dStr} • ${tStr}</div>
-                <div class="reconcile-item-meta">${s.kwh.toFixed(1)} kWh • ${s.pricePerKwh.toFixed(2).replace('.', ',')} €/kWh</div>
+                <div class="reconcile-item-meta">${(s.kwh !== null && s.kwh !== undefined) ? s.kwh.toFixed(1) : '--'} kWh • ${(s.pricePerKwh !== null && s.pricePerKwh !== undefined && s.pricePerKwh !== '') ? `${Number(s.pricePerKwh).toFixed(2).replace('.', ',')} €/kWh` : '-- €/kWh'}</div>
               </div>
             </div>
             <div class="reconcile-item-cost">${formatDe(s.totalCost)} €</div>
@@ -9575,7 +9581,7 @@ function createOutput(data, callback) {
                 ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'}
               </span>
               <span>•</span>
-              <span>${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh</span>
+              <span>${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden erfassen)'}</span>
             </span>
           </div>
         </div>
@@ -9690,7 +9696,14 @@ function createOutput(data, callback) {
         }
         DOM.locEditIcon.value = loc.icon || '🏢';
         DOM.locEditPowerType.value = loc.powerType || 'pv';
-        DOM.locEditPrice.value = loc.kwhPrice;
+        const isVarLoc = loc.isVariable || loc.id === 'loc_oeffentlich' || (loc.name && loc.name.toLowerCase().includes('öffentlich'));
+        DOM.locEditPrice.value = (loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? loc.kwhPrice : '';
+        DOM.locEditPrice.placeholder = isVarLoc ? 'Variabel (optional)' : '0.15';
+        if (isVarLoc) {
+          DOM.locEditPrice.removeAttribute('required');
+        } else {
+          DOM.locEditPrice.setAttribute('required', 'required');
+        }
 
         highlightSelectedIcon(loc.icon || '🏢');
         highlightPowerType(loc.powerType || 'pv');
@@ -9706,6 +9719,8 @@ function createOutput(data, callback) {
       DOM.locEditIcon.value = '🏢';
       DOM.locEditPowerType.value = 'pv';
       DOM.locEditPrice.value = '0.15';
+      DOM.locEditPrice.placeholder = '0.15';
+      DOM.locEditPrice.setAttribute('required', 'required');
 
       highlightSelectedIcon('🏢');
       highlightPowerType('pv');
@@ -9755,7 +9770,6 @@ function createOutput(data, callback) {
     const address = DOM.locEditAddress ? DOM.locEditAddress.value.trim() : '';
     const icon = DOM.locEditIcon.value || '🏢';
     const powerType = DOM.locEditPowerType.value || 'pv';
-    const price = parseFloat(DOM.locEditPrice.value) || 0.15;
 
     if (!name) return;
 
@@ -9777,6 +9791,15 @@ function createOutput(data, callback) {
       lon = 10.3038;
     } else if (nLower.includes('öffentlich') || nLower.includes('variabel')) {
       isVariable = true;
+    }
+
+    const isVariableLoc = isVariable || (id === 'loc_oeffentlich') || nLower.includes('öffentlich') || nLower.includes('variabel');
+    const rawPrice = DOM.locEditPrice ? DOM.locEditPrice.value.trim() : '';
+    let price = null;
+    if (rawPrice !== '' && !isNaN(parseFloat(rawPrice))) {
+      price = parseFloat(rawPrice);
+    } else if (!isVariableLoc) {
+      price = 0.15;
     }
 
     if (id) {
@@ -9844,7 +9867,7 @@ function createOutput(data, callback) {
             <div class="touch-item-texts">
               <span class="touch-item-name">${escapeHtml(loc.name)}</span>
               <span class="touch-item-details">
-                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${loc.kwhPrice.toFixed(2).replace('.', ',')} €/kWh
+                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden erfassen)'}
               </span>
             </div>
           </div>
@@ -9909,15 +9932,32 @@ function createOutput(data, callback) {
     const loc = locs.find(l => l.id === locId) || locs[0] || DEFAULT_LOCATIONS[0];
     if (!loc) return;
 
+    const isPublicOrVar = loc.isVariable || loc.id === 'loc_oeffentlich' || (loc.name && loc.name.toLowerCase().includes('öffentlich')) || loc.kwhPrice === null || loc.kwhPrice === undefined;
+    const hasFixedPrice = loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '';
+
     if (DOM.entryLocationId) DOM.entryLocationId.value = loc.id;
     if (DOM.pickerSelectedIcon) DOM.pickerSelectedIcon.textContent = loc.icon || '🏢';
     if (DOM.pickerSelectedTitle) DOM.pickerSelectedTitle.textContent = loc.name;
     if (DOM.pickerSelectedSub) {
-      DOM.pickerSelectedSub.textContent = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh`;
+      if (hasFixedPrice) {
+        DOM.pickerSelectedSub.textContent = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh`;
+      } else {
+        DOM.pickerSelectedSub.textContent = `${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • Variabel (beim Laden erfassen)`;
+      }
     }
 
     if (overridePrice && DOM.entryPrice) {
-      DOM.entryPrice.value = Number(loc.kwhPrice).toFixed(2);
+      if (hasFixedPrice) {
+        DOM.entryPrice.value = Number(loc.kwhPrice).toFixed(2);
+        DOM.entryPrice.placeholder = '0.35';
+      } else {
+        // Bei öffentlichen Ladesäulen darf kein Default-Preis hinterlegt sein! Der eingegebene Preis ist maßgebend.
+        DOM.entryPrice.value = '';
+        DOM.entryPrice.placeholder = 'Preis eingeben (z.B. 0.49)';
+        if (DOM.entryTotalCost) {
+          DOM.entryTotalCost.value = '';
+        }
+      }
     }
     updateModalPaymentStatus(loc.name);
     calculateModalCost();
@@ -10014,6 +10054,17 @@ function createOutput(data, callback) {
     const p = parseFloat(pStr);
     if (!isNaN(k) && !isNaN(p) && k > 0) {
       DOM.entryTotalCost.value = (k * p).toFixed(2);
+    }
+  }
+
+  function calculateModalPriceFromTotal() {
+    const kStr = (DOM.entryKwh && DOM.entryKwh.value) ? DOM.entryKwh.value.trim() : '';
+    const tStr = (DOM.entryTotalCost && DOM.entryTotalCost.value) ? DOM.entryTotalCost.value.trim() : '';
+    if (kStr === '' || tStr === '') return;
+    const k = parseFloat(kStr);
+    const t = parseFloat(tStr);
+    if (!isNaN(k) && !isNaN(t) && k > 0) {
+      DOM.entryPrice.value = (t / k).toFixed(2);
     }
   }
 
@@ -10449,7 +10500,17 @@ function createOutput(data, callback) {
     const isPv = locObj ? locObj.powerType === 'pv' : false;
 
     const rawPrice = (DOM.entryPrice && DOM.entryPrice.value) ? DOM.entryPrice.value.trim() : '';
-    const price = (rawPrice !== '' && !isNaN(parseFloat(rawPrice))) ? parseFloat(rawPrice) : (locObj ? locObj.kwhPrice : null);
+    const hasEnteredPrice = rawPrice !== '' && !isNaN(parseFloat(rawPrice));
+    const locHasPrice = locObj && locObj.kwhPrice !== null && locObj.kwhPrice !== undefined && locObj.kwhPrice !== '';
+    const isVariableOrPublic = !locObj || locObj.isVariable || locObj.id === 'loc_oeffentlich' || (locObj.name && locObj.name.toLowerCase().includes('öffentlich'));
+
+    // Der beim Erfassen eingegebene Preis ist maßgebend! Bei öffentlicher Ladesäule gibt es keinen Fallback/Default-Preis.
+    let price = null;
+    if (hasEnteredPrice) {
+      price = parseFloat(rawPrice);
+    } else if (locHasPrice && !isVariableOrPublic) {
+      price = Number(locObj.kwhPrice);
+    }
 
     const rawTotal = (DOM.entryTotalCost && DOM.entryTotalCost.value) ? DOM.entryTotalCost.value.trim() : '';
     let total = null;
@@ -10457,6 +10518,11 @@ function createOutput(data, callback) {
       total = parseFloat(rawTotal);
     } else if (kwh !== null && price !== null) {
       total = Number((kwh * price).toFixed(2));
+    }
+
+    // Wenn der Nutzer bei variabler öffentlicher Ladesäule Gesamtkosten einträgt, aber keinen kWh-Preis:
+    if (price === null && total !== null && kwh !== null && kwh > 0) {
+      price = Number((total / kwh).toFixed(4));
     }
 
     const notes = DOM.entryNotes ? DOM.entryNotes.value.trim() : '';

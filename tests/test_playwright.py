@@ -322,6 +322,39 @@ def run_tests():
             price_sync = (entry_price_val in selected_sub.replace(',', '.'))
             log_test("4.3b Ladeort Preis-Synchronisation: Button & Eingabefeld identisch", price_sync, f"Sub: '{selected_sub}', Input: '{entry_price_val}'")
 
+            # 4.3b2: Öffentliche Ladesäule: Kein Default-Preis (weder 0.59 noch 0.35), Feld bleibt leer & Preis ist variabel
+            page.locator("#btnOpenLocationPicker").click()
+            time.sleep(0.08)
+            page.locator('.touch-picker-item[data-id="loc_oeffentlich"]').click()
+            time.sleep(0.08)
+            pub_sub = page.locator("#pickerSelectedSub").inner_text()
+            pub_price_val = page.locator("#entryPrice").input_value()
+            pub_total_val = page.locator("#entryTotalCost").input_value()
+            pub_placeholder = page.locator("#entryPrice").get_attribute("placeholder") or ""
+            pub_no_default_price = (pub_price_val == "" and "Variabel" in pub_sub and "0.59" not in pub_price_val and "0,59" not in pub_sub)
+            log_test("4.3b2 Öffentliche Ladesäule: Kein Default-Preis hinterlegt & Feld bleibt leer", pub_no_default_price, f"Sub: '{pub_sub}', Price: '{pub_price_val}', Placeholder: '{pub_placeholder}'")
+
+            # 4.3b3: Manueller Preis bei öffentlicher Ladung ist maßgebend & berechnet Gesamtkosten reaktiv
+            page.locator("#entryPrice").fill("0.49")
+            page.locator("#entryKwh").fill("30.0")
+            time.sleep(0.05)
+            calc_cost_val = page.locator("#entryTotalCost").input_value()
+            log_test("4.3b3 Manuell erfasster Preis berechnet Gesamtkosten (30 kWh @ 0.49 € = 14.70 €)", calc_cost_val == "14.70", f"TotalCost: '{calc_cost_val}'")
+
+            # 4.3b4: Gesamtkosten-Eingabe berechnet kWh-Preis rückwärts
+            page.locator("#entryTotalCost").fill("18.00")
+            time.sleep(0.05)
+            calc_price_val = page.locator("#entryPrice").input_value()
+            log_test("4.3b4 Gesamtkosten-Eingabe berechnet kWh-Preis (18 € / 30 kWh = 0.60 €)", calc_price_val == "0.60", f"Price: '{calc_price_val}'")
+
+            # Reset Eingabefelder und Wechsel zurück zu Bayrhofs für nachfolgende OCR- und Modal-Tests
+            page.locator("#entryKwh").fill("")
+            page.locator("#entryTotalCost").fill("")
+            page.locator("#btnOpenLocationPicker").click()
+            time.sleep(0.08)
+            page.locator(".touch-picker-item").first.click()
+            time.sleep(0.08)
+
             # 4.3c: Cupra Screenshot OCR-Upload Card und Button vorhanden
             ocr_card_visible = page.locator("#cupraOcrUploadCard").is_visible()
             ocr_btn_visible = page.locator("#btnTriggerOcrUpload").is_visible()
@@ -837,6 +870,11 @@ def run_tests():
             loc_manage_text = page.locator("#locationsDragList").inner_text()
             has_addresses = "Unterwang" in loc_manage_text and "Rubihornweg" in loc_manage_text and ("Thomas-Dachser" in loc_manage_text or "Dachser" in loc_manage_text)
             log_test("8.2b Ladeorte-Liste zeigt Adressen (Unterwang, Rubihornweg, Dachser)", has_addresses, "Adressen in Standortzeilen sichtbar")
+
+            # 8.2c: Öffentliche Ladesäule hat keinen festen Preis in der Liste, sondern ist 'Variabel'
+            pub_loc_row = page.locator('.loc-manage-row[data-id="loc_oeffentlich"]').inner_text()
+            pub_is_variable = "Variabel" in pub_loc_row and "0,59" not in pub_loc_row
+            log_test("8.2c Standort-Verwaltung: Öffentliche Ladesäule zeigt 'Variabel' statt altem Default-Preis (0,59 €)", pub_is_variable, f"Row text: '{pub_loc_row.strip()}'")
 
             # Open Neuer Standort Modal
             page.locator("#btnOpenNewLocationModal").click()
