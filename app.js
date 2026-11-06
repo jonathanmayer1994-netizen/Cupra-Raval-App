@@ -50,17 +50,6 @@
       elevation: 685
     },
     {
-      id: "loc_nebelhorn",
-      name: "Nebelhorn (Gipfel)",
-      icon: "🏔️",
-      powerType: "grid",
-      kwhPrice: 0.45,
-      address: "Nebelhorn 2.224m, Oberstdorf",
-      lat: 47.4222,
-      lon: 10.3458,
-      elevation: 2224
-    },
-    {
       id: "loc_oeffentlich",
       name: "Öffentlich",
       icon: "⚡️",
@@ -614,7 +603,7 @@
           lat: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lat) ?? DEFAULT_DATA.settings.weatherGps.lat),
           lon: Number((data.settings && data.settings.weatherGps && data.settings.weatherGps.lon) ?? DEFAULT_DATA.settings.weatherGps.lon)
         },
-        activeWeatherLocationId: (data.settings && data.settings.activeWeatherLocationId) || 'gps',
+        activeWeatherLocationId: (data.settings && data.settings.activeWeatherLocationId && data.settings.activeWeatherLocationId !== 'loc_nebelhorn') ? data.settings.activeWeatherLocationId : 'gps',
         variableLocation: (data.settings && data.settings.variableLocation) || {
           name: "Öffentlich (Variabel)",
           query: "",
@@ -629,8 +618,16 @@
     };
 
     // Locations Migration (mit Adressen & Geo-Koordinaten für Bayrhofs, Zuhause, Arbeit & Öffentlich)
+    // Nebelhorn / Berge haben absolut nichts in einer Auto-Lade-App zu suchen und werden rückstandslos bereinigt!
     if (data.settings && Array.isArray(data.settings.locations) && data.settings.locations.length > 0) {
-      res.settings.locations = data.settings.locations.map((item, idx) => {
+      res.settings.locations = data.settings.locations
+        .filter(item => {
+          if (!item) return false;
+          const id = String(item.id || '');
+          const name = String(item.name || '').toLowerCase();
+          return id !== 'loc_nebelhorn' && !name.includes('nebelhorn');
+        })
+        .map((item, idx) => {
         let name = typeof item === 'string' ? item : (item.name || `Standort ${idx + 1}`);
         let icon = (item && item.icon) || '🏢';
         let powerType = (item && item.powerType) || 'grid';
@@ -6993,7 +6990,7 @@ function createOutput(data, callback) {
         address: found.address || '',
         lat: typeof found.lat === 'number' ? found.lat : 47.7468,
         lon: typeof found.lon === 'number' ? found.lon : 10.3094,
-        elevation: typeof found.elevation === 'number' ? found.elevation : (found.id === 'loc_nebelhorn' ? 2224 : 720),
+        elevation: typeof found.elevation === 'number' ? found.elevation : 720,
         powerType: found.powerType || 'grid',
         isPv: found.powerType === 'pv'
       };
