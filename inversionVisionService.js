@@ -462,7 +462,10 @@
     }
 
     // Standort UNTER / IN der Inversion (z.B. Tal, Kempten, Bayrhofs ~720m)
-    const dampenedSunHours = Math.min(1.2, Number((sunHours * 0.15).toFixed(1)));
+    // Zäher Hochnebel dämpft primär die Vormittagsstunden (Allgäu-Inversion: ca. -1.4h).
+    // Der Nachmittag (ab 12:00 Uhr) bleibt bei Erwärmung erhalten.
+    const morningDampening = 1.4;
+    const dampenedSunHours = Math.max(0.4, Number((Math.max(0.2, sunHours - morningDampening) * 0.95).toFixed(1)));
 
     return {
       discrepancyDetected: true,

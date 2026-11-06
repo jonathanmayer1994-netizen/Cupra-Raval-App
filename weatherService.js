@@ -773,8 +773,13 @@
       const hourlyTotal = pastSum + remSum;
       let remaining, past;
       if (hourlyTotal > 0.05) {
-        remaining = Number(((remSum / hourlyTotal) * total).toFixed(1));
-        past = Number((total - remaining).toFixed(1));
+        if (Math.abs(hourlyTotal - total) < 0.35) {
+          remaining = Number(remSum.toFixed(1));
+          past = Number(pastSum.toFixed(1));
+        } else {
+          remaining = Number(((remSum / hourlyTotal) * total).toFixed(1));
+          past = Number((total - remaining).toFixed(1));
+        }
       } else {
         remaining = (currentHour < 12) ? total : 0;
         past = Number((total - remaining).toFixed(1));
@@ -967,7 +972,7 @@
     let todayIdx = 0;
     if (daily && Array.isArray(daily.time)) {
       const foundIdx = daily.time.findIndex(t => t >= todayStr);
-      if (foundIdx > 0) todayIdx = foundIdx;
+      if (foundIdx >= 0) todayIdx = foundIdx;
     }
 
     // Ground Truth Abgleich der vergangenen Tage (falls past_days Daten vorhanden sind)
@@ -1130,7 +1135,7 @@
       }
 
       // Raw vs. Calibrated Gesamtsummen berechnen
-      const rawTotalSun = sunshineHours;
+      let rawTotalSun = sunshineHours;
       let calTotalSun;
       if (hours.length === 24) {
         calTotalSun = Number(hours.reduce((acc, h) => acc + (h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours), 0).toFixed(1));
@@ -1202,8 +1207,23 @@
             wInfo.icon = '🌫️';
             wInfo.conditionText = todayInversionOverride.conditionText || 'Dichter Hochnebel (Inversion bis ~1.450 m)';
             if (todayInversionOverride.sunshineDampened) {
-              activeTotalSun = todayInversionOverride.calibratedSunHours !== undefined ? todayInversionOverride.calibratedSunHours : 0.8;
-              calTotalSun = activeTotalSun;
+              // Bei Inversion im Tal dämpfen wir Vormittagsstunden (vor 12:00 Uhr) auf Nebel,
+              // während der Nachmittag (ab 12:00 Uhr) mit echter Sonneneinstrahlung erhalten bleibt!
+              for (const h of hourlyData) {
+                if (h.hour < 12) {
+                  h.calibratedSunHours = Math.min(Number(h.calibratedSunHours || 0), 0.05);
+                  if (h.icon && h.icon.includes('☀️')) h.icon = '🌫️';
+                }
+                h.sunHours = isCalibratedMode
+                  ? (h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours)
+                  : (h.rawSunHours !== undefined ? h.rawSunHours : h.sunHours);
+              }
+              // Mathematische 100% Konsistenz: calTotalSun & activeTotalSun entsprechen EXAKT der stündlichen Summe!
+              calTotalSun = Number(hourlyData.reduce((acc, h) => acc + (h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours), 0).toFixed(1));
+              rawTotalSun = Number(hourlyData.reduce((acc, h) => acc + (h.rawSunHours !== undefined ? h.rawSunHours : h.sunHours), 0).toFixed(1));
+              activeTotalSun = isCalibratedMode ? calTotalSun : rawTotalSun;
+              todayInversionOverride.calibratedSunHours = calTotalSun;
+              todayInversionOverride.originalSunHours = rawTotalSun;
             }
           }
           adaptiveStore.inversionDetected = true;
@@ -1233,7 +1253,7 @@
       const effectiveSunForDecision = isToday ? sunCalc.remaining : activeTotalSun;
       const hasWallboxWindow = solarYield.hasWallboxWindow;
       const hasPvSurplus = (todayInversionOverride && todayInversionOverride.discrepancyDetected && !todayInversionOverride.isAboveCeiling)
-        ? false
+        ? (effectiveSunForDecision >= 2.5 && (solarYield.maxSurplusKw >= 1.5 || solarYield.estimatedPvKwh >= 15))
         : (hasWallboxWindow || (effectiveSunForDecision >= (isToday ? Math.min(2.0, threshold) : threshold) && solarYield.maxSurplusKw >= 1.5) || solarYield.dailyGtiKwhM2 >= 2.8);
 
       let decision = 'home';
@@ -1244,6 +1264,10 @@
         if (todayInversionOverride.isAboveCeiling) {
           badgeLabel = '☀️🏔️ Über dem Nebelmeer';
           hintText = todayInversionOverride.reason || 'Freie Bergsicht und volle Einstrahlung oberhalb des Nebelmeers (~1.450 m).';
+          decision = isWorkday ? 'office' : 'weekend_charge';
+        } else if (hasPvSurplus) {
+          badgeLabel = '🏢 Büro & Laden';
+          hintText = `Vormittags zäher Hochnebel im Tal, ab ~12:00 Uhr sonnig mit noch ${effectiveSunForDecision}h Sonne (${solarYield.estimatedPvKwh} kWh PV). Nachmittagsladung bei Bayrhofs empfohlen!`;
           decision = isWorkday ? 'office' : 'weekend_charge';
         } else {
           badgeLabel = '🌫️ Inversions-Nebel';
@@ -1454,9 +1478,15 @@
     let inversionOverride = null;
     if (typeof InversionVisionService !== 'undefined' && InversionVisionService.runFullInversionAnalysis) {
       try {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        let todayDataIdx = 0;
+        if (openMeteoData?.daily?.time && Array.isArray(openMeteoData.daily.time)) {
+          const fIdx = openMeteoData.daily.time.findIndex(t => t >= todayStr);
+          if (fIdx >= 0) todayDataIdx = fIdx;
+        }
         const locElev = Number(options.elevation) || 720;
-        const estSunH = (openMeteoData?.daily?.sunshine_duration?.[0] ? openMeteoData.daily.sunshine_duration[0] / 3600 : 7.0);
-        const estCode = (openMeteoData?.daily?.weather_code?.[0] ?? 0);
+        const estSunH = (openMeteoData?.daily?.sunshine_duration?.[todayDataIdx] ? openMeteoData.daily.sunshine_duration[todayDataIdx] / 3600 : 7.0);
+        const estCode = (openMeteoData?.daily?.weather_code?.[todayDataIdx] ?? 0);
         const estHum = (openMeteoData?.current?.relative_humidity_2m ?? 88);
         const estWind = (openMeteoData?.current?.wind_speed_10m ?? 6);
 

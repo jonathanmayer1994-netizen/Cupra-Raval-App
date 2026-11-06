@@ -7470,10 +7470,20 @@ function createOutput(data, callback) {
         if (inversionOverride && inversionOverride.discrepancyDetected) {
           icon = inversionOverride.icon;
           conditionText = inversionOverride.conditionText;
-          if (inversionOverride.sunshineDampened) {
-            activeSun = inversionOverride.calibratedSunHours || 0.8;
+        }
+      }
+
+      // Stündliche Daten für diesen Tag extrahieren
+      const hourlyData = extractHourlyDataForDay(hourly, dateStr);
+
+      if (inversionOverride && inversionOverride.discrepancyDetected && !inversionOverride.isAboveCeiling && inversionOverride.sunshineDampened) {
+        for (const h of hourlyData) {
+          if (h.hour < 12) {
+            h.sunHours = Math.min(Number(h.sunHours || 0), 0.05);
+            if (h.icon && h.icon.includes('☀️')) h.icon = '🌫️';
           }
         }
+        activeSun = Number(hourlyData.reduce((acc, h) => acc + (h.sunHours || 0), 0).toFixed(1));
       }
 
       // Bayrhofs PV-Logik (Laden immer möglich, ideal kombiniert mit Büro)
@@ -7490,6 +7500,10 @@ function createOutput(data, callback) {
           badgeLabel = '☀️🏔️ Über dem Nebelmeer';
           hintText = inversionOverride.reason;
           decision = isWorkday ? 'office' : 'weekend_charge';
+        } else if (hasPvSurplus) {
+          badgeLabel = '🏢 Büro & Laden';
+          hintText = `Vormittags zäher Hochnebel im Tal, ab ~12:00 Uhr sonnig mit noch ${activeSun}h Sonne. Nachmittagsladung bei Bayrhofs empfohlen!`;
+          decision = isWorkday ? 'office' : 'weekend_charge';
         } else {
           badgeLabel = '🌫️ Inversions-Nebel';
           hintText = inversionOverride.reason;
@@ -7499,24 +7513,22 @@ function createOutput(data, callback) {
         if (hasPvSurplus) {
           decision = 'weekend_charge';
           badgeLabel = '⚡️ Bayrhofs PV';
-          hintText = `Hoher Solarertrag (${sunshineHours}h Sonne). Ladung bei Bayrhofs auch am Wochenende möglich!`;
+          hintText = `Hoher Solarertrag (${activeSun}h Sonne). Ladung bei Bayrhofs auch am Wochenende möglich!`;
         } else {
           decision = 'weekend';
           badgeLabel = '🛋️ Wochenende';
-          hintText = `Wochenende mit wenig Sonne (${sunshineHours}h). Kaum PV-Überschuss bei Bayrhofs.`;
+          hintText = `Wochenende mit wenig Sonne (${activeSun}h). Kaum PV-Überschuss bei Bayrhofs.`;
         }
       } else if (hasPvSurplus) {
         decision = 'office';
         badgeLabel = '🏢 Büro & Laden';
-        hintText = `Hoher PV-Überschuss (${sunshineHours}h Sonne). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
+        hintText = `Hoher PV-Überschuss (${activeSun}h Sonne). Ideal: Arbeit im Büro mit Laden bei Bayrhofs verbinden!`;
       } else {
         decision = 'home';
         badgeLabel = '🏠 Homeoffice';
-        hintText = `Wenig Sonne (${sunshineHours}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
+        hintText = `Wenig Sonne (${activeSun}h). Kein PV-Überschuss bei Bayrhofs – Homeoffice empfohlen.`;
       }
 
-      // Stündliche Daten für diesen Tag extrahieren
-      const hourlyData = extractHourlyDataForDay(hourly, dateStr);
       const solarYield = (typeof WeatherService !== 'undefined' && WeatherService.calculateSolarYield)
         ? WeatherService.calculateSolarYield(hourlyData, activeSun, { baseLoadKw: appData.settings.bayrhofsBaseLoadKw || 3.5 })
         : {
