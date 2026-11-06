@@ -487,11 +487,26 @@
       dniVal = Math.max(0, (ghiVal - dhiVal) / sinA);
     }
 
-    // 9. Liu-Jordan Transposition auf 30° Süddach (GTI)
-    const iBeam = dniVal * effCosTheta * fShade;
-    const iDiffuse = dhiVal * ((1 + Math.cos(betaRad)) / 2);
+    // 9. Anisotrope Diffusstrahlungs-Transposition (Hay-Davies / Perez 1990)
+    // Berücksichtigt Circumsolar-Streulicht (konzentriert um die Sonne) und Horizon Brightening
+    const i0 = 1367.0; // Extraterrestrische Solarkonstante (W/m²)
+    const ai = Math.min(1.0, Math.max(0.0, dniVal / i0)); // Anisotropie-Index
+    const rb = (sinAlpha > 0.01) ? (effCosTheta / sinAlpha) : 0.0;
+
+    // Circumsolar-Komponente
+    const iCircumsolar = dhiVal * ai * rb * fShade;
+
+    // Isotrope Hintergrundstrahlung mit Horizont-Aufhellung (Horizon Brightening nach Reindl & Perez)
+    const fHorizon = (ghiVal > 0 && dniVal > 0) ? Math.min(1.0, Math.sqrt(dniVal / ghiVal)) : 0.0;
+    const horizonFactor = 1.0 + fHorizon * Math.pow(Math.sin(betaRad / 2), 3);
+    const iSkyDiffuse = dhiVal * (1.0 - ai) * ((1 + Math.cos(betaRad)) / 2) * horizonFactor;
+
+    // Boden-Reflexion (Albedo 0.20 Standard)
     const iGround = ghiVal * BAYRHOFS_CONFIG.albedo * ((1 - Math.cos(betaRad)) / 2);
-    const gti = Math.round(iBeam + iDiffuse + iGround);
+
+    // Gesamte Globalstrahlung in 30° geneigter Modulebene (GTI)
+    const iBeam = dniVal * effCosTheta * fShade;
+    const gti = Math.round(iBeam + iCircumsolar + iSkyDiffuse + iGround);
 
     // 10. Physikalische Zelltemperatur & Wirkungsgrad (-0.38%/K ab 25°C STC)
     const tAmb = (typeof tempAmb === 'number' && !isNaN(tempAmb)) ? tempAmb : 15;
@@ -518,12 +533,93 @@
       gti,
       dni: Math.round(dniVal),
       dhi: Math.round(dhiVal),
+      anisotropyIndex: Number(ai.toFixed(3)),
       tCell,
       etaTemp: Number(etaTemp.toFixed(3)),
       pvKw,
       surplusKw,
       evChargeKw,
       isWallboxActive
+    };
+  }
+
+  /**
+   * Physikalische AC-Ladekurve für Cupra Raval (52 kWh NMC-Zellen)
+   * 3-phasige AC-Ladung (bis 11 kW / 16A 400V)
+   * - Bis 92% SoC: Volle 11 kW (bzw. verfügbarer Überschuss)
+   * - 92% bis 100% SoC: Sukzessive Leistungs-Drosselung (Balancing der Zellstränge) bis ca. 2.3 kW
+   * @param {number} soc Aktueller Akkustand (0-100%)
+   * @param {number} availablePowerKw Verfügbare Wallbox-Leistung (Standard 11.0 kW)
+   * @returns {Object} { chargeKw, isBalancing, taperFactor }
+   */
+  function calculateCupraAcChargePower(soc, availablePowerKw = 11.0) {
+    const s = Math.max(0, Math.min(100, Number(soc) || 0));
+    const maxKw = Math.min(11.0, Math.max(0, Number(availablePowerKw) || 11.0));
+
+    if (s <= 92) {
+      return {
+        chargeKw: Number(maxKw.toFixed(2)),
+        isBalancing: false,
+        taperFactor: 1.0
+      };
+    }
+
+    // Balancing-Phase 93% bis 100%: Lineare Reduktion von 11 kW auf 2.3 kW
+    const progress = (s - 92) / (100 - 92); // 0.0 bis 1.0
+    const minBalancingKw = 2.3; // 1-phasig 10A Mindesterhaltung/Balancing
+    const balancingKw = 11.0 - progress * (11.0 - minBalancingKw);
+    const effectiveKw = Math.min(maxKw, balancingKw);
+
+    return {
+      chargeKw: Number(effectiveKw.toFixed(2)),
+      isBalancing: true,
+      taperFactor: Number((effectiveKw / (maxKw || 1)).toFixed(2))
+    };
+  }
+
+  /**
+   * Berechnet die reale Ladedauer unter Berücksichtigung der NMC-Balancing-Drosselung ab 92% SoC
+   * @param {number} startSoc Start-Akkustand (%)
+   * @param {number} targetSoc Ziel-Akkustand (%)
+   * @param {number} maxPowerKw Maximale AC-Leistung (kW, default 11.0)
+   * @param {number} batteryCapacityKwh Gesamtkapazität (kWh, default 52.0)
+   * @returns {Object} { durationMinutes, durationHours, energyKwh, balancingMinutes }
+   */
+  function calculateCupraAcChargeDuration(startSoc, targetSoc, maxPowerKw = 11.0, batteryCapacityKwh = 52.0) {
+    const s0 = Math.max(0, Math.min(100, Number(startSoc) || 0));
+    const s1 = Math.max(s0, Math.min(100, Number(targetSoc) || 80));
+    const cap = Number(batteryCapacityKwh) || 52.0;
+    const maxKw = Math.min(11.0, Math.max(2.3, Number(maxPowerKw) || 11.0));
+
+    if (s1 <= s0) {
+      return { durationMinutes: 0, durationHours: 0, energyKwh: 0, balancingMinutes: 0 };
+    }
+
+    let totalMinutes = 0;
+    let balancingMinutes = 0;
+
+    // Schrittweise Integration pro 1% SoC Schritt für maximale Präzision
+    for (let s = s0; s < s1; s++) {
+      const stepSoc = s + 0.5;
+      const stepEnergyKwh = (1.0 / 100.0) * cap;
+      const { chargeKw, isBalancing } = calculateCupraAcChargePower(stepSoc, maxKw);
+      const stepHours = stepEnergyKwh / chargeKw;
+      const stepMins = stepHours * 60;
+      totalMinutes += stepMins;
+      if (isBalancing) {
+        balancingMinutes += stepMins;
+      }
+    }
+
+    const energyKwh = Number((((s1 - s0) / 100.0) * cap).toFixed(2));
+    const durMinsRounded = Math.round(totalMinutes);
+    const durationHours = Number((durMinsRounded / 60).toFixed(2));
+
+    return {
+      durationMinutes: durMinsRounded,
+      durationHours,
+      energyKwh,
+      balancingMinutes: Math.round(balancingMinutes)
     };
   }
 
@@ -1466,6 +1562,8 @@
     calculateRemainingSunHours,
     calculateSolarYield,
     calculateBayrhofsSolarPhysics,
+    calculateCupraAcChargePower,
+    calculateCupraAcChargeDuration,
     BAYRHOFS_CONFIG
   };
 });

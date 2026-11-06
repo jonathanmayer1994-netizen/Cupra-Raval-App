@@ -188,6 +188,35 @@ def run_tests():
         solar_chips = page.locator(".day-forecast-card .day-solar-stat").count()
         log_test("PV-Ertragschips auf den 14 Tageskarten sichtbar", solar_chips > 0, f"{solar_chips} Karten mit ⚡️ kWh Kennzeichnung")
 
+        # TEST 10: Cupra Raval 52 kWh NMC AC-Ladekurve & Balancing-Drosselung
+        print("\n--- TEST 10: Cupra Raval (52 kWh NMC) AC-Ladekurve & Balancing ---")
+        ac_eval = page.evaluate("""() => {
+            const p50 = WeatherService.calculateCupraAcChargePower(50, 11.0);
+            const p90 = WeatherService.calculateCupraAcChargePower(90, 11.0);
+            const p92 = WeatherService.calculateCupraAcChargePower(92, 11.0);
+            const p96 = WeatherService.calculateCupraAcChargePower(96, 11.0);
+            const p100 = WeatherService.calculateCupraAcChargePower(100, 11.0);
+
+            // Ladedauer von 20% auf 80% (NMC-Sweetspot ohne Drosselung)
+            const durSweet = WeatherService.calculateCupraAcChargeDuration(20, 80, 11.0, 52.0);
+            // Ladedauer von 80% auf 100% (inkl. Balancing ab 92%)
+            const durFull = WeatherService.calculateCupraAcChargeDuration(80, 100, 11.0, 52.0);
+
+            return { p50, p90, p92, p96, p100, durSweet, durFull };
+        }""")
+        p50 = ac_eval["p50"]
+        p92 = ac_eval["p92"]
+        p96 = ac_eval["p96"]
+        p100 = ac_eval["p100"]
+        durSweet = ac_eval["durSweet"]
+        durFull = ac_eval["durFull"]
+
+        log_test("Volle 11 kW Ladeleistung bis 92% SoC", p50["chargeKw"] == 11.0 and p92["chargeKw"] == 11.0 and not p92["isBalancing"], f"P(50%)={p50['chargeKw']} kW, P(92%)={p92['chargeKw']} kW")
+        log_test("Balancing-Drosselung greift bei 96% SoC", 6.0 <= p96["chargeKw"] <= 7.0 and p96["isBalancing"], f"P(96%)={p96['chargeKw']} kW, Balancing: {p96['isBalancing']}")
+        log_test("Erhaltungsladung bei 100% SoC beträgt 2.3 kW", p100["chargeKw"] == 2.3 and p100["isBalancing"], f"P(100%)={p100['chargeKw']} kW")
+        log_test("Ladedauer 20% -> 80% beträgt ~2.8h (170 min) ohne Balancing-Verzögerung", 165 <= durSweet["durationMinutes"] <= 175 and durSweet["balancingMinutes"] == 0, f"{durSweet['durationMinutes']} min ({durSweet['durationHours']}h), Balancing: {durSweet['balancingMinutes']} min")
+        log_test("Ladedauer 80% -> 100% enthält > 35 min Zell-Balancing", durFull["balancingMinutes"] >= 35, f"{durFull['durationMinutes']} min, davon {durFull['balancingMinutes']} min Balancing")
+
         # Responsive Screenshot erstellen
         screenshot_path = "/Users/jona/.gemini/antigravity/brain/87020218-9ff4-4f72-a4c9-3914438f697f/bayrhofs_pv_settings_iphone15.png"
         page.locator('.dock-tab-btn[data-tab="settings"]').click()
