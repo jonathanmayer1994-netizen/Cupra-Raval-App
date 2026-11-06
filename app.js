@@ -9581,7 +9581,7 @@ function createOutput(data, callback) {
                 ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'}
               </span>
               <span>•</span>
-              <span>${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden erfassen)'}</span>
+              <span>${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden)'}</span>
             </span>
           </div>
         </div>
@@ -9867,7 +9867,7 @@ function createOutput(data, callback) {
             <div class="touch-item-texts">
               <span class="touch-item-name">${escapeHtml(loc.name)}</span>
               <span class="touch-item-details">
-                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden erfassen)'}
+                ${loc.powerType === 'pv' ? '☀️ PV-Strom' : '⚡️ Netzstrom'} • ${(loc.kwhPrice !== null && loc.kwhPrice !== undefined && loc.kwhPrice !== '') ? `${Number(loc.kwhPrice).toFixed(2).replace('.', ',')} €/kWh` : 'Variabel (beim Laden)'}
               </span>
             </div>
           </div>
