@@ -1137,27 +1137,34 @@
 
     const pendingLocal = (appData.sessions || []).filter(s => pendingIds.has(String(s.id).trim()) && isValidSession(s));
 
-    // Die Cloud-Sessions sind die alleinige Referenz ("Single Source of Truth")
-    // Alle iPhones haben exakt denselben Datenbestand!
+    // Bidirektionale Conflict Resolution:
+    // 1. Zunächst validierte Cloud-Sessions eintragen
     const map = new Map();
-
     validCloud.forEach(cs => {
       map.set(String(cs.id || cs.ID).trim(), cs);
     });
 
-    // Noch ungesendete lokale Einträge behalten
+    // 2. Offline bearbeitete/erfasste Sessions überschreiben veraltete Cloud-Stände
     pendingLocal.forEach(ps => {
       const psId = String(ps.id || ps.ID).trim();
-      if (!map.has(psId)) {
-        map.set(psId, ps);
-      }
+      map.set(psId, ps);
     });
 
-    // WICHTIG für Datenintegrität: Lokale Sessions niemals verwerfen, solange sie nicht gelöscht wurden
+    // 3. WICHTIG für Datenintegrität: Lokale Sessions niemals verwerfen, solange sie nicht gelöscht wurden
     (appData.sessions || []).forEach(ls => {
       const lsId = String(ls.id || ls.ID).trim();
-      if (!deletedIds.has(lsId) && isValidSession(ls) && !map.has(lsId)) {
-        map.set(lsId, ls);
+      if (!deletedIds.has(lsId) && isValidSession(ls)) {
+        if (!map.has(lsId)) {
+          map.set(lsId, ls);
+        } else {
+          // Timestamp-Vergleich bei Konflikten: falls lokale Session neuer ist
+          const existing = map.get(lsId);
+          const localTs = new Date(ls.updatedAt || ls.date || 0).getTime();
+          const cloudTs = new Date(existing.updatedAt || existing.date || 0).getTime();
+          if (localTs > cloudTs && pendingIds.has(lsId)) {
+            map.set(lsId, ls);
+          }
+        }
       }
     });
 
@@ -7429,8 +7436,8 @@ function createOutput(data, callback) {
       console.warn('[App] WeatherService Consensus Fehler, prüfe Direktabfrage:', err);
     }
 
-    // 2. Sekundär: Direkte Open-Meteo Abfrage mit GHI Solarstrahlung & Regenwahrscheinlichkeit
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&models=icon_d2&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
+    // 2. Sekundär: Direkte Open-Meteo Abfrage mit GHI Solarstrahlung & Regenwahrscheinlichkeit (Multi-Modell Ensemble)
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&models=icon_d2,ecmwf_ifs&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
 
     try {
       const resp = await fetch(url);

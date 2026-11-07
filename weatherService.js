@@ -139,18 +139,81 @@
   }
 
   // =========================================================================
-  // QUELLE 1: OPEN-METEO API (DWD ICON-D2 & ECMWF IFS)
+  // QUELLE 1: OPEN-METEO API (MULTI-MODELL ENSEMBLE: DWD ICON-D2 + ECMWF IFS)
   // GHI Globalstrahlung (W/m²), Telemetrie (Feuchte, Wind), 14-Tage Prognose + 3 Tage Ground Truth
   // =========================================================================
+  function getEnsembleValue(container, prop, index, { weightD2 = 0.70, weightEc = 0.30 } = {}) {
+    if (!container) return 0;
+    const d2Arr = container[`${prop}_icon_d2`];
+    const ecArr = container[`${prop}_ecmwf_ifs`];
+    const stdArr = container[prop];
+
+    const valD2 = (d2Arr && index < d2Arr.length && d2Arr[index] !== null && !isNaN(d2Arr[index])) ? d2Arr[index] : null;
+    const valEc = (ecArr && index < ecArr.length && ecArr[index] !== null && !isNaN(ecArr[index])) ? ecArr[index] : null;
+    const valStd = (stdArr && index < stdArr.length && stdArr[index] !== null && !isNaN(stdArr[index])) ? stdArr[index] : null;
+
+    if (valD2 !== null && valEc !== null) {
+      return (valD2 * weightD2) + (valEc * weightEc);
+    }
+    if (valD2 !== null) return valD2;
+    if (valEc !== null) return valEc;
+    if (valStd !== null) return valStd;
+    return 0;
+  }
+
+  function normalizeOpenMeteoEnsemble(json) {
+    if (!json) return json;
+
+    const dailyProps = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'sunshine_duration', 'precipitation_sum'];
+    const hourlyProps = ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'precipitation', 'precipitation_probability', 'shortwave_radiation_instant', 'direct_normal_irradiance', 'diffuse_radiation', 'sunshine_duration', 'weather_code'];
+
+    if (json.daily && json.daily.time) {
+      dailyProps.forEach(prop => {
+        if (!json.daily[prop] || json.daily[`${prop}_icon_d2`]) {
+          json.daily[prop] = json.daily.time.map((_, idx) => {
+            const wD2 = (idx <= 2) ? 0.70 : 0.0;
+            const wEc = (idx <= 2) ? 0.30 : 1.0;
+            return getEnsembleValue(json.daily, prop, idx, { weightD2: wD2, weightEc: wEc });
+          });
+        }
+      });
+    }
+
+    if (json.hourly && json.hourly.time) {
+      hourlyProps.forEach(prop => {
+        if (!json.hourly[prop] || json.hourly[`${prop}_icon_d2`]) {
+          json.hourly[prop] = json.hourly.time.map((_, idx) => {
+            const wD2 = (idx < 48) ? 0.70 : 0.0;
+            const wEc = (idx < 48) ? 0.30 : 1.0;
+            return getEnsembleValue(json.hourly, prop, idx, { weightD2: wD2, weightEc: wEc });
+          });
+        }
+      });
+    }
+
+    if (json.current) {
+      ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'weather_code'].forEach(prop => {
+        if (json.current[prop] === undefined || json.current[prop] === null) {
+          const vD2 = json.current[`${prop}_icon_d2`];
+          const vEc = json.current[`${prop}_ecmwf_ifs`];
+          if (vD2 !== undefined && vD2 !== null) json.current[prop] = vD2;
+          else if (vEc !== undefined && vEc !== null) json.current[prop] = vEc;
+        }
+      });
+    }
+
+    return json;
+  }
+
   async function fetchOpenMeteo(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&models=icon_d2&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&models=icon_d2,ecmwf_ifs&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
     const resp = await fetchWithTimeout(url, {}, 6500);
     if (!resp.ok) throw new Error(`Open-Meteo HTTP ${resp.status}`);
-    const json = await resp.json();
-    if (!json || !json.daily || !json.daily.time) {
+    const rawJson = await resp.json();
+    if (!rawJson || !rawJson.daily || !rawJson.daily.time) {
       throw new Error('Open-Meteo lieferte unvollständige Daten');
     }
-    return json;
+    return normalizeOpenMeteoEnsemble(rawJson);
   }
 
   // =========================================================================
@@ -401,6 +464,29 @@
   };
 
   /**
+   * Berechnet den dynamischen Horizontwinkel der Baumreihe bei Bayrhofs (Unterwang)
+   * in Abhängigkeit vom Sonnenazimut (relativ zu Süd in Grad: -90° Ost, 0° Süd, +90° West).
+   *
+   * @param {number} gammaSouthDeg - Azimutwinkel relativ zu Süd (-180..+180°)
+   * @param {number} [baseHorizon=18.0] - Mittlerer Basiswinkel (Standard 18.0°)
+   * @returns {number} Effektiver Hinderniswinkel in Grad
+   */
+  function getBayrhofsDynamicHorizonDeg(gammaSouthDeg, baseHorizon = 18.0) {
+    // 1. Süd-Ost (Vormittag, -60° bis -20°): Dichte Baumgruppe im Vorgarten (~21°)
+    if (gammaSouthDeg < -20) {
+      const t = Math.min(1, Math.max(0, (-gammaSouthDeg - 20) / 40));
+      return baseHorizon + (3.0 * t);
+    }
+    // 2. Genau Süd (-20° bis +10°): Straßenbäume Unterwang (~18°)
+    if (gammaSouthDeg <= 10) {
+      return baseHorizon;
+    }
+    // 3. Süd-West (Nachmittag, > 10°): Freie Zufahrt & flache Hecke (~12° - 14°)
+    const t = Math.min(1, Math.max(0, (gammaSouthDeg - 10) / 50));
+    return Math.max(12.0, baseHorizon - (5.0 * t));
+  }
+
+  /**
    * Berechnet exakt für einen Tag und eine Stunde die physikalischen Strahlungs-
    * und Leistungswerte für das 18.7 kWp Süddach bei Bayrhofs in Unterwang.
    *
@@ -469,10 +555,12 @@
     const cosTheta = Math.sin(alphaRad) * Math.cos(betaRad) + Math.cos(alphaRad) * Math.sin(betaRad) * Math.cos(gammaSouthRad);
     const effCosTheta = Math.max(0, cosTheta);
 
-    // 7. Horizont-Dämpfung südliche Baumreihe Unterwang (A6: Sonnenhöhe < 18°)
+    // 7. Horizont-Dämpfung südliche Baumreihe Unterwang (A6 / A4: Dynamische Azimut-Matrix)
+    const gammaSouthDeg = gammaSouthRad * 180 / Math.PI;
+    const dynamicHorizonDeg = getBayrhofsDynamicHorizonDeg(gammaSouthDeg, BAYRHOFS_CONFIG.treeHorizonDeg);
     let fShade = 1.0;
-    if (alphaDeg < BAYRHOFS_CONFIG.treeHorizonDeg) {
-      fShade = Math.max(0.0, alphaDeg / BAYRHOFS_CONFIG.treeHorizonDeg);
+    if (alphaDeg < dynamicHorizonDeg) {
+      fShade = Math.max(0.0, alphaDeg / dynamicHorizonDeg);
     }
 
     // 8. Strahlungskomponenten-Zerlegung (GHI in Direct & Diffuse)
@@ -1592,6 +1680,7 @@
     calculateRemainingSunHours,
     calculateSolarYield,
     calculateBayrhofsSolarPhysics,
+    getBayrhofsDynamicHorizonDeg,
     calculateCupraAcChargePower,
     calculateCupraAcChargeDuration,
     BAYRHOFS_CONFIG
