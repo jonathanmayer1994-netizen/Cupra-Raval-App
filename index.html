@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Cupra Raval Endurance Edition Dynamic</title>
 
   <!-- Apple iOS PWA Standalone Modus -->
@@ -12,158 +12,18 @@
   <meta name="theme-color" content="#05070a">
 
   <!-- Favicon & Touch Icons für iPhone Home-Bildschirm & PWA -->
-  <link rel="icon" type="image/png" sizes="192x192" href="./cupra-raval-icon.png?v=37">
-  <link rel="icon" type="image/svg+xml" href="./icon.svg?v=37">
-  <link rel="apple-touch-icon" sizes="180x180" href="./cupra-raval-icon.png?v=37">
-  <link rel="apple-touch-icon" href="./cupra-raval-icon.png?v=37">
-  <link rel="apple-touch-icon-precomposed" href="./cupra-raval-icon.png?v=37">
+  <link rel="icon" type="image/png" sizes="192x192" href="./cupra-raval-icon.png?v=46">
+  <link rel="icon" type="image/svg+xml" href="./icon.svg?v=46">
+  <link rel="apple-touch-icon" sizes="180x180" href="./cupra-raval-icon.png?v=46">
+  <link rel="apple-touch-icon" href="./cupra-raval-icon.png?v=46">
+  <link rel="apple-touch-icon-precomposed" href="./cupra-raval-icon.png?v=46">
   <link rel="manifest" href="./manifest.json">
 
-  <!-- Chart.js CDN -->
+  <!-- Chart.js CDN (Tesseract OCR wird performant erst bei Nutzeraktion geladen) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Tesseract.js OCR Engine for Cupra Screenshot auto-filling -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="./style.css?v=44">
-
-  <style id="critical-form-grid-fix">
-    /* 4-Zellen Formular-Grid: Zeile 1 = Labels, Zeile 2 = Eingabefelder (100% waagerechte Ausrichtung) */
-    .form-kwh-odo-grid {
-      display: grid !important;
-      grid-template-columns: 114px 1fr !important;
-      grid-template-rows: auto 50px !important;
-      column-gap: 10px !important;
-      row-gap: 6px !important;
-      align-items: end !important;
-      width: 100% !important;
-    }
-    .form-two-cols-grid {
-      display: grid !important;
-      grid-template-columns: repeat(2, 1fr) !important;
-      grid-template-rows: auto 50px !important;
-      column-gap: 10px !important;
-      row-gap: 6px !important;
-      align-items: end !important;
-      width: 100% !important;
-    }
-    .form-kwh-odo-grid > .form-touch-label,
-    .form-two-cols-grid > .form-touch-label {
-      grid-row: 1 !important;
-      margin-bottom: 0 !important;
-      min-height: 22px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 4px !important;
-      white-space: nowrap !important;
-      font-size: 0.67rem !important;
-      font-weight: 800 !important;
-      letter-spacing: 0.03em !important;
-      text-transform: uppercase !important;
-      color: var(--cupra-bronze-light) !important;
-    }
-    .form-kwh-odo-grid > .input-addon-box,
-    .form-two-cols-grid > .input-addon-box {
-      grid-row: 2 !important;
-      height: 50px !important;
-      align-self: start !important;
-    }
-    .form-kwh-odo-grid .box-kwh .form-touch-input {
-      padding-right: 52px !important;
-    }
-    .form-kwh-odo-grid .box-odo .form-touch-input {
-      padding-right: 44px !important;
-    }
-    .delta-tag-live {
-      font-size: 0.66rem !important;
-      font-weight: 800 !important;
-      background: rgba(192, 128, 81, 0.22) !important;
-      color: var(--cupra-bronze-bright) !important;
-      padding: 2px 6px !important;
-      border-radius: var(--radius-full) !important;
-      letter-spacing: 0.01em !important;
-      text-transform: none !important;
-      white-space: nowrap !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      flex-shrink: 0 !important;
-      line-height: 1.2 !important;
-    }
-
-    /* 4-Zellen Grid für Fahrzeugdaten (Einstellungen Tab 4) */
-    .specs-grid-two {
-      display: grid !important;
-      grid-template-columns: repeat(2, 1fr) !important;
-      grid-template-rows: auto 50px !important;
-      column-gap: 10px !important;
-      row-gap: 6px !important;
-      align-items: end !important;
-      width: 100% !important;
-    }
-    .specs-grid-two.specs-grid-odo-soc {
-      grid-template-columns: 1.22fr 0.78fr !important;
-    }
-    .specs-grid-two > .specs-field-label {
-      grid-row: 1 !important;
-      margin-bottom: 0 !important;
-      min-height: 22px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 4px !important;
-      white-space: nowrap !important;
-    }
-    .specs-grid-two > .specs-input-wrapper {
-      grid-row: 2 !important;
-      height: 50px !important;
-      align-self: start !important;
-      margin-top: 0 !important;
-    }
-    .specs-label-tag {
-      font-size: 0.67rem !important;
-      font-weight: 800 !important;
-      letter-spacing: 0.03em !important;
-      text-transform: uppercase !important;
-      color: var(--cupra-bronze-light) !important;
-      white-space: nowrap !important;
-    }
-    .specs-start-badge {
-      font-size: 0.65rem !important;
-      color: var(--text-muted) !important;
-      font-weight: 600 !important;
-      margin-left: auto !important;
-      white-space: nowrap !important;
-      flex-shrink: 0 !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      line-height: 1 !important;
-    }
-    .specs-fixed-val {
-      color: var(--cupra-bronze-bright) !important;
-      font-size: 1.15rem !important;
-      font-weight: 800 !important;
-      padding: 0 14px 0 10px !important;
-      flex: 1 !important;
-      display: flex !important;
-      align-items: center !important;
-      user-select: none !important;
-    }
-    .specs-fixed-display {
-      background: rgba(6, 10, 16, 0.6) !important;
-      border: 1px solid rgba(255, 255, 255, 0.08) !important;
-      cursor: default !important;
-    }
-    .specs-fixed-badge {
-      font-size: 0.60rem !important;
-      color: var(--text-muted) !important;
-      background: rgba(255, 255, 255, 0.05) !important;
-      padding: 2px 6px !important;
-      border-radius: 6px !important;
-      font-weight: 600 !important;
-      margin-left: auto !important;
-    }
-  </style>
+  <link rel="stylesheet" href="./style.css?v=46">
 </head>
 <body>
   <!-- Ambient Cupra Bronze & Deep Carbon Glows -->
@@ -184,6 +44,9 @@
         </div>
       </div>
       <div class="header-sync-wrap">
+        <span id="offlinePill" class="offline-pill" style="display: none;" title="Offline-Modus aktiv: Daten werden lokal gesichert" aria-live="polite">
+          <span class="offline-dot"></span> Offline
+        </span>
         <button type="button" class="btn-sync-header" id="btnSyncCloud" title="Mit Google Sheets synchronisieren" aria-label="Mit Google Sheets synchronisieren">
           <span class="sync-icon-spin" id="syncStatusIcon">☁️</span>
           <span class="sync-label-text" id="syncStatusText">Sync</span>
@@ -1917,6 +1780,22 @@
     </div>
   </div>
 
+  <!-- Swift Glass Bestätigungs-Modal (Ersatz für natives confirm) -->
+  <div id="modalGlassConfirm" class="modal-backdrop-sheet modal-confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="glassConfirmTitle">
+    <div class="swift-sheet-card confirm-sheet-card">
+      <div class="sheet-drag-handle"></div>
+      <div class="confirm-sheet-header">
+        <span class="confirm-icon-badge" id="glassConfirmIcon">⚠️</span>
+        <h3 class="confirm-title" id="glassConfirmTitle">Aktion bestätigen</h3>
+      </div>
+      <p class="confirm-message" id="glassConfirmMessage">Möchtest du diesen Vorgang wirklich durchführen?</p>
+      <div class="confirm-actions-row">
+        <button type="button" class="swift-action-btn btn-ghost-subtle" id="btnGlassConfirmCancel">Abbrechen</button>
+        <button type="button" class="swift-action-btn btn-danger-glow" id="btnGlassConfirmOk">Löschen</button>
+      </div>
+    </div>
+  </div>
+
   <!-- iOS Glass Toast -->
   <div id="swiftToast" class="swift-glass-toast" role="status" aria-live="polite">
     <span class="toast-dot-icon">✓</span>
@@ -1924,10 +1803,10 @@
   </div>
 
   <!-- Inversion Computer Vision & Sensor Fusion Service -->
-  <script src="./inversionVisionService.js?v=45"></script>
+  <script src="./inversionVisionService.js?v=46"></script>
   <!-- Weather Service Module -->
-  <script src="./weatherService.js?v=45"></script>
+  <script src="./weatherService.js?v=46"></script>
   <!-- App Script -->
-  <script src="./app.js?v=45"></script>
+  <script src="./app.js?v=46"></script>
 </body>
 </html>

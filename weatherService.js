@@ -143,7 +143,7 @@
   // GHI Globalstrahlung (W/m²), Telemetrie (Feuchte, Wind), 14-Tage Prognose + 3 Tage Ground Truth
   // =========================================================================
   async function fetchOpenMeteo(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&models=icon_d2&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
     const resp = await fetchWithTimeout(url, {}, 6500);
     if (!resp.ok) throw new Error(`Open-Meteo HTTP ${resp.status}`);
     const json = await resp.json();

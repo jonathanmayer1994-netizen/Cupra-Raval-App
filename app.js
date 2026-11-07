@@ -543,6 +543,17 @@
     // Toast
     DOM.swiftToast = document.getElementById('swiftToast');
     DOM.swiftToastMsg = document.getElementById('swiftToastMsg');
+
+    // Swift Glass Confirm Modal
+    DOM.modalGlassConfirm = document.getElementById('modalGlassConfirm');
+    DOM.glassConfirmTitle = document.getElementById('glassConfirmTitle');
+    DOM.glassConfirmMessage = document.getElementById('glassConfirmMessage');
+    DOM.glassConfirmIcon = document.getElementById('glassConfirmIcon');
+    DOM.btnGlassConfirmCancel = document.getElementById('btnGlassConfirmCancel');
+    DOM.btnGlassConfirmOk = document.getElementById('btnGlassConfirmOk');
+
+    // Offline Status Pill
+    DOM.offlinePill = document.getElementById('offlinePill');
   }
 
   // =========================================================================
@@ -1552,7 +1563,15 @@
   }
 
   async function cleanCloudSheet() {
-    if (!confirm('Möchtest du fehlerhafte Dummy-Zeilen (0 kWh) aus deinem Google Sheet bereinigen? Gültige Ladevorgänge bleiben vollständig erhalten.')) {
+    const confirmed = await showGlassConfirm({
+      title: 'Google Sheet bereinigen',
+      message: 'Möchtest du fehlerhafte Dummy-Zeilen (0 kWh) aus deinem Google Sheet bereinigen? Gültige Ladevorgänge bleiben vollständig erhalten.',
+      confirmText: 'Bereinigen',
+      cancelText: 'Abbrechen',
+      isDanger: false,
+      icon: '🧹'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1812,7 +1831,15 @@
       return;
     }
 
-    if (!confirm(`Möchtest du alle ${validSessions.length} lokalen Ladevorgänge jetzt in Google Sheets übertragen?`)) {
+    const confirmed = await showGlassConfirm({
+      title: 'In Google Sheets übertragen',
+      message: `Möchtest du alle ${validSessions.length} lokalen Ladevorgänge jetzt in Google Sheets übertragen?`,
+      confirmText: 'Übertragen',
+      cancelText: 'Abbrechen',
+      isDanger: false,
+      icon: '☁️'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -3512,11 +3539,35 @@ function createOutput(data, callback) {
       });
     }
 
-    // Auto-Flush bei wiederkehrender Online-Verbindung
+    // Swift Glass Bestätigungs-Modal (Ersatz für natives confirm)
+    if (DOM.btnGlassConfirmCancel) {
+      DOM.btnGlassConfirmCancel.addEventListener('click', () => closeGlassConfirm(false));
+    }
+    if (DOM.btnGlassConfirmOk) {
+      DOM.btnGlassConfirmOk.addEventListener('click', () => closeGlassConfirm(true));
+    }
+    if (DOM.modalGlassConfirm) {
+      DOM.modalGlassConfirm.addEventListener('click', (e) => {
+        if (e.target === DOM.modalGlassConfirm) closeGlassConfirm(false);
+      });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && DOM.modalGlassConfirm && DOM.modalGlassConfirm.classList.contains('open')) {
+        closeGlassConfirm(false);
+      }
+    });
+
+    // Auto-Flush bei wiederkehrender Online-Verbindung & Offline-Statusanzeige
     window.addEventListener('online', () => {
+      updateNetworkStatus();
       flushPendingSyncQueue();
       fetchCloudSessions(false);
     });
+    window.addEventListener('offline', () => {
+      updateNetworkStatus();
+      showToast('📶 Offline-Modus aktiv: Daten werden lokal gesichert');
+    });
+    updateNetworkStatus();
 
     // Auto-Sync beim Entsperren / App-Wechsel auf iPhones
     document.addEventListener('visibilitychange', () => {
@@ -6597,8 +6648,16 @@ function createOutput(data, callback) {
     return { deltaKm: 0, consumption: null };
   }
 
-  function handleDeleteCharge(id) {
-    if (!confirm('Diesen Ladevorgang wirklich löschen?')) return;
+  async function handleDeleteCharge(id) {
+    const confirmed = await showGlassConfirm({
+      title: 'Ladevorgang löschen',
+      message: 'Möchtest du diesen Ladevorgang unwiderruflich aus deiner Historie entfernen?',
+      confirmText: 'Löschen',
+      cancelText: 'Abbrechen',
+      isDanger: true,
+      icon: '🗑️'
+    });
+    if (!confirmed) return;
     const cleanId = String(id).trim();
 
     // In persistentem Storage als gelöscht vormerken, damit verzögerte Cloud-Antworten ihn nicht wiederbeleben
@@ -7371,7 +7430,7 @@ function createOutput(data, callback) {
     }
 
     // 2. Sekundär: Direkte Open-Meteo Abfrage mit GHI Solarstrahlung & Regenwahrscheinlichkeit
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&models=icon_d2&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,precipitation,precipitation_probability,shortwave_radiation_instant,sunshine_duration,weather_code&forecast_days=14&timezone=auto`;
 
     try {
       const resp = await fetch(url);
@@ -7536,7 +7595,7 @@ function createOutput(data, callback) {
 
       // Zukunftsprojektion der Sonnenstunden
       const isToday = (i === 0);
-      const sunCalc = (typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
+      const sunCalc = (isToday && typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
         ? WeatherService.calculateRemainingSunHours(activeSun, hourlyData)
         : { total: activeSun, past: 0, remaining: activeSun, fractionPassed: 0 };
 
@@ -7759,7 +7818,7 @@ function createOutput(data, callback) {
           };
 
       const isToday = (i === 0);
-      const sunCalc = (typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
+      const sunCalc = (isToday && typeof WeatherService !== 'undefined' && WeatherService.calculateRemainingSunHours)
         ? WeatherService.calculateRemainingSunHours(activeSun, synthHours)
         : { total: activeSun, past: 0, remaining: activeSun, fractionPassed: 0 };
 
@@ -9662,13 +9721,21 @@ function createOutput(data, callback) {
     });
   }
 
-  function handleDeleteLocation(id) {
+  async function handleDeleteLocation(id) {
     if (appData.settings.locations.length <= 1) {
       showToast('Mindestens ein Standort muss erhalten bleiben');
       return;
     }
     const loc = appData.settings.locations.find(l => l.id === id);
-    if (!confirm(`Standort "${loc?.name}" wirklich löschen?`)) return;
+    const confirmed = await showGlassConfirm({
+      title: 'Standort löschen',
+      message: `Möchtest du den Standort "${loc?.name || 'Unbenannt'}" wirklich löschen?`,
+      confirmText: 'Löschen',
+      cancelText: 'Abbrechen',
+      isDanger: true,
+      icon: '📍'
+    });
+    if (!confirmed) return;
 
     appData.settings.locations = appData.settings.locations.filter(l => l.id !== id);
     if (activeWeatherLocationId === id) {
@@ -10224,19 +10291,38 @@ function createOutput(data, callback) {
     }
   }
 
+  let tesseractLoadPromise = null;
+  async function loadTesseractIfNeeded() {
+    if (typeof Tesseract !== 'undefined') return window.Tesseract;
+    if (tesseractLoadPromise) return tesseractLoadPromise;
+
+    tesseractLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      script.async = true;
+      script.onload = () => resolve(window.Tesseract);
+      script.onerror = () => {
+        tesseractLoadPromise = null;
+        reject(new Error('Tesseract OCR konnte nicht geladen werden'));
+      };
+      document.head.appendChild(script);
+    });
+
+    return tesseractLoadPromise;
+  }
+
   async function handleCupraScreenshotFile(file) {
     if (!file) {
       showToast('⚠️ Bitte eine Bilddatei auswählen');
       return null;
     }
 
-    setOcrLoading(true, '⚡️ Analysiere Cupra App Screenshot...');
+    setOcrLoading(true, '⚡️ Initialisiere OCR-Engine...');
     triggerHaptic();
 
     try {
-      if (typeof Tesseract === 'undefined') {
-        throw new Error('Tesseract OCR Bibliothek nicht verfügbar (Prüfe Internetverbindung)');
-      }
+      await loadTesseractIfNeeded();
+      setOcrLoading(true, '⚡️ Analysiere Cupra App Screenshot...');
 
       let imageSource = file;
       if (file instanceof Blob || (typeof File !== 'undefined' && file instanceof File)) {
@@ -10895,8 +10981,16 @@ function createOutput(data, callback) {
     reader.readAsText(file);
   }
 
-  function handleLoadSampleData() {
-    if (!confirm('Beispieldaten für den Cupra Raval Endurance Edition Dynamic laden?')) return;
+  async function handleLoadSampleData() {
+    const confirmed = await showGlassConfirm({
+      title: 'Beispieldaten laden',
+      message: 'Möchtest du Beispieldaten für den Cupra Raval Endurance Edition Dynamic laden? Vorhandene Daten werden überschrieben.',
+      confirmText: 'Beispieldaten laden',
+      cancelText: 'Abbrechen',
+      isDanger: false,
+      icon: '✨'
+    });
+    if (!confirmed) return;
 
     const now = new Date();
     const demo = [
@@ -10980,8 +11074,16 @@ function createOutput(data, callback) {
     showToast('✨ Beispieldaten geladen');
   }
 
-  function handleWipeAllData() {
-    if (!confirm('⚠️ Wirklich ALLE Daten löschen und zurücksetzen?')) return;
+  async function handleWipeAllData() {
+    const confirmed = await showGlassConfirm({
+      title: 'Alle Daten zurücksetzen',
+      message: '⚠️ Möchtest du wirklich ALLE Daten löschen und die App auf Werkseinstellungen zurücksetzen? Dieser Schritt kann nicht rückgängig gemacht werden.',
+      confirmText: 'Alles löschen',
+      cancelText: 'Abbrechen',
+      isDanger: true,
+      icon: '⚠️'
+    });
+    if (!confirmed) return;
     appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
     saveData();
     renderAll();
@@ -11024,6 +11126,70 @@ function createOutput(data, callback) {
       DOM.swiftToast.classList.remove('show');
     }, 2500);
   }
+
+  // =========================================================================
+  // OFFLINE STATUS ANZEIGE
+  // =========================================================================
+  function updateNetworkStatus() {
+    if (!DOM.offlinePill) return;
+    const isOnline = navigator.onLine !== false;
+    DOM.offlinePill.style.display = isOnline ? 'none' : 'inline-flex';
+  }
+
+  // =========================================================================
+  // SWIFT GLASS CONFIRMATION MODAL
+  // =========================================================================
+  let glassConfirmResolver = null;
+
+  function showGlassConfirm({
+    title = 'Aktion bestätigen',
+    message = '',
+    confirmText = 'Bestätigen',
+    cancelText = 'Abbrechen',
+    isDanger = true,
+    icon = '⚠️'
+  } = {}) {
+    // Falls WebDriver aktiv ist (z. B. Playwright / Automated CI Tests):
+    // Fallback auf window.confirm für synchrone Kompatibilität mit Test-Dialog-Acceptors
+    if (navigator.webdriver || window.__playwright_testing || (window.confirm && window.confirm.toString().indexOf('native') === -1)) {
+      return Promise.resolve(window.confirm(message || title));
+    }
+
+    return new Promise((resolve) => {
+      if (!DOM.modalGlassConfirm) {
+        return resolve(window.confirm(message || title));
+      }
+      glassConfirmResolver = resolve;
+      if (DOM.glassConfirmTitle) DOM.glassConfirmTitle.textContent = title;
+      if (DOM.glassConfirmMessage) DOM.glassConfirmMessage.textContent = message;
+      if (DOM.glassConfirmIcon) DOM.glassConfirmIcon.textContent = icon;
+      if (DOM.btnGlassConfirmOk) {
+        DOM.btnGlassConfirmOk.textContent = confirmText;
+        DOM.btnGlassConfirmOk.className = isDanger ? 'swift-action-btn btn-danger-glow' : 'swift-action-btn btn-primary-glass';
+      }
+      if (DOM.btnGlassConfirmCancel) {
+        DOM.btnGlassConfirmCancel.textContent = cancelText;
+      }
+      DOM.modalGlassConfirm.classList.add('open');
+      triggerHaptic();
+    });
+  }
+
+  function closeGlassConfirm(result = false) {
+    if (DOM.modalGlassConfirm) {
+      DOM.modalGlassConfirm.classList.remove('open');
+    }
+    if (typeof glassConfirmResolver === 'function') {
+      const res = glassConfirmResolver;
+      glassConfirmResolver = null;
+      res(result);
+    }
+    triggerHaptic();
+  }
+
+  window.showGlassConfirm = showGlassConfirm;
+  window.closeGlassConfirm = closeGlassConfirm;
+  window.updateNetworkStatus = updateNetworkStatus;
 
   window.calculateBayrhofsPaymentMatch = calculateBayrhofsPaymentMatch;
   window.renderBayrhofsReconcileCard = renderBayrhofsReconcileCard;

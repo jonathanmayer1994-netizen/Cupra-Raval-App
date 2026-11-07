@@ -1,8 +1,9 @@
-const CACHE_NAME = 'raval-charge-v44';
+const CACHE_NAME = 'raval-charge-v46';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
+  './inversionVisionService.js',
   './weatherService.js',
   './app.js',
   './manifest.json',
@@ -13,8 +14,7 @@ const ASSETS_TO_CACHE = [
   './icon-192.png',
   './icon-512.png',
   './raval.png',
-  'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
+  'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -40,15 +40,21 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Network first with fallback to cache
+  // Nur GET-Requests dürfen vom Cache verarbeitet werden (POST/PUT/DELETE dürfen nie in cache.put landen!)
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // Network first mit sicherem Fallback auf den Cache
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response && response.status === 200) {
+        if (response && response.status === 200 && response.type !== 'opaque') {
+          // Nur vollständige erfolgreiche GET-Antworten sicher im Cache ablegen
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
-          });
+          }).catch(() => {});
         }
         return response;
       })

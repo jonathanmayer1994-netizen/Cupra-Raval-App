@@ -7575,3 +7575,132 @@ select option {
 .b-tip-item strong {
   color: #fff;
 }
+
+/* Fahrzeugdaten Specs Fixed Display & Badges */
+.specs-label-tag {
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--cupra-bronze-light);
+  white-space: nowrap;
+}
+
+.specs-fixed-val {
+  color: var(--cupra-bronze-bright);
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0 14px 0 10px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.specs-fixed-display {
+  background: rgba(6, 10, 16, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: default;
+}
+
+.specs-fixed-badge {
+  font-size: 0.60rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* Swift Glass Deletion & Confirmation Modal */
+.modal-confirm-sheet {
+  z-index: 10050;
+}
+.confirm-sheet-card {
+  max-width: 420px;
+  text-align: center;
+  padding: 20px 20px calc(24px + var(--sab)) 20px;
+}
+.confirm-sheet-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.confirm-icon-badge {
+  font-size: 1.8rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+}
+.confirm-message {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+  margin: 0 0 20px 0;
+}
+.confirm-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.btn-danger-glow {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+}
+.btn-danger-glow:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.5);
+}
+.btn-ghost-subtle {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.btn-ghost-subtle:active {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(0.97);
+}
+
+/* Offline Status Pill im Header */
+.offline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.offline-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+  animation: pulse-dot-anim 1.6s infinite ease-in-out;
+}
+@keyframes pulse-dot-anim {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
