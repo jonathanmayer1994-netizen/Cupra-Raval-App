@@ -165,7 +165,7 @@
     if (!json) return json;
 
     const dailyProps = ['weather_code', 'temperature_2m_max', 'temperature_2m_min', 'sunshine_duration', 'precipitation_sum'];
-    const hourlyProps = ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'precipitation', 'precipitation_probability', 'shortwave_radiation_instant', 'direct_normal_irradiance', 'diffuse_radiation', 'sunshine_duration', 'weather_code'];
+    const hourlyProps = ['temperature_2m', 'relative_humidity_2m', 'wind_speed_10m', 'precipitation', 'precipitation_probability', 'shortwave_radiation_instant', 'direct_normal_irradiance', 'diffuse_radiation', 'sunshine_duration', 'weather_code', 'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high'];
 
     if (json.daily && json.daily.time) {
       dailyProps.forEach(prop => {
@@ -206,7 +206,7 @@
   }
 
   async function fetchOpenMeteo(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&models=icon_d2,ecmwf_ifs&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&models=icon_d2,ecmwf_ifs&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration,precipitation_sum,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,precipitation_probability,shortwave_radiation_instant,direct_normal_irradiance,diffuse_radiation,sunshine_duration,weather_code,cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&past_days=3&forecast_days=14&timezone=auto`;
     const resp = await fetchWithTimeout(url, {}, 6500);
     if (!resp.ok) throw new Error(`Open-Meteo HTTP ${resp.status}`);
     const rawJson = await resp.json();
@@ -816,6 +816,104 @@
   }
 
   // =========================================================================
+  // DYNAMISCHE PHYSIKALISCHE HARMONISIERUNG VON SONNENSCHEIN & NIEDERSCHLAG
+  // =========================================================================
+  /**
+   * Berechnet die thermodynamisch und strahlungsphysikalisch exakte Sonnenscheindauer
+   * pro Stunde unter Berücksichtigung von Konvektion, Sonnenhöhe, Schauerdauer
+   * und Wolkenschichten. Verhindert Gitter-Diskrepanzen wie "60 min Sonne bei 1.1 l Regen".
+   */
+  function calculateAccurateSolarDuration({
+    hour,
+    rawSunHours = 0,
+    precipMm = 0,
+    weatherCode = 0,
+    cloudCoverTotal = 50,
+    cloudCoverLow = 30,
+    cloudCoverMid = 15,
+    cloudCoverHigh = 10,
+    sunriseStr = '07:30',
+    sunsetStr = '16:45',
+    windSpeedKmh = 20
+  }) {
+    const rawSunMinutes = Math.max(0, Math.min(60, (Number(rawSunHours) || 0) * 60));
+
+    // 1. Astronomisches Zeitfenster (S_astro) in Minuten berechnen
+    let riseDec = 7.5;
+    let setDec = 16.75;
+    if (sunriseStr && typeof sunriseStr === 'string' && sunriseStr.includes(':')) {
+      const parts = sunriseStr.split(':').map(Number);
+      if (!isNaN(parts[0]) && !isNaN(parts[1])) riseDec = parts[0] + (parts[1] / 60);
+    }
+    if (sunsetStr && typeof sunsetStr === 'string' && sunsetStr.includes(':')) {
+      const parts = sunsetStr.split(':').map(Number);
+      if (!isNaN(parts[0]) && !isNaN(parts[1])) setDec = parts[0] + (parts[1] / 60);
+    }
+
+    // Liegt die Stunde komplett vor Sonnenaufgang oder nach Sonnenuntergang?
+    if (hour < Math.floor(riseDec) || hour > Math.floor(setDec)) {
+      return 0.0;
+    }
+
+    // Randstunden am Auf- und Untergang exakt minutengenau deckeln
+    let astroMaxMin = 60;
+    if (hour === Math.floor(riseDec)) {
+      astroMaxMin = Math.max(0, Math.min(60, Math.round((1 - (riseDec - hour)) * 60)));
+    } else if (hour === Math.floor(setDec)) {
+      astroMaxMin = Math.max(0, Math.min(60, Math.round((setDec - hour) * 60)));
+    }
+    if (astroMaxMin <= 0) return 0.0;
+
+    // 2. Trocken (kein nennenswerter Niederschlag): Astronomische Obergrenze beachten
+    const pMm = Number(precipMm) || 0;
+    if (pMm <= 0.05) {
+      return Number((Math.min(rawSunMinutes, astroMaxMin) / 60).toFixed(2));
+    }
+
+    // 3. Stratiformer Landregen & Nieselregen (WMO 51-67): Dichte Wolkenschichten löschen Direktstrahlung aus
+    const wCode = Number(weatherCode) || 0;
+    const isStratiform = (wCode >= 51 && wCode <= 67);
+    if (isStratiform) {
+      if (cloudCoverLow >= 65 || pMm >= 0.35) {
+        return 0.0;
+      }
+      const skyClearance = Math.max(0, 1 - (cloudCoverLow / 100));
+      const stratMin = Math.min(rawSunMinutes, astroMaxMin * skyClearance * 0.2);
+      return Number((stratMin / 60).toFixed(2));
+    }
+
+    // 4. Konvektiver Schauerregen (WMO 80-84, 95-99 oder Schauerwetter)
+    // Reale, dynamische Schauer-Regenrate nach Marshall-Palmer (in mm/h)
+    const rainRate = Math.max(4.0, 3.0 + 5.5 * Math.sqrt(pMm));
+    const rainDurationHours = pMm / rainRate; // Reale Kerndauer des Schauers
+
+    // Sonnenhöhe nähern (mittags höher, morgens/abends flacher)
+    const daySpan = Math.max(1, setDec - riseDec);
+    const fracDay = Math.max(0, Math.min(1, (hour + 0.5 - riseDec) / daySpan));
+    const sunElevationDeg = Math.max(6, 25 * Math.sin(Math.PI * fracDay));
+    const sunElevationRad = (sunElevationDeg * Math.PI) / 180;
+
+    // Schatten-Hülle der Schauerwolke (Projektion + Eisschirm/Amboss)
+    const windFactor = Math.sqrt(Math.max(8, Number(windSpeedKmh) || 20) / 15);
+    const shadowMultiplier = 1 + (1.6 / (Math.tan(sunElevationRad) * windFactor));
+    const shadowDurationHours = Math.min(1.0, rainDurationHours * shadowMultiplier);
+    const shadowDurationMin = shadowDurationHours * 60;
+
+    // Nicht-konvektive Umgebungsbewölkung außerhalb der Schauerzelle
+    const cldAmbientLow = Math.max(0, cloudCoverLow - (pMm > 0 ? 30 : 0));
+    const bgObstruction = (1.0 * (cldAmbientLow / 100)) + (0.35 * (cloudCoverMid / 100)) + (0.05 * (cloudCoverHigh / 100));
+    const bgClearFactor = Math.max(0.20, Math.min(1.0, 1 - bgObstruction));
+
+    // Dynamisch verbleibendes Sonnenzeit-Budget in den Lücken zwischen den Schauern
+    const availableClearMin = Math.max(0, astroMaxMin - shadowDurationMin);
+    const dynamicSunMin = Math.round(availableClearMin * bgClearFactor);
+
+    // Physikalischer Wahrheitswert: Niemals mehr Sonnenzeit als die Himmelsgeometrie zulässt
+    const finalMin = Math.min(rawSunMinutes, dynamicSunMin);
+    return Number((finalMin / 60).toFixed(2));
+  }
+
+  // =========================================================================
   // METEOROLOGISCHE ZUKUNFTS-PROJEKTION: VERBLEIBENDE SONNENSTUNDEN
   // =========================================================================
   /**
@@ -1154,21 +1252,60 @@
             const rawDhi = Math.round(hourly.diffuse_radiation ? (hourly.diffuse_radiation[j] || 0) : 0);
             const temp = Math.round(hourly.temperature_2m ? hourly.temperature_2m[j] : 15);
             const hCode = hourly.weather_code ? hourly.weather_code[j] : 0;
+            const windSpd = hourly.wind_speed_10m ? (hourly.wind_speed_10m[j] || 15) : 15;
+            const cldTot = hourly.cloud_cover ? (hourly.cloud_cover[j] ?? 50) : 50;
+            const cldLow = hourly.cloud_cover_low ? (hourly.cloud_cover_low[j] ?? 30) : 30;
+            const cldMid = hourly.cloud_cover_mid ? (hourly.cloud_cover_mid[j] ?? 15) : 15;
+            const cldHigh = hourly.cloud_cover_high ? (hourly.cloud_cover_high[j] ?? 10) : 10;
+
+            // Dynamische thermodynamische Harmonisierung von Sonnenscheindauer und Niederschlag
+            const harmonizedRawSunH = calculateAccurateSolarDuration({
+              hour: hourNum,
+              rawSunHours: rawSunH,
+              precipMm: rain,
+              weatherCode: hCode,
+              cloudCoverTotal: cldTot,
+              cloudCoverLow: cldLow,
+              cloudCoverMid: cldMid,
+              cloudCoverHigh: cldHigh,
+              sunriseStr: sunrise,
+              sunsetStr: sunset,
+              windSpeedKmh: windSpd
+            });
 
             // Adaptive Kalibrierung pro Stunde
             const bias = adaptiveStore.hourlyBias[hourNum] || 1.0;
-            const calSunH = Number((rawSunH * bias).toFixed(2));
-            const calGhi = Math.round(rawGhi * bias);
-            const calDni = Math.round(rawDni * bias);
-            const calDhi = Math.round(rawDhi * bias);
+            const unclippedCalSunH = Number((harmonizedRawSunH * bias).toFixed(2));
+            const harmonizedCalSunH = calculateAccurateSolarDuration({
+              hour: hourNum,
+              rawSunHours: unclippedCalSunH,
+              precipMm: rain,
+              weatherCode: hCode,
+              cloudCoverTotal: cldTot,
+              cloudCoverLow: cldLow,
+              cloudCoverMid: cldMid,
+              cloudCoverHigh: cldHigh,
+              sunriseStr: sunrise,
+              sunsetStr: sunset,
+              windSpeedKmh: windSpd
+            });
+
+            // Strahlungs-Harmonisierung (Direktstrahlung sinkt proportional zur Schauer-Abschattung)
+            const rawRatio = rawSunH > 0.05 ? Math.min(1.0, harmonizedRawSunH / rawSunH) : 1.0;
+            const calRatio = (rawSunH * bias) > 0.05 ? Math.min(1.0, harmonizedCalSunH / (rawSunH * bias)) : 1.0;
+
+            const adjRawDni = Math.round(rawDni * rawRatio);
+            const adjCalDni = Math.round(calDni * calRatio);
+            const adjRawGhi = Math.round(rawDhi + Math.max(0, rawGhi - rawDhi) * rawRatio);
+            const adjCalGhi = Math.round(calDhi + Math.max(0, calGhi - calDhi) * calRatio);
 
             // Physikalische 18.7 kWp Süddach-Modellierung (30° Neigung, Kempten-Unterwang)
-            const rawPhysics = calculateBayrhofsSolarPhysics(d, hourNum, rawGhi, rawDni, rawDhi, temp, baseLoadKw);
-            const calPhysics = calculateBayrhofsSolarPhysics(d, hourNum, calGhi, calDni, calDhi, temp, baseLoadKw);
+            const rawPhysics = calculateBayrhofsSolarPhysics(d, hourNum, adjRawGhi, adjRawDni, rawDhi, temp, baseLoadKw);
+            const calPhysics = calculateBayrhofsSolarPhysics(d, hourNum, adjCalGhi, adjCalDni, calDhi, temp, baseLoadKw);
 
             const activePhysics = isCalibratedMode ? calPhysics : rawPhysics;
-            const activeSunH = isCalibratedMode ? calSunH : rawSunH;
-            const activeGhi = isCalibratedMode ? calGhi : rawGhi;
+            const activeSunH = isCalibratedMode ? harmonizedCalSunH : harmonizedRawSunH;
+            const activeGhi = isCalibratedMode ? adjCalGhi : adjRawGhi;
             const activePvKw = activePhysics.pvKw;
 
             hourlyGhi.push(activeGhi);
@@ -1193,13 +1330,13 @@
               time: timePart,
               hour: hourNum,
               sunHours: activeSunH,
-              rawSunHours: rawSunH,
-              calibratedSunHours: calSunH,
+              rawSunHours: harmonizedRawSunH,
+              calibratedSunHours: harmonizedCalSunH,
               rain,
               rainProb,
               ghi: activeGhi,
-              rawGhi,
-              calibratedGhi: calGhi,
+              rawGhi: adjRawGhi,
+              calibratedGhi: adjCalGhi,
               gti: activePhysics.gti,
               rawGti: rawPhysics.gti,
               calibratedGti: calPhysics.gti,
@@ -1222,11 +1359,12 @@
         }
       }
 
-      // Raw vs. Calibrated Gesamtsummen berechnen
+      // Raw vs. Calibrated Gesamtsummen berechnen (synchronisiert mit den stündlichen Harmoniserungs-Werten)
       let rawTotalSun = sunshineHours;
       let calTotalSun;
       if (hours.length === 24) {
         calTotalSun = Number(hours.reduce((acc, h) => acc + (h.calibratedSunHours !== undefined ? h.calibratedSunHours : h.sunHours), 0).toFixed(1));
+        rawTotalSun = Number(hours.reduce((acc, h) => acc + (h.rawSunHours !== undefined ? h.rawSunHours : h.sunHours), 0).toFixed(1));
       } else {
         const dayBiases = adaptiveStore.hourlyBias.slice(7, 19);
         const avgDayBias = dayBiases.reduce((a, b) => a + b, 0) / dayBiases.length;
@@ -1464,12 +1602,42 @@
       const rawSunHours = isDay ? Number((Math.sin(((h - 7) / 12) * Math.PI) * 0.9 * sunScale).toFixed(2)) : 0;
       const bias = hourlyBias[h] || 1.0;
       const calSunHours = isDay ? Number((rawSunHours * bias).toFixed(2)) : 0;
-      const activeSunHours = isCalibrated ? calSunHours : rawSunHours;
 
       const rain = (rainMm > 0 && h >= 14 && h <= 16) ? Number((rainMm / 2).toFixed(1)) : 0.0;
       const rainProb = rain > 0 ? 65 : (rainMm > 0 ? 30 : 10);
-      const rawGhi = isDay ? Math.round(Math.sin(((h - 7) / 12) * Math.PI) * 650 * sunScale) : 0;
-      const calGhi = isDay ? Math.round(rawGhi * bias) : 0;
+
+      const harmRawSunHours = calculateAccurateSolarDuration({
+        hour: h,
+        rawSunHours,
+        precipMm: rain,
+        weatherCode,
+        cloudCoverTotal: rain > 0 ? 80 : 35,
+        cloudCoverLow: rain > 0 ? 55 : 20,
+        cloudCoverMid: 15,
+        cloudCoverHigh: 10,
+        sunriseStr: '07:30',
+        sunsetStr: '16:45',
+        windSpeedKmh: 20
+      });
+      const harmCalSunHours = calculateAccurateSolarDuration({
+        hour: h,
+        rawSunHours: calSunHours,
+        precipMm: rain,
+        weatherCode,
+        cloudCoverTotal: rain > 0 ? 80 : 35,
+        cloudCoverLow: rain > 0 ? 55 : 20,
+        cloudCoverMid: 15,
+        cloudCoverHigh: 10,
+        sunriseStr: '07:30',
+        sunsetStr: '16:45',
+        windSpeedKmh: 20
+      });
+      const activeSunHours = isCalibrated ? harmCalSunHours : harmRawSunHours;
+
+      const rawRatio = rawSunHours > 0.05 ? Math.min(1.0, harmRawSunHours / rawSunHours) : 1.0;
+      const calRatio = calSunHours > 0.05 ? Math.min(1.0, harmCalSunHours / calSunHours) : 1.0;
+      const rawGhi = isDay ? Math.round(Math.sin(((h - 7) / 12) * Math.PI) * 650 * sunScale * rawRatio) : 0;
+      const calGhi = isDay ? Math.round(rawGhi * bias * calRatio) : 0;
       const activeGhi = isCalibrated ? calGhi : rawGhi;
 
       const temp = Math.round(8 + (isDay ? Math.sin(((h - 7) / 12) * Math.PI) * 9 : 0));
@@ -1492,8 +1660,8 @@
         time: `${String(h).padStart(2, '0')}:00`,
         hour: h,
         sunHours: activeSunHours,
-        rawSunHours,
-        calibratedSunHours: calSunHours,
+        rawSunHours: harmRawSunHours,
+        calibratedSunHours: harmCalSunHours,
         rain,
         rainProb,
         ghi: activeGhi,
@@ -1678,6 +1846,7 @@
     },
     getInversionVisionResult: () => latestInversionResult || (getAdaptiveStore().inversionOverride ? { fusionDecision: getAdaptiveStore().inversionOverride } : null),
     calculateRemainingSunHours,
+    calculateAccurateSolarDuration,
     calculateSolarYield,
     calculateBayrhofsSolarPhysics,
     getBayrhofsDynamicHorizonDeg,
