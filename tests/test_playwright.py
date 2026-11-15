@@ -322,6 +322,16 @@ def run_tests():
             price_sync = (entry_price_val in selected_sub.replace(',', '.'))
             log_test("4.3b Ladeort Preis-Synchronisation: Button & Eingabefeld identisch", price_sync, f"Sub: '{selected_sub}', Input: '{entry_price_val}'")
 
+            # 4.3b1: Standort Arbeit: Fester Tarif von 0,35 €/kWh (35 Cent)
+            page.locator("#btnOpenLocationPicker").click()
+            time.sleep(0.08)
+            page.locator('.touch-picker-item[data-id="loc_arbeit"]').click()
+            time.sleep(0.08)
+            arbeit_sub = page.locator("#pickerSelectedSub").inner_text()
+            arbeit_price_val = page.locator("#entryPrice").input_value()
+            arbeit_fixed_ok = (arbeit_price_val == "0.35" and "0,35" in arbeit_sub and "Netzstrom" in arbeit_sub)
+            log_test("4.3b1 Standort Arbeit: Fester Tarif 0,35 €/kWh automatisch hinterlegt", arbeit_fixed_ok, f"Sub: '{arbeit_sub}', Price: '{arbeit_price_val}'")
+
             # 4.3b2: Öffentliche Ladesäule: Kein Default-Preis (weder 0.59 noch 0.35), Feld bleibt leer & Preis ist variabel
             page.locator("#btnOpenLocationPicker").click()
             time.sleep(0.08)
@@ -875,6 +885,11 @@ def run_tests():
             pub_loc_row = page.locator('.loc-manage-row[data-id="loc_oeffentlich"]').inner_text()
             pub_is_variable = "Variabel" in pub_loc_row and "0,59" not in pub_loc_row
             log_test("8.2c Standort-Verwaltung: Öffentliche Ladesäule zeigt 'Variabel' statt altem Default-Preis (0,59 €)", pub_is_variable, f"Row text: '{pub_loc_row.strip()}'")
+
+            # 8.2d: Standort Arbeit hat festen Preis von 0,35 €/kWh (35 Cent)
+            arbeit_loc_row = page.locator('.loc-manage-row[data-id="loc_arbeit"]').inner_text()
+            arbeit_price_ok = "0,35" in arbeit_loc_row and "Netzstrom" in arbeit_loc_row
+            log_test("8.2d Standort-Verwaltung: Arbeit zeigt festen Tarif von 0,35 €/kWh (35 Cent)", arbeit_price_ok, f"Row text: '{arbeit_loc_row.strip()}'")
 
             # Open Neuer Standort Modal
             page.locator("#btnOpenNewLocationModal").click()

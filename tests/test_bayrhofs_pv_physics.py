@@ -42,8 +42,8 @@ def run_tests():
         page.on("console", lambda msg: console_errors.append(msg.text) if (msg.type == "error" and "favicon" not in msg.text and "404" not in msg.text) else None)
 
         print("\n--- TEST 1: Laden der Web-Applikation & Script-Initialisierung ---")
-        page.goto(BASE_URL, wait_until="networkidle")
-        time.sleep(0.3)
+        page.goto(BASE_URL, wait_until="domcontentloaded")
+        time.sleep(0.5)
         log_test("Keine kritischen Konsolenfehler beim Laden", len(console_errors) == 0, f"Fehler: {console_errors}")
 
         print("\n--- TEST 2: Physikalische Parameter & Konstanten in WeatherService ---")

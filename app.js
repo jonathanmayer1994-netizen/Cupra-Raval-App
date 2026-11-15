@@ -43,7 +43,7 @@
       name: "Arbeit",
       icon: "💼",
       powerType: "grid",
-      kwhPrice: 0.20,
+      kwhPrice: 0.35,
       address: "Thomas-Dachser-Straße 2, 87439 Kempten",
       lat: 47.7476,
       lon: 10.3038,
@@ -670,7 +670,8 @@
           lat = lat ?? 47.7476;
           lon = lon ?? 10.3038;
           powerType = 'grid';
-          kwhPrice = item && item.kwhPrice !== undefined ? Number(item.kwhPrice) : 0.20;
+          // Arbeit Ladeort: fester Stromtarif von 35 Cent (0.35 €/kWh)
+          kwhPrice = 0.35;
           icon = icon || '💼';
         } else if (nLower.includes('öffentlich') || nLower.includes('oeffentlich')) {
           address = address || "Variabel";
@@ -11022,8 +11023,8 @@ function createOutput(data, callback) {
         odometer: 12240,
         socStart: 25,
         soc: 75,
-        pricePerKwh: 0.20,
-        totalCost: 5.60,
+        pricePerKwh: 0.35,
+        totalCost: 9.80,
         location: "Arbeit",
         pvSurplus: false,
         notes: "Bürotag Donnerstag",

@@ -1294,6 +1294,10 @@
             const rawRatio = rawSunH > 0.05 ? Math.min(1.0, harmonizedRawSunH / rawSunH) : 1.0;
             const calRatio = (rawSunH * bias) > 0.05 ? Math.min(1.0, harmonizedCalSunH / (rawSunH * bias)) : 1.0;
 
+            const calDni = Math.round(rawDni * bias);
+            const calDhi = rawDhi;
+            const calGhi = Math.round(rawGhi * bias);
+
             const adjRawDni = Math.round(rawDni * rawRatio);
             const adjCalDni = Math.round(calDni * calRatio);
             const adjRawGhi = Math.round(rawDhi + Math.max(0, rawGhi - rawDhi) * rawRatio);
