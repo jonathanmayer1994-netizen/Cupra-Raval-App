@@ -84,6 +84,7 @@
 
     populateSyntheticPixelData(data, type, width, height);
     ctx.putImageData(imgData, 0, 0);
+    canvas.__isSyntheticFallback = true;
     return canvas;
   }
 
@@ -93,7 +94,8 @@
     return {
       width,
       height,
-      data
+      data,
+      __isSyntheticFallback: true
     };
   }
 
@@ -294,6 +296,7 @@
       status,
       badgeIcon,
       classificationLabel,
+      isSyntheticFallback: Boolean(source && source.__isSyntheticFallback),
       timestamp: Date.now()
     };
   }

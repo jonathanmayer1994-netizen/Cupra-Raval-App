@@ -5408,10 +5408,10 @@ select option {
 .cloud-status-dot.syncing {
   background: var(--cupra-bronze);
   box-shadow: 0 0 8px rgba(192, 128, 81, 0.6);
-  animation: pulseDot 1s infinite alternate;
+  animation: cloudSyncPulse 1s infinite alternate;
 }
 
-@keyframes pulseDot {
+@keyframes cloudSyncPulse {
   from { opacity: 0.4; }
   to { opacity: 1; }
 }

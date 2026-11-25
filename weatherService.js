@@ -47,6 +47,23 @@
     return FALLBACK_SUN_TIMES[month] || { rise: '07:30', set: '18:35' };
   }
 
+  // Zeitzonensichere lokale Datums-Helfer (vermeidet UTC-Mitternachts-Drift zwischen 00:00 und 02:00 MEZ/MESZ)
+  function getLocalDateStr(d = new Date()) {
+    const dt = (d instanceof Date && !isNaN(d.getTime())) ? d : new Date();
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function parseLocalDate(dateStr) {
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+      const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+      return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+    }
+    return new Date(dateStr || Date.now());
+  }
+
   // Hilfsfunktion: AbortController Timeout Wrapper
   function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
     const controller = new AbortController();
@@ -161,6 +178,24 @@
     return 0;
   }
 
+  function getCategoricalEnsembleValue(container, prop, index, preferD2 = true) {
+    if (!container) return 0;
+    const d2Arr = container[`${prop}_icon_d2`];
+    const ecArr = container[`${prop}_ecmwf_ifs`];
+    const stdArr = container[prop];
+
+    const valD2 = (d2Arr && index < d2Arr.length && d2Arr[index] !== null && d2Arr[index] !== undefined && !isNaN(d2Arr[index])) ? Number(d2Arr[index]) : null;
+    const valEc = (ecArr && index < ecArr.length && ecArr[index] !== null && ecArr[index] !== undefined && !isNaN(ecArr[index])) ? Number(ecArr[index]) : null;
+    const valStd = (stdArr && index < stdArr.length && stdArr[index] !== null && stdArr[index] !== undefined && !isNaN(stdArr[index])) ? Number(stdArr[index]) : null;
+
+    // Kategorische WMO-Codes niemals linear mitteln (verhindert z. B. ungültige Codes wie 13.5)!
+    if (preferD2 && valD2 !== null) return Math.round(valD2);
+    if (valEc !== null) return Math.round(valEc);
+    if (valD2 !== null) return Math.round(valD2);
+    if (valStd !== null) return Math.round(valStd);
+    return 0;
+  }
+
   function normalizeOpenMeteoEnsemble(json) {
     if (!json) return json;
 
@@ -171,6 +206,9 @@
       dailyProps.forEach(prop => {
         if (!json.daily[prop] || json.daily[`${prop}_icon_d2`]) {
           json.daily[prop] = json.daily.time.map((_, idx) => {
+            if (prop === 'weather_code') {
+              return getCategoricalEnsembleValue(json.daily, prop, idx, idx <= 2);
+            }
             const wD2 = (idx <= 2) ? 0.70 : 0.0;
             const wEc = (idx <= 2) ? 0.30 : 1.0;
             return getEnsembleValue(json.daily, prop, idx, { weightD2: wD2, weightEc: wEc });
@@ -183,6 +221,9 @@
       hourlyProps.forEach(prop => {
         if (!json.hourly[prop] || json.hourly[`${prop}_icon_d2`]) {
           json.hourly[prop] = json.hourly.time.map((_, idx) => {
+            if (prop === 'weather_code') {
+              return getCategoricalEnsembleValue(json.hourly, prop, idx, idx < 48);
+            }
             const wD2 = (idx < 48) ? 0.70 : 0.0;
             const wEc = (idx < 48) ? 0.30 : 1.0;
             return getEnsembleValue(json.hourly, prop, idx, { weightD2: wD2, weightEc: wEc });
@@ -1144,6 +1185,37 @@
   // =========================================================================
   // SYNTHESE: 5 QUELLEN ZU KONSOLIDIERTER PROGNOSE VERBINDEN
   // =========================================================================
+  const SNAPSHOTS_KEY = 'cupra_forecast_snapshots_v1';
+
+  function getForecastSnapshots() {
+    try {
+      const raw = localStorage.getItem(SNAPSHOTS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveForecastSnapshot(dateStr, rawSunHours, calSunHours) {
+    if (!dateStr) return;
+    try {
+      const snaps = getForecastSnapshots();
+      if (!snaps[dateStr]) {
+        snaps[dateStr] = {
+          rawSun: Number(rawSunHours) || 0,
+          calSun: Number(calSunHours) || 0,
+          capturedAt: Date.now()
+        };
+        // Alte Snapshots (> 14 Tage) automatisch aufräumen
+        const keys = Object.keys(snaps).sort();
+        if (keys.length > 14) {
+          keys.slice(0, keys.length - 14).forEach(k => delete snaps[k]);
+        }
+        localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps));
+      }
+    } catch (_) {}
+  }
+
   function synthesizeForecast(openMeteo, brightSkyList, dwdAlerts, geoSphere, metNorway, threshold = 4.5, options = {}) {
     const list = [];
     const baseLoadKw = Number(options && options.bayrhofsBaseLoadKw !== undefined ? options.bayrhofsBaseLoadKw : (options && options.baseLoadKw !== undefined ? options.baseLoadKw : BAYRHOFS_CONFIG.defaultBaseLoadKw));
@@ -1153,28 +1225,31 @@
     const isCalibratedMode = (adaptiveStore.mode !== 'raw');
     const locElevation = Number(options.elevation) || 720;
 
-    // Heute Datum ermitteln
-    const todayStr = new Date().toISOString().slice(0, 10);
+    // Heute Datum lokal ermitteln (zeitzonensicher)
+    const todayStr = getLocalDateStr(new Date());
     let todayIdx = 0;
     if (daily && Array.isArray(daily.time)) {
       const foundIdx = daily.time.findIndex(t => t >= todayStr);
       if (foundIdx >= 0) todayIdx = foundIdx;
     }
 
-    // Ground Truth Abgleich der vergangenen Tage (falls past_days Daten vorhanden sind)
+    // Ground Truth Abgleich der vergangenen Tage (echte Snapshots bevorzugt, sonst Modell-Basisschätzung)
+    const snapshots = getForecastSnapshots();
     if (daily && Array.isArray(daily.time) && todayIdx > 0) {
       try {
         const comparisons = [];
         for (let p = Math.max(0, todayIdx - 3); p < todayIdx; p++) {
           const pDate = daily.time[p];
           const actualSun = Number(((daily.sunshine_duration[p] || 0) / 3600).toFixed(1));
-          const pD = new Date(pDate);
+          const pD = parseLocalDate(pDate);
           const dayName = pD.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
           const isYesterday = (p === todayIdx - 1);
           const dayLabel = isYesterday ? `Gestern (${dayName})` : dayName;
 
-          // Modell-Schätzung / Vorhersage ermitteln
-          const predSun = Number((actualSun + (actualSun < 2 ? 1.2 : (actualSun > 7 ? -0.2 : 0.5))).toFixed(1));
+          const snap = snapshots[pDate];
+          const predSun = snap
+            ? Number((isCalibratedMode ? snap.calSun : snap.rawSun).toFixed(1))
+            : Number((actualSun + (actualSun < 2 ? 1.2 : (actualSun > 7 ? -0.2 : 0.5))).toFixed(1));
           const delta = Number((actualSun - predSun).toFixed(1));
           const accuracy = Math.max(65, Math.min(100, Math.round(100 - (Math.abs(delta) / Math.max(1, predSun, actualSun)) * 100)));
 
@@ -1185,6 +1260,7 @@
             actualSunHours: actualSun,
             deltaHours: delta,
             accuracyPct: accuracy,
+            isRealSnapshot: Boolean(snap),
             status: Math.abs(delta) <= 0.5 ? 'exact' : (delta < -1.0 ? 'fog' : 'slight'),
             note: Math.abs(delta) <= 0.5 ? '✓ Exakte Prognose' : (delta < -1.0 ? '🌫️ Nebel gedämpft' : '✓ Hohe Trefferquote')
           });
@@ -1210,7 +1286,7 @@
 
       if (daily && daily.time && daily.time[dataIdx]) {
         dateStr = daily.time[dataIdx];
-        d = new Date(dateStr);
+        d = parseLocalDate(dateStr);
         sunshineHours = Number(((daily.sunshine_duration[dataIdx] || 0) / 3600).toFixed(1));
         rainMm = Number((daily.precipitation_sum ? daily.precipitation_sum[dataIdx] : 0).toFixed(1));
         tMax = Math.round(daily.temperature_2m_max[dataIdx]);
@@ -1222,7 +1298,7 @@
       } else {
         d = new Date();
         d.setDate(d.getDate() + i);
-        dateStr = d.toISOString().slice(0, 10);
+        dateStr = getLocalDateStr(d);
         sunshineHours = Number((Math.sin(i * 0.9) * 4 + 5.5).toFixed(1));
         rainMm = Number(((Math.cos(i * 1.3) + 1) * 0.8).toFixed(1));
         tMax = Math.round(15 + Math.sin(i * 0.5) * 5);
@@ -1555,6 +1631,10 @@
         ? (sunCalc.remaining > 0 ? `noch ${sunCalc.remaining}h Sonne heute` : `keine Sonne mehr heute`)
         : `${activeTotalSun}h Sonne`;
 
+      if (i <= 1) {
+        saveForecastSnapshot(dateStr, rawTotalSun, calTotalSun);
+      }
+
       list.push({
         dateIndex: i,
         dateStr,
@@ -1738,7 +1818,8 @@
     let inversionOverride = null;
     if (typeof InversionVisionService !== 'undefined' && InversionVisionService.runFullInversionAnalysis) {
       try {
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const nowLocal = new Date();
+        const todayStr = getLocalDateStr(nowLocal);
         let todayDataIdx = 0;
         if (openMeteoData?.daily?.time && Array.isArray(openMeteoData.daily.time)) {
           const fIdx = openMeteoData.daily.time.findIndex(t => t >= todayStr);
@@ -1747,6 +1828,7 @@
         const locElev = Number(options.elevation) || 720;
         const estSunH = (openMeteoData?.daily?.sunshine_duration?.[todayDataIdx] ? openMeteoData.daily.sunshine_duration[todayDataIdx] / 3600 : 7.0);
         const estCode = (openMeteoData?.daily?.weather_code?.[todayDataIdx] ?? 0);
+        const estTempMin = (openMeteoData?.daily?.temperature_2m_min?.[todayDataIdx] ?? 4);
         const estHum = (openMeteoData?.current?.relative_humidity_2m ?? 88);
         const estWind = (openMeteoData?.current?.wind_speed_10m ?? 6);
 
@@ -1758,7 +1840,16 @@
         );
         latestInversionResult = inversionResult;
         if (inversionResult && inversionResult.fusionDecision) {
-          inversionOverride = inversionResult.fusionDecision;
+          const allSyntheticFallback = Array.isArray(inversionResult.webcams)
+            && inversionResult.webcams.length > 0
+            && inversionResult.webcams.every(w => w.analysis && w.analysis.isSyntheticFallback);
+          const monthIdx = nowLocal.getMonth(); // 0=Jan ... 11=Dez
+          const isWarmSummerSeason = (monthIdx >= 4 && monthIdx <= 8 && estTempMin > 10);
+
+          // Schutz gegen Fehlalarme im Hochsommer falls Webcams per CORS auf synthetischen Test-Canvas fielen
+          if (!(allSyntheticFallback && isWarmSummerSeason && estCode < 40 && estHum < 92)) {
+            inversionOverride = inversionResult.fusionDecision;
+          }
         }
       } catch (visErr) {
         console.warn('[WeatherService] Inversion vision run notice:', visErr);
@@ -1828,6 +1919,9 @@
     fetchDwdAlerts,
     fetchGeoSphereAustria,
     fetchMetNorway,
+    normalizeOpenMeteoEnsemble,
+    synthesizeForecast,
+    getLocalDateStr,
     determineAccurateWeatherIcon,
     clearCache,
     CACHE_KEY,

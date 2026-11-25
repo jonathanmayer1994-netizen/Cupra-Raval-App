@@ -1670,6 +1670,98 @@ def run_tests():
                      api_check is not None and api_check["hasGetAdaptive"] and api_check["hasSetMode"] and api_check["hasRecalibrate"],
                      f"API Methoden verifiziert: {api_check}")
 
+            # =====================================================================
+            # SUITE 16: ARCHITEKTUR, CATEGORICAL WMO-ENSEMBLE, SCHEMA V5 & LAZY ASSETS
+            # =====================================================================
+            print("\n--- SUITE 16: Ensemble-Integrität, Schema v5 & Asset-Hygiene ---")
+
+            # 16.1: WMO weather_code wird niemals linear gemittelt (z. B. 0 und 45 -> nicht 13.5)
+            wmo_check = page.evaluate("""() => {
+                const sample = {
+                    daily: {
+                        time: ['2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28'],
+                        weather_code_icon_d2: [0, 3, 2, null],
+                        weather_code_ecmwf_ifs: [45, 61, 80, 3],
+                        sunshine_duration_icon_d2: [7200, 3600, 1800, null],
+                        sunshine_duration_ecmwf_ifs: [3600, 3600, 1800, 5400]
+                    },
+                    hourly: {
+                        time: ['2026-11-25T10:00'],
+                        weather_code_icon_d2: [0],
+                        weather_code_ecmwf_ifs: [45]
+                    }
+                };
+                const norm = window.WeatherService.normalizeOpenMeteoEnsemble(sample);
+                return {
+                    dailyCodes: norm.daily.weather_code,
+                    hourlyCodes: norm.hourly.weather_code,
+                    allIntegers: norm.daily.weather_code.every(c => Number.isInteger(c)) && norm.hourly.weather_code.every(c => Number.isInteger(c)),
+                    day0Sun: norm.daily.sunshine_duration[0]
+                };
+            }""")
+            log_test("16.1 WMO weather_code bleibt kategorisch ganzzahlig im Multi-Modell-Ensemble",
+                     wmo_check["allIntegers"] and wmo_check["dailyCodes"] == [0, 3, 2, 3] and wmo_check["hourlyCodes"] == [0],
+                     f"Codes: {wmo_check['dailyCodes']}, Day0Sun: {wmo_check['day0Sun']}s")
+
+            # 16.2: Lokales Datum (getLocalDateStr) entspricht Browser-Lokalzeit statt UTC
+            local_date_check = page.evaluate("""() => {
+                const d = new Date();
+                const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const actual = window.WeatherService.getLocalDateStr(d);
+                return { expected, actual, match: expected === actual };
+            }""")
+            log_test("16.2 Zeitzonensicheres lokales Datum (WeatherService.getLocalDateStr)",
+                     local_date_check["match"],
+                     f"Erwartet: {local_date_check['expected']}, Erhalten: {local_date_check['actual']}")
+
+            # 16.3: Google Apps Script Vorlage wird sauber per Lazy-Fetch geladen
+            gas_fetch_check = page.evaluate("""async () => {
+                const resp = await fetch('./google_apps_script.js');
+                const txt = await resp.text();
+                return { ok: resp.ok, status: resp.status, hasDoPost: txt.includes('function doPost(e)') };
+            }""")
+            log_test("16.3 Google Apps Script Vorlage per Lazy-Fetch ladbar (Single Source of Truth)",
+                     gas_fetch_check["ok"] and gas_fetch_check["hasDoPost"],
+                     f"Status: {gas_fetch_check['status']}, hasDoPost: {gas_fetch_check['hasDoPost']}")
+
+            # 16.4: Schema v5 Migration (v4 0.20 -> 0.35, benutzerdefiniert ab v5 bleibt erhalten)
+            schema_v5_check = page.evaluate("""() => {
+                const cur = JSON.parse(localStorage.getItem('cupra_raval_data'));
+                const backup = JSON.parse(JSON.stringify(cur));
+                // Simuliere alten v4 Stand mit 0.20 Arbeit
+                cur.schemaVersion = 4;
+                const arbeitV4 = cur.settings.locations.find(l => l.id === 'loc_arbeit');
+                if (arbeitV4) arbeitV4.kwhPrice = 0.20;
+                localStorage.setItem('cupra_raval_data', JSON.stringify(cur));
+                return backup;
+            }""")
+            page.reload(wait_until="domcontentloaded")
+            time.sleep(0.1)
+            migrated_price = page.evaluate("""() => {
+                const d = JSON.parse(localStorage.getItem('cupra_raval_data'));
+                const arbeit = d.settings.locations.find(l => l.id === 'loc_arbeit');
+                const ver = d.schemaVersion;
+                const priceAfterV4Migration = arbeit ? arbeit.kwhPrice : null;
+
+                // Nun ab v5 benutzerdefinierten Preis (0.39) simulieren
+                if (arbeit) arbeit.kwhPrice = 0.39;
+                localStorage.setItem('cupra_raval_data', JSON.stringify(d));
+                return { ver, priceAfterV4Migration };
+            }""")
+            page.reload(wait_until="domcontentloaded")
+            time.sleep(0.1)
+            custom_v5_price = page.evaluate("""(backup) => {
+                const d = JSON.parse(localStorage.getItem('cupra_raval_data'));
+                const arbeit = d.settings.locations.find(l => l.id === 'loc_arbeit');
+                const customKept = arbeit ? arbeit.kwhPrice : null;
+                // Ursprungszustand sauber wiederherstellen (0.35)
+                localStorage.setItem('cupra_raval_data', JSON.stringify(backup));
+                return customKept;
+            }""", schema_v5_check)
+            log_test("16.4 Schema v5 Einmal-Migration (v4 0.20 -> 0.35, v5 Edit 0.39 bleibt erhalten)",
+                     migrated_price["ver"] == 5 and migrated_price["priceAfterV4Migration"] == 0.35 and custom_v5_price == 0.39,
+                     f"Schema: v{migrated_price['ver']}, v4->v5: {migrated_price['priceAfterV4Migration']}, v5 Custom: {custom_v5_price}")
+
         finally:
             # Sicherheitsnetz (Fail-Safe): Bereinigt selbst bei Test-Abbruch alle Spuren
             try:

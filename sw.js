@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raval-charge-v48';
+const CACHE_NAME = 'raval-charge-v49';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const ASSETS_TO_CACHE = [
   './inversionVisionService.js',
   './weatherService.js',
   './app.js',
+  './google_apps_script.js',
   './manifest.json',
   './cupra-raval-icon.png',
   './icon.svg',
@@ -15,6 +16,18 @@ const ASSETS_TO_CACHE = [
   './icon-512.png',
   './raval.png',
   'https://cdn.jsdelivr.net/npm/chart.js'
+];
+
+// Externe Live-API-Endpunkte niemals im statischen App-Shell-Cache ablegen
+const API_BYPASS_HOSTS = [
+  'api.open-meteo.com',
+  'api.brightsky.dev',
+  'maps.dwd.de',
+  'dataset.api.hub.geosphere.at',
+  'api.met.no',
+  'nominatim.openstreetmap.org',
+  'script.google.com',
+  'script.googleusercontent.com'
 ];
 
 self.addEventListener('install', (event) => {
@@ -45,7 +58,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network first mit sicherem Fallback auf den Cache
+  // Dynamische Wetter- & Google-Sheets-APIs direkt über Netzwerk / App-eigenen localStorage-Cache abwickeln
+  try {
+    const reqUrl = new URL(event.request.url);
+    if (API_BYPASS_HOSTS.includes(reqUrl.hostname)) {
+      return;
+    }
+  } catch (_) {}
+
+  // Network first mit sicherem Fallback auf den App-Shell-Cache
   event.respondWith(
     fetch(event.request)
       .then((response) => {
