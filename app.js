@@ -125,6 +125,7 @@
   let activeWeatherLocationId = 'gps';
 
   let weatherForecast14Days = null;
+  window.weatherForecast14Days = null;
   let currentDwdAlerts = [];
   let currentAlpineData = null;
   let currentSolarSummary = null;
@@ -176,6 +177,7 @@
   // INITIALISIERUNG
   // =========================================================================
   window.addEventListener('DOMContentLoaded', () => {
+    initAntiZoomGuards();
     cacheDom();
     initStorage();
     initWeatherCache();
@@ -184,6 +186,52 @@
     autoRequestGpsAndFetchWeather(false, false);
     fetchCloudSessions(false);
   });
+
+  /**
+   * Unterbindet jeglichen Browser-Zoom (Pinch-to-Zoom, iOS-Gesten, Trackpad-Zoom & Input-Auto-Zoom).
+   */
+  function initAntiZoomGuards() {
+    // 1. iOS Safari Pinch-to-Zoom Gesten blockieren
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+      document.addEventListener(evt, (e) => {
+        if (e.cancelable) e.preventDefault();
+      }, { passive: false });
+    });
+
+    // 2. Multi-Touch Pinch-Zoom (2+ Finger) blockieren
+    const blockMultiTouch = (e) => {
+      if (e.touches && e.touches.length > 1 && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('touchstart', blockMultiTouch, { passive: false });
+    document.addEventListener('touchmove', blockMultiTouch, { passive: false });
+
+    // 3. Trackpad / Ctrl+Wheel Zoom blockieren
+    document.addEventListener('wheel', (e) => {
+      if (e.ctrlKey && e.cancelable) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
+
+  /**
+   * Entfocusst aktive Inputs beim Schließen von Modals und setzt eventuellen Browser-Scale sauber auf 1.0 zurück.
+   */
+  function resetViewportAndBlur() {
+    try {
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+      if (window.visualViewport && window.visualViewport.scale > 1.01) {
+        const meta = document.querySelector('meta[name="viewport"]');
+        if (meta) {
+          const locked = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+          meta.setAttribute('content', locked);
+        }
+      }
+    } catch (_) {}
+  }
 
   function cacheDom() {
     // Header & Cloud Sync
@@ -4276,6 +4324,7 @@ function createOutput(data, callback) {
   }
 
   function closeKpiDetailModal() {
+    resetViewportAndBlur();
     if (DOM.modalKpiDetail) {
       DOM.modalKpiDetail.classList.remove('open');
       document.body.style.overflow = '';
@@ -4561,6 +4610,7 @@ function createOutput(data, callback) {
   }
 
   function closeBatteryHealthModal() {
+    resetViewportAndBlur();
     if (DOM.modalBatteryHealth) {
       DOM.modalBatteryHealth.classList.remove('open');
       document.body.style.overflow = '';
@@ -9288,6 +9338,7 @@ function createOutput(data, callback) {
   }
 
   function closeHourlyModal() {
+    resetViewportAndBlur();
     DOM.modalHourlyWeather.classList.remove('open');
     if (DOM.hourlyContentWrap) {
       DOM.hourlyContentWrap.style.transform = '';
@@ -9815,6 +9866,7 @@ function createOutput(data, callback) {
   }
 
   function closeLocationEditorModal() {
+    resetViewportAndBlur();
     DOM.modalEditLocation.classList.remove('open');
   }
 
@@ -9974,6 +10026,7 @@ function createOutput(data, callback) {
   }
 
   function closeLocationPickerSheet() {
+    resetViewportAndBlur();
     DOM.modalLocationPickerSheet.classList.remove('open');
   }
 
@@ -10127,6 +10180,7 @@ function createOutput(data, callback) {
   }
 
   function closeModalCharge() {
+    resetViewportAndBlur();
     DOM.modalAddCharge.classList.remove('open');
   }
 
@@ -11184,6 +11238,7 @@ function createOutput(data, callback) {
   }
 
   function closeGlassConfirm(result = false) {
+    resetViewportAndBlur();
     if (DOM.modalGlassConfirm) {
       DOM.modalGlassConfirm.classList.remove('open');
     }

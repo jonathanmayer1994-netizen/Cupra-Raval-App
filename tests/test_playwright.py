@@ -198,6 +198,32 @@ def run_tests():
             fab_visible = page.locator("#fabAddCharge").is_visible()
             log_test("1.5 Zentraler (+) FAB Button", fab_visible, "Sichtbar und zentriert im Dock")
 
+            anti_zoom_check = page.evaluate("""() => {
+                const meta = document.querySelector('meta[name="viewport"]')?.getAttribute('content') || '';
+                const hasViewportLock = meta.includes('user-scalable=no') && meta.includes('maximum-scale=1.0');
+                const htmlStyle = getComputedStyle(document.documentElement);
+                const bodyStyle = getComputedStyle(document.body);
+                const inputs = Array.from(document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]), select, textarea'));
+                const smallInputs = inputs
+                    .map(el => ({ id: el.id || el.className, fs: parseFloat(getComputedStyle(el).fontSize) }))
+                    .filter(item => item.fs < 16);
+                return {
+                    hasViewportLock,
+                    htmlTouchAction: htmlStyle.touchAction,
+                    bodyTouchAction: bodyStyle.touchAction,
+                    smallInputsCount: smallInputs.length,
+                    smallInputs
+                };
+            }""")
+            log_test(
+                "1.6 Anti-Zoom Lock (Viewport, Touch-Action & Input >= 16px)",
+                anti_zoom_check["hasViewportLock"]
+                and "pan-x" in anti_zoom_check["htmlTouchAction"]
+                and "pan-y" in anti_zoom_check["htmlTouchAction"]
+                and anti_zoom_check["smallInputsCount"] == 0,
+                f"MetaLock: {anti_zoom_check['hasViewportLock']}, Touch: {anti_zoom_check['htmlTouchAction']}, SmallInputs(<16px): {anti_zoom_check['smallInputs']}"
+            )
+
             # =====================================================================
             # SUITE 2: DASHBOARD KPIS & HERO BÜHNE
             # =====================================================================

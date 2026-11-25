@@ -174,7 +174,8 @@ def run_tests():
         page.locator('.dock-tab-btn[data-tab="dashboard"]').click()
         time.sleep(0.15)
 
-        today_forecast = page.evaluate("() => weatherForecast14Days ? weatherForecast14Days[0] : null")
+        page.wait_for_function("() => window.weatherForecast14Days && window.weatherForecast14Days.length > 0", timeout=15000)
+        today_forecast = page.evaluate("() => window.weatherForecast14Days ? window.weatherForecast14Days[0] : null")
         log_test("Heute-Prognoseobjekt geladen", today_forecast is not None, f"Tag: {today_forecast.get('dateStr') if today_forecast else 'None'}")
         if today_forecast and today_forecast.get("solarYield"):
             sy = today_forecast.get("solarYield")
