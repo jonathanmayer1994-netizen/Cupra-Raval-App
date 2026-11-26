@@ -268,11 +268,13 @@ def run_tests():
             time.sleep(0.08)
 
             # =====================================================================
-            # SUITE 3: KPI DETAIL MODALS (ALLE 4 TYPEN & BEIDE SEGMENTE)
+            # SUITE 3: KPI DETAIL MODALS (ALLE 6 TYPEN & BEIDE SEGMENTE)
             # =====================================================================
-            print("\n--- SUITE 3: Alle 4 KPI Detail Modals & Resizing ---")
+            print("\n--- SUITE 3: Alle 6 KPI Detail Modals & Monatsvergleich ---")
             kpi_triggers = [
+                ('.clickable-kpi[data-kpi="month-cost"]', "Ladekosten Monat", "month-cost"),
                 ("#dashYearCost", "Ladekosten Gesamtjahr", "year-cost"),
+                ('.clickable-kpi[data-kpi="month-distance"]', "Fahrleistung Monat", "month-distance"),
                 ("#dashYearDistance", "Fahrleistung Gesamtjahr", "year-distance"),
                 ("#dashAvgPrice", "Durchschnittlicher Strompreis", "avg-price"),
                 ("#dashAvgCons", "Durchschnittlicher Verbrauch", "avg-consumption")
@@ -293,17 +295,34 @@ def run_tests():
                     f"Breite: {dims['width']:.1f}px, Höhe: {dims['height']:.1f}px"
                 )
 
-                # Test Segment Umschaltung
+                # Test Segment Umschaltung: Alle Einträge UND Monatsvergleich explizit prüfen
                 page.locator('.kpi-detail-seg-picker button[data-subrange="timeline"]').click()
                 time.sleep(0.08)
                 dims_timeline = page.locator("#canvasKpiDetailChart").evaluate("""el => {
                     const r = el.getBoundingClientRect();
                     return { width: r.width, height: r.height };
                 }""")
+                timeline_title = page.locator("#kpiDetailTitle").inner_text()
+
+                page.locator('.kpi-detail-seg-picker button[data-subrange="monthly"]').click()
+                time.sleep(0.08)
+                dims_monthly = page.locator("#canvasKpiDetailChart").evaluate("""el => {
+                    const r = el.getBoundingClientRect();
+                    return { width: r.width, height: r.height };
+                }""")
+                monthly_title = page.locator("#kpiDetailTitle").inner_text()
+                monthly_chart_title = page.locator("#kpiChartTitle").inner_text()
+                monthly_ok = (
+                    dims_monthly["width"] > 250
+                    and dims_monthly["height"] >= 200
+                    and monthly_title != timeline_title
+                    and ("Monat" in monthly_title or "Gesamtjahr" in monthly_title or "Monatsvergleich" in monthly_title)
+                    and "Monat" in monthly_chart_title
+                )
                 log_test(
-                    f"3.{kpi_type} Umschaltung auf 'Alle Einträge'",
-                    dims_timeline["width"] > 250 and dims_timeline["height"] >= 200,
-                    f"Breite: {dims_timeline['width']:.1f}px, Höhe: {dims_timeline['height']:.1f}px"
+                    f"3.{kpi_type} Umschaltung auf 'Alle Einträge' & 'Monatsvergleich'",
+                    dims_timeline["width"] > 250 and dims_timeline["height"] >= 200 and monthly_ok,
+                    f"Timeline: '{timeline_title}' -> Monthly: '{monthly_title}' / Chart: '{monthly_chart_title}'"
                 )
 
                 # Close Modal

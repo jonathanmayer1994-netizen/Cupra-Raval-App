@@ -4093,6 +4093,10 @@
       const maxActive = Math.max(...validIndices);
       start = minActive;
       end = Math.min(11, Math.max(maxActive, curMonth));
+      // Mindestens 2 Monate im Monatsvergleich darstellen (z. B. Vormonat + aktueller Monat)
+      if (start === end && start > 0) {
+        start = start - 1;
+      }
     } else {
       start = Math.max(0, curMonth - 1);
       end = curMonth;
@@ -4132,6 +4136,19 @@
     const monthlyCost = new Array(12).fill(0);
     const monthlySessionsCount = new Array(12).fill(0);
     const monthlyPvKwh = new Array(12).fill(0);
+    const monthlyDist = new Array(12).fill(0);
+    const distMonthIndices = [];
+    const latestOdoPerMonth = new Array(12).fill(null);
+
+    distStats.segments.forEach(seg => {
+      const d = new Date(seg.date);
+      if (d.getFullYear() === curYear) {
+        const m = d.getMonth();
+        distMonthIndices.push(m);
+        monthlyDist[m] += seg.deltaKm;
+        latestOdoPerMonth[m] = seg.toOdo;
+      }
+    });
 
     sessions.forEach(s => {
       const d = new Date(s.date);
@@ -4424,11 +4441,6 @@
         chartTitle = `Monatliche Fahrstrecke ${curYear}`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Fahrleistung (km)</span>`;
 
-        const distMonthIndices = [];
-        distStats.segments.forEach(seg => {
-          const d = new Date(seg.date);
-          if (d.getFullYear() === curYear) distMonthIndices.push(d.getMonth());
-        });
         const rangeInfo = getSmartMonthRange(distMonthIndices, curYear, curMonth);
         const labels = rangeInfo.labels;
         const distVals = rangeInfo.indices.map(m => monthlyDist[m]);
@@ -4531,30 +4543,17 @@
         chartTitle = `Monatliche Fahrleistung & Kilometerstand`;
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Monatsdistanz (km)</span><span class="legend-indicator dot-cyan"></span><span>Kilometerstand</span>`;
 
-        const distMonthIndices = [];
-        const monthlyDist = new Array(12).fill(0);
-        let latestOdoPerMonth = new Array(12).fill(null);
-
-        distStats.segments.forEach(seg => {
-          const d = new Date(seg.date);
-          if (d.getFullYear() === curYear) {
-            const m = d.getMonth();
-            distMonthIndices.push(m);
-            monthlyDist[m] += seg.deltaKm;
-            latestOdoPerMonth[m] = seg.toOdo;
-          }
-        });
-
+        const yearOdoPerMonth = [...latestOdoPerMonth];
         let lastKnown = null;
         for (let m = 0; m <= curMonth; m++) {
-          if (latestOdoPerMonth[m] !== null) lastKnown = latestOdoPerMonth[m];
-          else latestOdoPerMonth[m] = lastKnown;
+          if (yearOdoPerMonth[m] !== null) lastKnown = yearOdoPerMonth[m];
+          else yearOdoPerMonth[m] = lastKnown;
         }
 
         const rangeInfo = getSmartMonthRange(distMonthIndices, curYear, curMonth);
         const labels = rangeInfo.labels;
         const distVals = rangeInfo.indices.map(m => monthlyDist[m]);
-        const odoVals = rangeInfo.indices.map(m => latestOdoPerMonth[m]).filter(v => v !== null);
+        const odoVals = rangeInfo.indices.map(m => yearOdoPerMonth[m]).filter(v => v !== null);
 
         const yLeftBounds = getSmartAxisBounds(distVals, 'quantity', true);
         const yRightBounds = getSmartAxisBounds(odoVals.length > 0 ? odoVals : [distStats.totalOdo], 'odometer', false);
@@ -4564,7 +4563,7 @@
           labels: labels,
           datasets: [
             { type: 'bar', label: 'Distanz (km)', data: distVals, yAxisID: 'yLeft', color: 'bronze' },
-            { type: 'line', label: 'Kilometerstand', data: rangeInfo.indices.map(m => latestOdoPerMonth[m]), yAxisID: 'yRight', color: 'cyan' }
+            { type: 'line', label: 'Kilometerstand', data: rangeInfo.indices.map(m => yearOdoPerMonth[m]), yAxisID: 'yRight', color: 'cyan' }
           ],
           yLeft: { label: 'km', min: yLeftBounds.min, max: yLeftBounds.max },
           yRight: { label: 'km', min: yRightBounds.min, max: yRightBounds.max }
@@ -4576,7 +4575,7 @@
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
                 <span class="kpi-hr-title">${monthNames[idx]} ${curYear}</span>
-                <span class="kpi-hr-sub">Stand: ${latestOdoPerMonth[idx] ? Number(latestOdoPerMonth[idx]).toLocaleString('de-DE') + ' km' : '--'}</span>
+                <span class="kpi-hr-sub">Stand: ${yearOdoPerMonth[idx] ? Number(yearOdoPerMonth[idx]).toLocaleString('de-DE') + ' km' : '--'}</span>
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
