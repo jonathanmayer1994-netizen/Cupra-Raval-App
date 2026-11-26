@@ -3511,7 +3511,21 @@
 
     const daysSoFar = Math.max(1, curDay);
     const avgKmPerDay = monthKm > 0 ? (monthKm / daysSoFar) : 0;
-    const avgKmPerMonth = yearKm > 0 ? (yearKm / (curMonth + 1)) : 0;
+
+    // Aktive Betriebsmonate im aktuellen Jahr (ab Auslieferung / erstem dokumentierten Monat, nicht ab Jan vor Fahrzeugübernahme)
+    const yearMonthsWithSegs = [];
+    segments.forEach(seg => {
+      const sd = new Date(seg.date);
+      if (sd.getFullYear() === curYear) yearMonthsWithSegs.push(sd.getMonth());
+    });
+    let firstActiveDistMonth = curMonth;
+    if (yearMonthsWithSegs.length > 0) {
+      firstActiveDistMonth = Math.min(...yearMonthsWithSegs);
+    } else if (typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear) {
+      firstActiveDistMonth = Math.min(curMonth, VEHICLE_DELIVERY_DATE.getMonth());
+    }
+    const activeDistMonths = Math.max(1, curMonth - firstActiveDistMonth + 1);
+    const avgKmPerMonth = yearKm > 0 ? (yearKm / activeDistMonths) : 0;
     const totalOdo = (currentOdo !== undefined && currentOdo !== null && currentOdo > 0)
       ? currentOdo
       : (sorted.length > 0 ? getSessionOdo(sorted[sorted.length - 1]) : VEHICLE_START_ODO);
@@ -4193,6 +4207,12 @@
       const d = new Date(s.date);
       return d.getFullYear() === curYear;
     });
+    const costStartMonth = ySessions.length > 0
+      ? Math.min(...ySessions.map(s => new Date(s.date).getMonth()))
+      : ((typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear)
+          ? Math.min(curMonth, VEHICLE_DELIVERY_DATE.getMonth())
+          : curMonth);
+    const activeCostMonths = Math.max(1, curMonth - costStartMonth + 1);
 
     if (kpiType === 'month-cost') {
       if (range === 'monthly') {
@@ -4201,7 +4221,7 @@
         sub = `Monatliche Kosten & Energiemenge im Kalenderjahr`;
 
         stat1 = { lbl: "Jahreskosten", val: `${formatDe(yCost)} €` };
-        stat2 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+        stat2 = { lbl: "Ø / Monat", val: `${formatDe(yCost / activeCostMonths)} €` };
         stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(mCost)} €` };
 
         chartTitle = `Monatlicher Ladevergleich ${curYear}`;
@@ -4319,7 +4339,7 @@
           }
         } else {
           stat2 = { lbl: "Jahresenergie", val: `${yKwh.toFixed(1)} kWh` };
-          stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / Math.max(1, curMonth + 1))} €` };
+          stat3 = { lbl: "Ø / Monat", val: `${formatDe(yCost / activeCostMonths)} €` };
         }
 
         chartTitle = `Monatlicher Ladeverlauf ${curYear}`;
@@ -4435,7 +4455,7 @@
         sub = `Gefahrene Kilometer je Monat im Kalenderjahr`;
 
         stat1 = { lbl: "Dieses Jahr", val: `${formatDe(distStats.yearKm)} km` };
-        stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
+        stat2 = { lbl: "Ø / Monat", val: `${Math.round(distStats.avgKmPerMonth).toLocaleString('de-DE')} km` };
         stat3 = { lbl: `Im ${monthShorts[curMonth]}`, val: `${formatDe(distStats.monthKm)} km` };
 
         chartTitle = `Monatliche Fahrstrecke ${curYear}`;
@@ -4537,7 +4557,7 @@
         sub = `Jahresdistanz ${curYear} & Gesamtlaufleistung`;
 
         stat1 = { lbl: "Dieses Jahr", val: `${formatDe(distStats.yearKm)} km` };
-        stat2 = { lbl: "Ø / Monat", val: `${distStats.avgKmPerMonth.toFixed(0)} km` };
+        stat2 = { lbl: "Ø / Monat", val: `${Math.round(distStats.avgKmPerMonth).toLocaleString('de-DE')} km` };
         stat3 = { lbl: "Kilometerstand", val: `${Number(distStats.totalOdo).toLocaleString('de-DE')} km` };
 
         chartTitle = `Monatliche Fahrleistung & Kilometerstand`;

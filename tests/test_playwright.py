@@ -325,6 +325,15 @@ def run_tests():
                     f"Timeline: '{timeline_title}' -> Monthly: '{monthly_title}' / Chart: '{monthly_chart_title}'"
                 )
 
+                if kpi_type == "year-distance":
+                    avg_month_text = page.locator("#kpiDetailStatsRow .kpi-mini-stat-card").nth(1).locator(".kpi-mini-value").inner_text()
+                    avg_month_num = int("".join(ch for ch in avg_month_text if ch.isdigit()) or "0")
+                    log_test(
+                        "3.year-distance Ø / Monat berechnet aktive Betriebsmonate statt 11 Monate ab Januar",
+                        avg_month_num >= 200,
+                        f"Ø / Monat Anzeige: '{avg_month_text}' (Soll >= 200 km bei 472 km seit Okt)"
+                    )
+
                 # Close Modal
                 page.locator("#btnCloseKpiDetailModal").click()
                 time.sleep(0.05)
