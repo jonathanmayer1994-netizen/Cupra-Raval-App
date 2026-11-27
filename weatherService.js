@@ -262,7 +262,7 @@
   // Präzise Stations- und Prognosedaten des Deutschen Wetterdienstes ohne Key
   // =========================================================================
   async function fetchBrightSky(lat, lon, dateStr) {
-    const targetDate = dateStr || new Date().toISOString().slice(0, 10);
+    const targetDate = dateStr || getLocalDateStr(new Date());
     const url = `https://api.brightsky.dev/weather?lat=${lat}&lon=${lon}&date=${targetDate}`;
     const resp = await fetchWithTimeout(url, {}, 5500);
     if (!resp.ok) throw new Error(`Bright Sky HTTP ${resp.status}`);
@@ -542,8 +542,9 @@
    */
   function calculateBayrhofsSolarPhysics(dDate, hourNum, ghi, dni, dhi, tempAmb, baseLoadKw = 3.5) {
     const d = (dDate instanceof Date) ? dDate : new Date(dDate);
-    const startOfYear = new Date(Date.UTC(d.getFullYear(), 0, 1));
-    const dayOfYear = Math.floor((d.getTime() - startOfYear.getTime()) / 86400000) + 1;
+    const localMid = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    const dayOfYear = Math.round((localMid.getTime() - startOfYear.getTime()) / 86400000) + 1;
 
     // 1. Deklination delta (Cooper 1969)
     const deltaRad = (23.45 * Math.PI / 180) * Math.sin((2 * Math.PI / 365) * (284 + dayOfYear));
@@ -552,8 +553,13 @@
     const B = (2 * Math.PI / 365) * (dayOfYear - 81);
     const eotMinutes = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
 
-    // 3. Sonnenzeit & Stundenwinkel omega (CET 15° vs CEST 30°)
-    const isDst = (d.getMonth() >= 3 && d.getMonth() <= 9); // April bis Oktober CEST
+    // 3. Sonnenzeit & Stundenwinkel omega (CET 15° vs EU-CEST 30°: letzter Sonntag März bis letzter Sonntag Oktober)
+    const yr = d.getFullYear();
+    const marchEnd = new Date(yr, 2, 31);
+    const dstStart = new Date(yr, 2, 31 - marchEnd.getDay(), 2, 0, 0);
+    const octEnd = new Date(yr, 9, 31);
+    const dstEnd = new Date(yr, 9, 31 - octEnd.getDay(), 3, 0, 0);
+    const isDst = (d >= dstStart && d < dstEnd);
     const standardMeridian = isDst ? 30.0 : 15.0;
     const timeSolar = (hourNum + 0.5) + (4 * (BAYRHOFS_CONFIG.lon - standardMeridian) + eotMinutes) / 60;
     const omegaRad = ((timeSolar - 12) * 15) * Math.PI / 180;
@@ -1020,10 +1026,14 @@
       };
     }
 
-    // 2. Fallback: Astronomische Modellierung über Allgäuer Tageslichtkurve
-    // Im Herbst/Winter im Allgäu typisch: 07:30 Sonnenaufgang, 17:00 Sonnenuntergang
-    const sunriseH = 7.5;
-    const sunsetH = 17.0;
+    // 2. Fallback: Astronomische Modellierung über saisonale Allgäuer Tageslichtkurve
+    const fbSun = getFallbackSunTimes(ref);
+    const parseHhMm = (str, def) => {
+      const p = String(str || '').split(':').map(Number);
+      return (!isNaN(p[0]) && !isNaN(p[1])) ? (p[0] + p[1] / 60) : def;
+    };
+    const sunriseH = parseHhMm(fbSun.rise, 7.5);
+    const sunsetH = parseHhMm(fbSun.set, 17.0);
     const nowTimeH = currentHour + (currentMinute / 60);
 
     let fractionPassed = 0;
@@ -1090,7 +1100,7 @@
       mode: 'calibrated', // 'calibrated' | 'raw'
       hourlyBias: [...DEFAULT_HOURLY_BIAS],
       overallAccuracyPct: 94.6,
-      leadingModel: 'DWD ICON-D2 (58% Gewichtung)',
+      leadingModel: 'DWD ICON-D2 (70% Tag 1–2 / 30% ECMWF)',
       morningDampeningHours: 1.4,
       inversionDetected: true,
       lastTrained: new Date().toISOString(),
@@ -1268,7 +1278,7 @@
         if (comparisons.length > 0) {
           adaptiveStore.pastComparisons = comparisons.reverse();
           const avgAcc = Math.round(comparisons.reduce((acc, c) => acc + c.accuracyPct, 0) / comparisons.length);
-          adaptiveStore.overallAccuracyPct = Math.max(90, avgAcc);
+          adaptiveStore.overallAccuracyPct = avgAcc;
           saveAdaptiveStore(adaptiveStore);
         }
       } catch (e) {
@@ -1483,7 +1493,9 @@
       // Sensor-Fusion Inversions-Check & Forecast Override (für Heute)
       let todayInversionOverride = null;
       if (i === 0 && isCalibratedMode) {
-        if (options && options.inversionOverride) {
+        if (options && options.inversionEvaluated) {
+          todayInversionOverride = options.inversionOverride || null;
+        } else if (options && options.inversionOverride) {
           todayInversionOverride = options.inversionOverride;
         } else if (typeof InversionVisionService !== 'undefined') {
           const currentHumidity = (openMeteo && openMeteo.current && typeof openMeteo.current.relative_humidity_2m === 'number')
@@ -1858,7 +1870,7 @@
 
     // 3. Multi-Model-Synthese erstellen
     const threshold = options.pvThreshold || 4.5;
-    const synthOptions = { ...options, inversionOverride, inversionResult };
+    const synthOptions = { ...options, inversionOverride, inversionEvaluated: true, inversionResult };
     const forecast14Days = synthesizeForecast(
       openMeteoData,
       brightSkyData,

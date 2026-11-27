@@ -3155,14 +3155,20 @@
     const curYear = now.getFullYear();
 
     let mCost = 0, mKwh = 0, yCost = 0, yKwh = 0, allCost = 0, allKwh = 0, allPvKwh = 0;
+    let pricedCost = 0, pricedKwh = 0;
 
     appData.sessions.forEach(s => {
       const d = new Date(s.date);
       const k = Number(s.kwh) || 0;
       const c = Number(s.totalCost) || 0;
+      const hasValidCost = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '' && !isNaN(Number(s.totalCost)));
 
       allCost += c;
       allKwh += k;
+      if (k > 0 && hasValidCost) {
+        pricedCost += c;
+        pricedKwh += k;
+      }
       if (s.pvSurplus) allPvKwh += k;
 
       if (d.getFullYear() === curYear) {
@@ -3210,8 +3216,8 @@
       DOM.dashYearDistanceSub.textContent = `Gesamt: ${Number(distStats.totalOdo).toLocaleString('de-DE')} km`;
     }
 
-    // Reale Durchschnittspreis pro kWh (niemals 0,00 €/kWh wenn Ladevorgänge existieren!)
-    const rawAvgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
+    // Reale Durchschnittspreis pro kWh (nur vollständig bepreiste Ladungen gewichten)
+    const rawAvgPrice = pricedKwh > 0 ? (pricedCost / pricedKwh) : (allKwh > 0 ? (allCost / allKwh) : 0.35);
     DOM.dashAvgPrice.textContent = rawAvgPrice.toFixed(2).replace('.', ',');
     const pvPct = allKwh > 0 ? Math.round((allPvKwh / allKwh) * 100) : 0;
     if (thgAmount > 0) {
@@ -3309,11 +3315,19 @@
     let allCost = 0;
     let allKwh = 0;
 
+    let pricedCost = 0;
+    let pricedKwh = 0;
+
     (sessions || []).forEach(s => {
       const k = Number(s.kwh) || 0;
       const c = Number(s.totalCost) || 0;
+      const hasValidCost = (s.totalCost !== null && s.totalCost !== undefined && s.totalCost !== '' && !isNaN(Number(s.totalCost)));
       allKwh += k;
       allCost += c;
+      if (k > 0 && hasValidCost) {
+        pricedKwh += k;
+        pricedCost += c;
+      }
 
       const startSoc = getSessionStartSoc(s);
       const endSoc = getSessionEndSoc(s);
@@ -3328,7 +3342,7 @@
 
     const avgEff = (totalEffInputKwh > 0) ? Math.min(100, Math.round((totalNetBatteryKwh / totalEffInputKwh) * 1000) / 10) : null;
     const totalLossKwh = (totalEffInputKwh > 0 && totalEffInputKwh >= totalNetBatteryKwh) ? (totalEffInputKwh - totalNetBatteryKwh) : 0;
-    const avgPrice = allKwh > 0 ? (allCost / allKwh) : 0.35;
+    const avgPrice = pricedKwh > 0 ? (pricedCost / pricedKwh) : (allKwh > 0 ? (allCost / allKwh) : 0.35);
 
     if (!sessions || sessions.length < 1) {
       return { hasData: false, avgCons: 0, avgCost100: 0, avgEff, totalLossKwh, effCount, totalMeasuredKm: 0, totalConsumedKwh: 0 };
@@ -3351,21 +3365,36 @@
       }
     }
 
-    // Nachfolgende Intervalle: Reale verbrauchte kWh zwischen Ladeende vorher und Ladestart jetzt
+    // Nachfolgende Intervalle: Reale verbrauchte kWh zwischen letztem Anker mit km-Stand und aktueller Ladung
+    let lastAnchorOdo = firstOdo > 0 ? firstOdo : VEHICLE_START_ODO;
+    let lastAnchorEndSoc = getSessionEndSoc(sorted[0]);
+    let hasUnmeasuredIntermediate = false;
+
     for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
       const curr = sorted[i];
-      const prevOdo = getSessionOdo(prev);
       const currOdo = getSessionOdo(curr);
-      if (prevOdo > 0 && currOdo > prevOdo) {
-        const delta = currOdo - prevOdo;
-        const prevEndSoc = getSessionEndSoc(prev);
-        const currStartSoc = getSessionStartSoc(curr);
-        if (delta > 0 && delta < 3000 && prevEndSoc !== null && currStartSoc !== null && prevEndSoc > currStartSoc) {
-          const deltaSoc = prevEndSoc - currStartSoc;
+      const currStartSoc = getSessionStartSoc(curr);
+      const currEndSoc = getSessionEndSoc(curr);
+
+      if (currOdo > 0 && lastAnchorOdo > 0 && currOdo > lastAnchorOdo) {
+        const delta = currOdo - lastAnchorOdo;
+        if (!hasUnmeasuredIntermediate && delta > 0 && delta < 3000 && lastAnchorEndSoc !== null && currStartSoc !== null && lastAnchorEndSoc > currStartSoc) {
+          const deltaSoc = lastAnchorEndSoc - currStartSoc;
           const usedKwh = (deltaSoc / 100) * batteryCap;
           totalMeasuredKm += delta;
           totalConsumedKwh += usedKwh;
+        }
+        lastAnchorOdo = currOdo;
+        lastAnchorEndSoc = currEndSoc;
+        hasUnmeasuredIntermediate = false;
+      } else {
+        // Unvollständige Zwischen-Ladung ohne km-Stand: Distanz-Anker bleibt, aber SoC-Verbrauchskette wird bis zum nächsten End-SoC pausiert
+        if ((Number(curr.kwh) || 0) > 0 || currEndSoc !== null) {
+          hasUnmeasuredIntermediate = true;
+        }
+        if (currEndSoc !== null) {
+          lastAnchorEndSoc = currEndSoc;
+          hasUnmeasuredIntermediate = false;
         }
       }
     }
@@ -3373,10 +3402,12 @@
     if (totalMeasuredKm > 0 && totalConsumedKwh > 0) {
       const avgCons = (totalConsumedKwh / totalMeasuredKm) * 100;
       const avgCost100 = avgCons * avgPrice;
+      const grossAvgCost100 = (avgEff && avgEff > 0) ? (avgCost100 / (avgEff / 100)) : avgCost100;
       return {
         hasData: true,
         avgCons,
         avgCost100,
+        grossAvgCost100,
         avgEff,
         totalLossKwh,
         effCount,
@@ -3460,13 +3491,16 @@
       }
     }
 
+    let lastAnchorOdo = (sorted.length > 0 && getSessionOdo(sorted[0]) > 0) ? getSessionOdo(sorted[0]) : VEHICLE_START_ODO;
+    let lastAnchorEndSoc = sorted.length > 0 ? getSessionEndSoc(sorted[0]) : VEHICLE_START_SOC;
+    let hasUnmeasuredIntermediate = false;
+
     for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
       const curr = sorted[i];
-      const prevOdo = getSessionOdo(prev);
       const currOdo = getSessionOdo(curr);
-      const delta = (currOdo > 0 && prevOdo > 0 && currOdo > prevOdo)
-        ? (currOdo - prevOdo)
+      const currEndSoc = getSessionEndSoc(curr);
+      const delta = (currOdo > 0 && lastAnchorOdo > 0 && currOdo > lastAnchorOdo)
+        ? (currOdo - lastAnchorOdo)
         : 0;
 
       if (delta > 0) {
@@ -3480,23 +3514,22 @@
           }
         }
 
-        const prevEndSoc = getSessionEndSoc(prev);
         const currStartSoc = getSessionStartSoc(curr);
         let segCons = 0;
         let usedKwh = 0;
         let deltaSoc = 0;
-        if (prevEndSoc !== null && currStartSoc !== null && prevEndSoc > currStartSoc) {
-          deltaSoc = prevEndSoc - currStartSoc;
+        if (!hasUnmeasuredIntermediate && lastAnchorEndSoc !== null && currStartSoc !== null && lastAnchorEndSoc > currStartSoc) {
+          deltaSoc = lastAnchorEndSoc - currStartSoc;
           usedKwh = (deltaSoc / 100) * batteryCap;
           segCons = (usedKwh / delta) * 100;
         }
 
         segments.push({
           date: curr.date,
-          fromOdo: prevOdo,
+          fromOdo: lastAnchorOdo,
           toOdo: currOdo,
           deltaKm: delta,
-          fromSoc: prevEndSoc,
+          fromSoc: lastAnchorEndSoc,
           toSoc: currStartSoc,
           deltaSoc: deltaSoc,
           usedKwh: usedKwh,
@@ -3506,6 +3539,18 @@
           location: curr.location || 'Ladung',
           consumption: segCons
         });
+
+        lastAnchorOdo = currOdo;
+        lastAnchorEndSoc = currEndSoc;
+        hasUnmeasuredIntermediate = false;
+      } else {
+        if ((Number(curr.kwh) || 0) > 0 || currEndSoc !== null) {
+          hasUnmeasuredIntermediate = true;
+        }
+        if (currEndSoc !== null) {
+          lastAnchorEndSoc = currEndSoc;
+          hasUnmeasuredIntermediate = false;
+        }
       }
     }
 
@@ -3626,6 +3671,8 @@
     let pvAcCount = 0;
     let totalSocSum = 0;
     let socCount = 0;
+    let totalStartSocSum = 0;
+    let startSocCount = 0;
     let totalDoDSum = 0;
     let dodCount = 0;
 
@@ -3637,6 +3684,10 @@
       }
       const sStart = parseFloat(s.socStart ?? s.startSoc);
       const sEnd = parseFloat(s.soc ?? s.socEnd);
+      if (!isNaN(sStart)) {
+        totalStartSocSum += sStart;
+        startSocCount++;
+      }
       if (!isNaN(sEnd)) {
         totalSocSum += sEnd;
         socCount++;
@@ -3650,11 +3701,18 @@
     const totalSessions = sess.length;
     const acPvSharePct = totalSessions > 0 ? Math.round((pvAcCount / totalSessions) * 100) : 100;
     const avgEndSoc = socCount > 0 ? (totalSocSum / socCount) : 72.0;
-    const avgStartSoc = dodCount > 0 ? ((totalSocSum - totalDoDSum) / dodCount) : 17.0;
+    const avgStartSoc = startSocCount > 0 ? (totalStartSocSum / startSocCount) : 17.0;
     const avgDoD = dodCount > 0 ? (totalDoDSum / dodCount) : 55.0;
 
-    // Vollzyklen
-    const efcCycles = Math.max(drivenKm / 350, (totalChargedKwh * 0.93) / NOMINAL_BATTERY_KWH);
+    // Vollzyklen dynamisch über realen Verbrauch / Ladeeffizienz (Fallback: 350 km & 93%)
+    const consData = calcConsumption(sess);
+    const kmPerCycle = (consData && consData.hasData && consData.avgCons > 0)
+      ? (NOMINAL_BATTERY_KWH / consData.avgCons) * 100
+      : 350;
+    const effFactor = (consData && consData.avgEff && consData.avgEff > 0)
+      ? (consData.avgEff / 100)
+      : 0.93;
+    const efcCycles = Math.max(drivenKm / kmPerCycle, (totalChargedKwh * effFactor) / NOMINAL_BATTERY_KWH);
 
     // 3. Ladeverhaltens-Faktor (Stress-Multiplier)
     // Schonendes AC/PV-Laden senkt die Alterung um bis zu 25% gegenüber DC-Schnellladung
@@ -3696,8 +3754,10 @@
     const currentCap = Math.round((NOMINAL_BATTERY_KWH * (currentSoh / 100.0)) * 10) / 10;
 
     // 5. 4-Jahres-Prognose (Meilensteine 0 bis 4 Jahre)
-    const annualKm = Math.max(12000, Math.min(25000, (drivenKm / Math.max(0.08, yearsElapsed))));
-    const annualCycles = annualKm / 350;
+    const annualKm = Math.max(3000, Math.min(60000, (drivenKm / Math.max(0.08, yearsElapsed))));
+    const annualCycles = annualKm / kmPerCycle;
+    const delivMonthShort = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'][VEHICLE_DELIVERY_DATE.getMonth()] || 'Okt';
+    const delivYear = VEHICLE_DELIVERY_DATE.getFullYear();
 
     const milestones = [];
     const chartLabels = ['Start', 'Heute', 'Jahr 1', 'Jahr 2', 'Jahr 3', 'Jahr 4'];
@@ -3708,11 +3768,11 @@
     const sohRef = [];
     const sohWarranty = [];
 
-    // Milestone: Start (Okt 2026)
+    // Milestone: Start (Auslieferung)
     milestones.push({
       yearNum: 0,
       label: 'Auslieferung (Start)',
-      date: 'Okt 2026',
+      date: `${delivMonthShort} ${delivYear}`,
       kwh: NOMINAL_BATTERY_KWH,
       soh: 100.0,
       refKwh: NOMINAL_BATTERY_KWH,
@@ -3750,7 +3810,7 @@
 
     // Milestones: Jahre 1, 2, 3, 4
     for (let yr = 1; yr <= 4; yr++) {
-      const yrDate = `Okt ${2026 + yr}`;
+      const yrDate = `${delivMonthShort} ${delivYear + yr}`;
       const userDeg = calcDegradation(yr, yr * annualCycles, stressFactor);
       const refDeg = calcDegradation(yr, yr * annualCycles, 1.25);
 
@@ -4259,7 +4319,7 @@
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${formatDe(monthlyCost[idx])} €</span>
-                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2) : '0,00'} €/kWh</span>
+                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2).replace('.', ',') : '0,00'} €/kWh</span>
               </div>
             </div>
           `;
@@ -4376,7 +4436,7 @@
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${formatDe(monthlyCost[idx])} €</span>
-                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2) : '0,00'} €/kWh</span>
+                <span class="kpi-hr-extra">${monthlyKwh[idx] > 0 ? (monthlyCost[idx] / monthlyKwh[idx]).toFixed(2).replace('.', ',') : '0,00'} €/kWh</span>
               </div>
             </div>
           `;
@@ -4480,11 +4540,14 @@
         listTitle = `Fahrleistung nach Monaten ${curYear}`;
         listHtml = rangeInfo.indices.map(idx => {
           const isCur = idx === curMonth;
-          return `
+        const effectiveDays = (idx === curMonth)
+          ? Math.max(1, now.getDate() - ((typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear && VEHICLE_DELIVERY_DATE.getMonth() === curMonth) ? VEHICLE_DELIVERY_DATE.getDate() - 1 : 0))
+          : Math.max(1, new Date(curYear, idx + 1, 0).getDate() - ((typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear && VEHICLE_DELIVERY_DATE.getMonth() === idx) ? VEHICLE_DELIVERY_DATE.getDate() - 1 : 0));
+        return `
             <div class="kpi-history-row" style="${isCur ? 'border-color: rgba(192, 128, 81, 0.45); background: rgba(26, 20, 16, 0.7);' : ''}">
               <div class="kpi-hr-left">
                 <span class="kpi-hr-title">${monthNames[idx]} ${curYear} ${isCur ? '⭐ Aktuell' : ''}</span>
-                <span class="kpi-hr-sub">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / 30).toFixed(1) + ' km / Tag' : 'Keine Fahrten'}</span>
+                <span class="kpi-hr-sub">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / effectiveDays).toFixed(1).replace('.', ',') + ' km / Tag' : 'Keine Fahrten'}</span>
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
@@ -4542,7 +4605,7 @@
                 </div>
                 <div class="kpi-hr-right">
                   <span class="kpi-hr-value">${seg.deltaKm} km</span>
-                  <span class="kpi-hr-extra">${seg.kwh > 0 ? ((seg.kwh / seg.deltaKm) * 100).toFixed(1) + ' kWh/100km' : ''}</span>
+                  <span class="kpi-hr-extra">${seg.consumption > 0 ? seg.consumption.toFixed(1).replace('.', ',') + ' kWh/100km' : (seg.kwh > 0 ? seg.kwh.toFixed(1).replace('.', ',') + ' kWh geladen' : '')}</span>
                 </div>
               </div>
             `;
@@ -4591,6 +4654,9 @@
 
         listTitle = `Fahrleistung nach Monaten ${curYear}`;
         listHtml = rangeInfo.indices.map(idx => {
+          const effDays = (idx === curMonth)
+            ? Math.max(1, now.getDate() - ((typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear && VEHICLE_DELIVERY_DATE.getMonth() === curMonth) ? VEHICLE_DELIVERY_DATE.getDate() - 1 : 0))
+            : Math.max(1, new Date(curYear, idx + 1, 0).getDate() - ((typeof VEHICLE_DELIVERY_DATE !== 'undefined' && VEHICLE_DELIVERY_DATE.getFullYear() === curYear && VEHICLE_DELIVERY_DATE.getMonth() === idx) ? VEHICLE_DELIVERY_DATE.getDate() - 1 : 0));
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
@@ -4599,7 +4665,7 @@
               </div>
               <div class="kpi-hr-right">
                 <span class="kpi-hr-value">${monthlyDist[idx] > 0 ? '+' + monthlyDist[idx].toLocaleString('de-DE') + ' km' : '0 km'}</span>
-                <span class="kpi-hr-extra">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / 30).toFixed(1) + ' km/Tag' : ''}</span>
+                <span class="kpi-hr-extra">${monthlyDist[idx] > 0 ? (monthlyDist[idx] / effDays).toFixed(1).replace('.', ',') + ' km/Tag' : ''}</span>
               </div>
             </div>
           `;
@@ -4676,13 +4742,15 @@
         stat1 = { lbl: "Ø Strompreis", val: `${avgPrice.toFixed(2).replace('.', ',')} €/kWh` };
         stat2 = { lbl: "Solar-Anteil", val: `${pvPct}% PV` };
         if (thgAmount > 0) {
-          if (allCost <= thgAmount) {
-            stat3 = { lbl: "THG-Status", val: "100% gedeckt" };
-            sub = `Monatlicher Ladepreis • Stromkosten vollständig durch THG-Prämie amortisiert`;
+          if (yCost <= thgAmount && yKwh > 0) {
+            stat3 = { lbl: `THG ${curYear}`, val: "100% gedeckt" };
+            sub = `Monatlicher Ladepreis • Stromkosten ${curYear} durch THG-Prämie amortisiert`;
+          } else if (yKwh > 0) {
+            const effPrice = (yCost - thgAmount) / yKwh;
+            stat3 = { lbl: `Effektiv (${curYear})`, val: `${effPrice.toFixed(2).replace('.', ',')} €/kWh` };
+            sub = `Monatlicher Ladepreis • Effektiv ${effPrice.toFixed(2).replace('.', ',')} €/kWh nach THG ${curYear}`;
           } else {
-            const effPrice = (allCost - thgAmount) / allKwh;
-            stat3 = { lbl: "Effektiv (THG)", val: `${effPrice.toFixed(2).replace('.', ',')} €/kWh` };
-            sub = `Monatlicher Ladepreis • Effektiv ${effPrice.toFixed(2).replace('.', ',')} €/kWh nach THG`;
+            stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
           }
         } else {
           stat3 = { lbl: "Netzstrom-Ref", val: `0,35 €/kWh` };
@@ -4751,10 +4819,16 @@
           const d = new Date(s.date);
           return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
         });
-        const prices = sorted.map(s => Number(s.pricePerKwh) || 0);
+        const prices = sorted.map(s => {
+          if (s.pricePerKwh !== undefined && s.pricePerKwh !== null && s.pricePerKwh !== '') return Number(s.pricePerKwh);
+          if (s.totalCost !== undefined && s.totalCost !== null && s.totalCost !== '' && Number(s.kwh) > 0) {
+            return Number((Number(s.totalCost) / Number(s.kwh)).toFixed(2));
+          }
+          return null;
+        });
         const benchmarks = sorted.map(() => 0.35);
 
-        const allPriceVals = [...prices, 0.35];
+        const allPriceVals = [...prices.filter(v => v !== null), 0.35];
         const yBounds = getSmartAxisBounds(allPriceVals, 'price', false);
 
         chartConfig = {
@@ -4807,7 +4881,8 @@
         legendHtml = `<span class="legend-indicator dot-bronze"></span><span>Verbrauch</span><span class="legend-indicator dot-cyan"></span><span>15.0 Benchmark</span>`;
 
         const segMonthIndices = [];
-        const monthlyConsSum = new Array(12).fill(0);
+        const monthlyUsedKwh = new Array(12).fill(0);
+        const monthlyValidDist = new Array(12).fill(0);
         const monthlyConsCount = new Array(12).fill(0);
 
         validSegments.forEach(s => {
@@ -4815,7 +4890,8 @@
           if (d.getFullYear() === curYear) {
             const m = d.getMonth();
             segMonthIndices.push(m);
-            monthlyConsSum[m] += s.consumption;
+            monthlyUsedKwh[m] += (Number(s.usedKwh) || 0);
+            monthlyValidDist[m] += (Number(s.deltaKm) || 0);
             monthlyConsCount[m] += 1;
           }
         });
@@ -4823,7 +4899,7 @@
         const rangeInfo = getSmartMonthRange(segMonthIndices, curYear, curMonth);
         const labels = rangeInfo.labels;
         const monthlyCons = rangeInfo.indices.map(idx => {
-          return monthlyConsCount[idx] > 0 ? Number((monthlyConsSum[idx] / monthlyConsCount[idx]).toFixed(1)) : null;
+          return monthlyValidDist[idx] > 0 ? Number(((monthlyUsedKwh[idx] / monthlyValidDist[idx]) * 100).toFixed(1)) : null;
         });
         const benchmarks = rangeInfo.indices.map(() => 15.0);
 
@@ -4843,7 +4919,7 @@
 
         listTitle = `Monatliche Verbrauchswerte ${curYear}`;
         listHtml = rangeInfo.indices.map(idx => {
-          const avgC = monthlyConsCount[idx] > 0 ? (monthlyConsSum[idx] / monthlyConsCount[idx]) : 0;
+          const avgC = monthlyValidDist[idx] > 0 ? ((monthlyUsedKwh[idx] / monthlyValidDist[idx]) * 100) : 0;
           return `
             <div class="kpi-history-row">
               <div class="kpi-hr-left">
@@ -4900,12 +4976,12 @@
         } else {
           listHtml = validSegments.map(s => {
             const d = new Date(s.date);
-            const cost100 = (s.cost / s.deltaKm) * 100;
+            const cost100 = s.cost100 > 0 ? s.cost100 : (s.consumption * avgPrice);
             return `
               <div class="kpi-history-row">
                 <div class="kpi-hr-left">
                   <span class="kpi-hr-title">${s.consumption.toFixed(1).replace('.', ',')} kWh / 100km</span>
-                  <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • ${s.deltaKm} km gefahren mit ${s.kwh.toFixed(1)} kWh</span>
+                  <span class="kpi-hr-sub">${d.toLocaleDateString('de-DE')} • ${s.deltaKm} km mit ${s.usedKwh.toFixed(1).replace('.', ',')} kWh Akku-Entnahme</span>
                 </div>
                 <div class="kpi-hr-right">
                   <span class="kpi-hr-value">${cost100.toFixed(2).replace('.', ',')} €</span>
@@ -5353,7 +5429,36 @@
       };
     }
 
-    // 2. Exakte Teilmengen-Kombination (Subset Sum)
+    // 2. Chronologische FIFO-Zuordnung zuerst prüfen (Standard für betriebliche Sammelabrechnungen)
+    let chronoSubset = [];
+    let chronoSumCents = 0;
+    const targetCents = Math.round(target * 100);
+    const tolCents = Math.round(tolerance * 100);
+    for (const s of unpaid) {
+      const c = Math.round((Number(s.totalCost) || 0) * 100);
+      if (c <= 0) continue;
+      chronoSubset.push(s);
+      chronoSumCents += c;
+      if (chronoSumCents >= targetCents - tolCents) break;
+    }
+
+    const chronoSum = chronoSumCents / 100;
+    const chronoDiff = (chronoSumCents - targetCents) / 100;
+    if (chronoSubset.length > 0 && Math.abs(chronoSumCents - targetCents) <= tolCents) {
+      return {
+        success: true,
+        type: 'exact',
+        badge: '⏱ Chronologisch abgerechnet (' + chronoSubset.length + ' Ladungen)',
+        explanation: `Die ${chronoSubset.length} ältesten offenen Ladungen entsprechen exakt deiner Abrechnung von ${formatDe(chronoSum)} €!`,
+        matchedIds: chronoSubset.map(s => String(s.id)),
+        allSessions: unpaid,
+        selectedSum: chronoSum,
+        targetAmount: target,
+        diff: chronoDiff
+      };
+    }
+
+    // 3. Exakte Teilmengen-Kombination (Subset Sum, falls ältere Einzelposten übersprungen wurden)
     const exactSubset = findSubsetSum(unpaid, target, tolerance);
     if (exactSubset && exactSubset.length > 0) {
       const sum = exactSubset.reduce((acc, s) => acc + s.totalCost, 0);
@@ -5367,30 +5472,6 @@
         selectedSum: sum,
         targetAmount: target,
         diff: sum - target
-      };
-    }
-
-    // 3. Chronologische FIFO-Zuordnung (Standard für betriebliche Sammelabrechnungen)
-    let chronoSubset = [];
-    let chronoSum = 0;
-    for (const s of unpaid) {
-      chronoSubset.push(s);
-      chronoSum += s.totalCost;
-      if (chronoSum >= target - tolerance) break;
-    }
-
-    const chronoDiff = chronoSum - target;
-    if (Math.abs(chronoDiff) <= tolerance) {
-      return {
-        success: true,
-        type: 'exact',
-        badge: '⏱ Chronologisch abgerechnet (' + chronoSubset.length + ' Ladungen)',
-        explanation: `Die ${chronoSubset.length} ältesten offenen Ladungen entsprechen exakt deiner Abrechnung von ${formatDe(chronoSum)} €!`,
-        matchedIds: chronoSubset.map(s => String(s.id)),
-        allSessions: unpaid,
-        selectedSum: chronoSum,
-        targetAmount: target,
-        diff: chronoDiff
       };
     }
 
@@ -7090,7 +7171,9 @@
 
     for (let i = 0; i < 14; i++) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
-      const dateStr = d.toISOString().slice(0, 10);
+      const dateStr = (typeof WeatherService !== 'undefined' && WeatherService.getLocalDateStr)
+        ? WeatherService.getLocalDateStr(d)
+        : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const dayOfWeek = d.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
 
@@ -7383,21 +7466,18 @@
       const dayOfWeek = dDate.getDay();
       const isWorkday = (dayOfWeek >= 1 && dayOfWeek <= 5);
 
-      // Bestes Zeitfenster berechnen (Heute nachmittagsspezifisch!)
-      let timeWindow;
-      if (i === 0) {
-        const nowHour = new Date().getHours();
-        if (nowHour < 11) {
-          timeWindow = '11:30 – 15:30 Uhr';
-        } else if (nowHour >= 11 && nowHour < 15) {
-          timeWindow = '12:30 – 16:30 Uhr';
-        } else if (nowHour >= 15 && nowHour < 18) {
-          timeWindow = '15:30 – 18:30 Uhr';
-        } else {
-          timeWindow = 'Abends / Über Nacht';
-        }
-      } else {
-        if (sunHours >= 3.5 || pvYield >= 8) {
+      // Bestes Zeitfenster berechnen (primär aus physikalischem PV-/Wallbox-Fenster)
+      let timeWindow = (d.calibratedPvWindow && d.calibratedPvWindow.label)
+        ? `${d.calibratedPvWindow.label} Uhr`
+        : null;
+      if (!timeWindow) {
+        if (i === 0) {
+          const nowHour = new Date().getHours();
+          if (nowHour < 11) timeWindow = '11:30 – 15:30 Uhr';
+          else if (nowHour < 15) timeWindow = '12:30 – 16:30 Uhr';
+          else if (nowHour < 18) timeWindow = '15:30 – 18:30 Uhr';
+          else timeWindow = 'Abends / Über Nacht';
+        } else if (sunHours >= 3.5 || pvYield >= 8) {
           timeWindow = '11:30 – 15:30 Uhr';
         } else if (d.tMax >= 12) {
           timeWindow = '13:00 – 16:30 Uhr';
@@ -7587,8 +7667,15 @@
       const startingEnergy = (activeCandidate.projEnergyAtStartOfDay !== null && activeCandidate.projEnergyAtStartOfDay !== undefined)
         ? activeCandidate.projEnergyAtStartOfDay
         : currentRemainingKwh;
-      chargeKwhNeeded = Math.max(8, Math.min(batteryCapacity, Math.round(targetEnergyKwh - startingEnergy)));
-      savingsEur = Number((chargeKwhNeeded * Math.max(0.15, 0.59 - kwhTariff)).toFixed(2));
+      const rawNeeded = Math.round(targetEnergyKwh - startingEnergy);
+      chargeKwhNeeded = rawNeeded > 1 ? Math.min(batteryCapacity, rawNeeded) : 0;
+      const publicSessions = sessions.filter(s => s.location && s.location.toLowerCase().includes('öffentlich') && Number(s.pricePerKwh) > 0);
+      const refPublicPrice = publicSessions.length > 0
+        ? (publicSessions.reduce((acc, s) => acc + Number(s.pricePerKwh), 0) / publicSessions.length)
+        : 0.59;
+      savingsEur = chargeKwhNeeded > 0
+        ? Number((chargeKwhNeeded * Math.max(0, refPublicPrice - kwhTariff)).toFixed(2))
+        : 0;
     }
 
     // 9. UI Aktualisierung (Hero Box & Badge)
@@ -7606,13 +7693,13 @@
 
     if (DOM.smartRecoKwhVal) {
       DOM.smartRecoKwhVal.textContent = (chargeKwhNeeded !== null)
-        ? `+${chargeKwhNeeded} kWh (Ziel: 80% SoC)`
+        ? (chargeKwhNeeded > 0 ? `+${chargeKwhNeeded} kWh (Ziel: 80% SoC)` : `Kein Ladebedarf (Ziel 80% erreicht)`)
         : `-- kWh (Akkustand fehlt)`;
     }
 
     if (DOM.smartRecoSavingsPill) {
       DOM.smartRecoSavingsPill.textContent = (savingsEur !== null)
-        ? `⚡️ ~${savingsEur.toFixed(2).replace('.', ',')} € Ersparnis`
+        ? (chargeKwhNeeded > 0 ? `⚡️ ~${savingsEur.toFixed(2).replace('.', ',')} € Ersparnis` : `✓ Ziel 80% erreicht`)
         : `☀️ Günstigster Solar-Slot`;
     }
 
@@ -7644,9 +7731,14 @@
 
     if (activeCandidate.dAvgTemp <= 14) {
       const loss = Math.max(0, Math.round((1 - activeCandidate.dNmcFactor) * 100));
-      reasoning += `<br>Thermischer NMC-Effekt: Bei ${activeCandidate.dAvgTemp}°C rund ${loss}% Kälteeinfluss. Das Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), um Vorheizverluste zu minimieren. `;
+      reasoning += `<br>Thermischer NMC-Effekt: Bei Ø ${activeCandidate.dAvgTemp}°C rund ${loss}% Kälteeinfluss. Das Zeitfenster (${timeWindow}) nutzt die wärmste Tagesphase (${bDay.tMax}°C), um Vorheizverluste zu minimieren. `;
+    } else if (activeCandidate.dAvgTemp > 24) {
+      const loss = Math.max(0, Math.round((1 - activeCandidate.dNmcFactor) * 100));
+      reasoning += `<br>Bei Ø ${activeCandidate.dAvgTemp}°C (Max ${bDay.tMax}°C) benötigt die aktive Akkukühlung ca. ${loss}% Zusatzenergie. `;
+    } else if (activeCandidate.dAvgTemp >= 20) {
+      reasoning += `<br>Die milden Ø ${activeCandidate.dAvgTemp}°C (Max ${bDay.tMax}°C) halten die NMC-Zellen im optimalen Wirkungsgradfenster (20–24°C). `;
     } else {
-      reasoning += `<br>Die milden ${bDay.tMax}°C halten die NMC-Zellen im optimalen Wirkungsgradfenster (20–24°C). `;
+      reasoning += `<br>Bei Ø ${activeCandidate.dAvgTemp}°C (Max ${bDay.tMax}°C) arbeiten die NMC-Zellen nahezu verlustfrei. `;
     }
 
     if (hasRealSoc && hasConsHistory) {
@@ -8036,7 +8128,7 @@
 
     // 5. Footer Last Trained Info
     if (DOM.adaptiveLastTrainedText) {
-      DOM.adaptiveLastTrainedText.textContent = `DWD ICON-D2 Leitmodell (58% Gewicht)`;
+      DOM.adaptiveLastTrainedText.textContent = `DWD ICON-D2 (70% Tag 1–2 / 30% ECMWF)`;
     }
 
     // 6. Allgäu Multi-Elevation Webcam Inversion Monitor rendern
@@ -8151,7 +8243,7 @@
     const rawTitle = hasPast ? `Wettermodell: noch ${rawRemaining}h verbleibend (${today.pastRawSunshineHours || today.pastSunshineHours}h vorbei • ${rawTotal}h gesamt)` : `Wettermodell: ${rawTotal}h`;
 
     const rainMm = (today.rainMm !== undefined) ? today.rainMm : 0;
-    const isRawActive = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveStore && WeatherService.getAdaptiveStore().activeMode === 'raw');
+    const isRawActive = (typeof WeatherService !== 'undefined' && WeatherService.getAdaptiveSolarData && WeatherService.getAdaptiveSolarData().mode === 'raw');
 
     if (DOM.dashRecoHeadline) {
       DOM.dashRecoHeadline.innerHTML = `
@@ -8283,7 +8375,6 @@
     }
 
     if (intelligentSoc !== null) {
-      v.currentSoc = intelligentSoc;
       if (DOM.dashRangeSocVal) {
         DOM.dashRangeSocVal.innerHTML = `${Math.round(intelligentSoc)}<small>%</small>`;
       }
@@ -9505,14 +9596,19 @@
     const editId = DOM.entryEditId.value;
 
     const cleanEditId = String(editId).trim();
+    const targetTime = (DOM.entryDateTime && DOM.entryDateTime.value)
+      ? new Date(DOM.entryDateTime.value).getTime()
+      : Date.now();
     let base = VEHICLE_START_ODO;
     let baseSoc = VEHICLE_START_SOC;
-    const sorted = [...appData.sessions].filter(s => String(s.id).trim() !== cleanEditId).sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (sorted.length > 0 && sorted[0].odometer) {
-      base = sorted[0].odometer;
+    const sorted = [...appData.sessions]
+      .filter(s => String(s.id).trim() !== cleanEditId && getSessionOdo(s) > 0 && new Date(s.date).getTime() <= targetTime)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (sorted.length > 0) {
+      base = getSessionOdo(sorted[0]);
       const sSoc = getSessionEndSoc(sorted[0]);
       if (sSoc !== null) baseSoc = sSoc;
-    } else if (appData.vehicle && appData.vehicle.currentOdo > VEHICLE_START_ODO) {
+    } else if (!cleanEditId && appData.vehicle && appData.vehicle.currentOdo > VEHICLE_START_ODO) {
       base = appData.vehicle.currentOdo;
       if (appData.vehicle.currentSoc !== null && appData.vehicle.currentSoc !== undefined) {
         baseSoc = Number(appData.vehicle.currentSoc);
@@ -10266,7 +10362,8 @@
   function handleSaveVehicleSettings() {
     appData.vehicle.model = (DOM.cfgModelName && DOM.cfgModelName.value.trim()) || DEFAULT_DATA.vehicle.model;
     const bHealth = getBatteryHealthData(appData.sessions, appData.vehicle);
-    appData.vehicle.batteryKwh = bHealth.currentCap;
+    appData.vehicle.batteryKwh = NOMINAL_BATTERY_KWH;
+    appData.vehicle.currentBatteryKwh = bHealth.currentCap;
     appData.vehicle.powerPs = 211; // Fester Hardware-Wert
     if (DOM.cfgCurrentOdo) {
       const parsedOdo = parseInt(DOM.cfgCurrentOdo.value, 10);
@@ -10276,9 +10373,15 @@
       const val = DOM.cfgCurrentSoc.value.trim();
       if (val === '') {
         appData.vehicle.currentSoc = null;
+        delete appData.vehicle.socUpdatedAt;
       } else {
         const parsedSoc = parseInt(val, 10);
-        appData.vehicle.currentSoc = (isNaN(parsedSoc) || parsedSoc < 0 || parsedSoc > 100) ? null : parsedSoc;
+        if (isNaN(parsedSoc) || parsedSoc < 0 || parsedSoc > 100) {
+          appData.vehicle.currentSoc = null;
+        } else {
+          appData.vehicle.currentSoc = parsedSoc;
+          appData.vehicle.socUpdatedAt = new Date().toISOString();
+        }
       }
     }
 
